@@ -1,0 +1,15 @@
+- name: Install JAGS (Windows)
+  if: runner.os == 'Windows'
+  shell: pwsh
+  run: |
+    $url     = "https://sourceforge.net/projects/mcmc-jags/files/JAGS/4.x/Windows/JAGS-4.3.1.exe/download"
+    $outFile = "$env:RUNNER_TEMP\JAGS-4.3.1.exe"
+
+    Write-Host "Downloading JAGS from $url to $outFile"
+    Invoke-WebRequest -Uri $url -OutFile $outFile
+
+    Write-Host "Running JAGS installer silently..."
+    Start-Process -FilePath $outFile -ArgumentList "/S" -Wait
+
+    Write-Host "Cleaning up installer"
+    Remove-Item $outFile
