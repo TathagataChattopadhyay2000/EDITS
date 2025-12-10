@@ -1,3 +1,81 @@
+
+getEstimates
+Description
+This function calculates the point estimates and credible intervals per cohort, as well as estimates of the biases and the mean squared errors of the point estimates per cohort.
+
+Usage
+getEstimates(
+  analyses_list,
+  add_parameters = NULL,
+  point_estimator = "median",
+  alpha_level = 0.05
+)
+Arguments
+analyses_list	
+An object of class analysis_list, as created with performAnalyses
+
+add_parameters	
+A vector of strings naming additional parameters from the Bayesian hierarchical models, e.g. c('mu', 'tau'). If NULL, no additional parameters will be evaluated, Default: NULL
+
+point_estimator	
+A string indicating the type of estimator used for calculation of bias and MSE. Must be one of 'median' or 'mean'
+
+alpha_level	
+A numeric in (0, 1) for the level of the credible interval. Only values corresponding to quantiles saved in performAnalyses will work, Default: 0.05
+
+Details
+Bias and MSE will only be calculated for response rate estimates of simulated trials. For additional parameters, bias and MSE will not be calculated.
+
+Possible additional parameters are for the Bayesian hierarchical models are c('mu', 'tau') for 'berry', 'exnex', and 'exnex_adj'. The latter two models can also access the posterior weights paste0("w_", seq_len(n_cohorts)).
+
+Value
+A named list of matrices of estimates of response rates and credible intervals. Estimates of bias and MSE are included for response rate estimates of simulated trials.
+
+Author(s)
+Stephan Wojciekowski
+
+See Also
+createTrial simulateScenarios performAnalyses
+
+Examples
+Run examples
+
+  scenarios_list <- simulateScenarios(
+    n_subjects_list     = list(c(10, 20, 30)),
+    response_rates_list = list(c(0.1, 0.2, 3)),
+    n_trials            = 10)
+
+  analyses_list <- performAnalyses(
+    scenario_list       = scenarios_list,
+    target_rates        = c(0.1, 0.1, 0.1),
+    calc_differences    = matrix(c(3, 2, 2, 1), ncol = 2),
+    n_mcmc_iterations   = 100)
+
+  getEstimates(analyses_list)
+  getEstimates(analyses_list   = analyses_list,
+               add_parameters  = c("mu", "tau", "w_1", "w_2", "w_3"),
+               point_estimator = "mean",
+               alpha_level     = 0.1)
+
+  outcome <- createTrial(
+    n_subjects          = c(10, 20, 30),
+    n_responders        = c( 1,  2,  3))
+
+  outcome_analysis <- performAnalyses(
+    scenario_list       = outcome,
+    target_rates        = c(0.1, 0.1, 0.1),
+    n_mcmc_iterations   = 100)
+
+  getEstimates(outcome_analysis)
+  getEstimates(analyses_list  = outcome_analysis,
+               add_parameters = c("mu", "w_1", "w_2", "w_3"))
+
+
+
+
+
+
+
 getAllCohortNames <- function (
   
   analyses_list
