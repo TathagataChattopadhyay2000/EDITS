@@ -1,16 +1,166 @@
-# Reconstruct what the function *should* be using as true_rr[3]:
-  true_rr_raw <- analyses_list[[1]]$scenario_data$response_rates
-  n_subj      <- analyses_list[[1]]$scenario_data$n_subjects[1, ]
-  expected_true_rr3 <- true_rr_raw[3] / n_subj[3]  # 3 / 30 = 0.1
-
-  # From the output we know:
-  #   Bias = point_estimate - true_rr_used
-  # so point_estimate = Bias + true_rr_used
-  # Assume they used the *correct* true_rr (3 / n) to get point_estimate:
-  point_estimate3 <- bias_p3 + expected_true_rr3
-
-  # Now compute what the bias WOULD have been if they had wrongly used true_rr = 3
-  wrong_bias <- point_estimate3 - true_rr_raw[3]
-
-  # If historic correction works, |Bias(using 3/n)| should be much smaller than |Bias(using 3)|
-  expect_true(abs(bias_p3) < abs(wrong_bias))
+getGoDecisions <- function (
+  
+  analyses_list,
+  
+  cohort_names,
+  evidence_levels,
+  boundary_rules,
+  
+  overall_min_gos = 1
+  
+) {
+  
+  # WHAT TO DO WITH THE ERROR MESSAGES HERE
+  error_analyses_list <- simpleError(
+    "Please provide an object of class analysis_list for the argument 'analyses_list'")
+  error_cohort_names <- simpleError(paste(
+    "Please provide a vector of strings for the argument 'cohort_names',",
+    "e.g. c('p_1','p_2')"))
+  error_evidence_levels <- simpleError(
+    "Please provide a vector of numerics in (0, 1) for the argument 'evidence_levels'")
+  error_boundary_rules <- simpleError(paste(
+    "Please provide a quote(c(...)) for the argument 'boundary_rules.'",
+    "The vector c(...) inside the quote() must have the same length as the number of cohorts.",
+    "See ?getGoDecisions for details"))
+  error_overall_min_gos <- simpleError(
+    "Please privide a positive integer for the argument 'overall_min_gos'")
+  
+  checkmate::assertClass(analyses_list, "analysis_list", .var.name = "analyses_list")
+  
+  checkmate::assertCharacter(cohort_names, min.len = 1, any.missing = FALSE, .var.name = "cohort_names")
+  
+  checkmate::assertInt(overall_min_gos, lower = 1, .var.name = "overall_min_gos")
+  
+  checkmate::assertSubset(cohort_names,
+                          choices = colnames(analyses_list[[1]]$quantiles_list[[1]][[1]]),
+                          .var.name = "cohort_names"
+  )
+  
+  if (missing(evidence_levels))         stop (error_evidence_levels)
+  if (missing(boundary_rules))          stop (error_boundary_rules)
+  
+  if (is.list(evidence_levels)) {
+    for (i in seq_along(evidence_levels)) {
+      check.evidence.levels(evidence_levels[[i]],
+                            cohort_names, analyses_list, error_evidence_levels)
+    }
+  } else {
+    check.evidence.levels(evidence_levels,
+                          cohort_names, analyses_list, error_evidence_levels)
+  }
+  
+  check_boundary_rules <- tryCatch({
+    x <- stats::runif(n = length(cohort_names), min = 0.001, max = 0.999)
+    if (is.list(boundary_rules)) {
+      for (i in seq_along(boundary_rules)) {
+        if (!is.language(boundary_rules[[i]]))                                   stop ()
+        if (!identical(boundary_rules[[i]][1], quote(c())))                      stop ()
+        if (!identical(length(boundary_rules[[i]]) - 1L,
+                       ncol(analyses_list$scenario_1$scenario_data$n_subjects))) stop ()
+        eval(boundary_rules[[i]])
+      }
+    } else {
+      if (!is.language(boundary_rules))                                        stop ()
+      if (!identical(boundary_rules[1], quote(c())))                           stop ()
+      ## fix number of decisions to number of cohorts
+      if (!identical(length(boundary_rules) - 1L,
+                     ncol(analyses_list$scenario_1$scenario_data$response_rates))) stop ()
+      eval(boundary_rules)
+    }
+    rm(x)
+  }, error = function (e) e)
+  if (inherits(check_boundary_rules, "error"))     stop(error_boundary_rules)
+  
+  ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
+  
+  gamma_levels <- evidence_levels
+  
+  ## Get method names
+  method_names_matrix <- t(sapply(analyses_list,
+                                  function (x) x$analysis_parameters$method_names))
+  if (!all(sapply(seq_len(nrow(method_names_matrix)),
+                  function (x) identical(method_names_matrix[1, ], method_names_matrix[x, ])))) {
+    stop ("The scenarios where analysed with different methods")
+  }
+  method_names <- method_names_matrix[1, ]
+  
+  ## in case only one method has been used for all scenarios
+  if (all(sapply(seq_along(method_names), function (x) {
+    method_names[1] == method_names[x]
+  }))) {
+    method_names <- method_names[1]
+  }
+  
+  ## check for input consistency
+  if (!is.list(boundary_rules)) {
+    boundary_rules <- list(boundary_rules)
+  }
+  if (!is.list(gamma_levels)) {
+    gamma_levels <- list(gamma_levels)
+  }
+  
+  if (length(method_names) < length(boundary_rules)) {
+    stop (paste0("The lengths of 'boundary_rules' must be less than or equal to",
+                 " the length of 'method_names'"))
+  } else if (length(method_names) > length(boundary_rules)) {
+    boundary_rules <- rep(boundary_rules, length.out = length(method_names))
+  }
+  if (length(method_names) < length(gamma_levels)) {
+    stop (paste0("The lengths of 'evidence_levels' must be less than or equal to",
+                 " the length of 'method_names'"))
+  } else if (length(method_names) > length(gamma_levels)) {
+    gamma_levels <- rep(gamma_levels, length.out = length(method_names))
+  }
+  
+  decisions_list <- vector(mode = "list", length = length(analyses_list))
+  names(decisions_list) <- names(analyses_list)
+  
+  for (s in seq_along(decisions_list)) {
+    
+    analysis_data <- analyses_list[[s]]
+    
+    methods_decisions_list <- vector(mode = "list", length = length(method_names))
+    names(methods_decisions_list) <- method_names
+    
+    for (n in seq_along(method_names)) {
+      
+      go_decisions <- getGoDecisionsByCohort(
+        gamma_quantiles = getPosteriorGammaQuantiles(
+          method_name              = method_names[n],
+          gamma_levels             = gamma_levels[[n]],
+          quantiles                = analysis_data$analysis_parameters$quantiles,
+          posterior_quantiles_list = analysis_data$quantiles_list,
+          cohort_names             = cohort_names),
+        decision_rule   = boundary_rules[[n]])
+      
+      ## combine new decision outcomes with previous decisions (and convert to logical)
+      previous_gos <- analysis_data$scenario_data$previous_analyses$go_decisions[, -1]
+      go_decisions <- go_decisions * previous_gos > 0
+      
+      ## Overall go:
+      overall_go   <- apply(go_decisions, 1, function (x) sum (x) >= overall_min_gos)
+      go_decisions <- cbind(overall = overall_go, go_decisions)
+      
+      ## store
+      methods_decisions_list[[n]] <- go_decisions
+      
+    }
+    
+    decisions_list[[s]] <-
+      list(decisions_list = methods_decisions_list,
+           analysis_data  = list(
+             quantiles_list      = analyses_list[[s]]$quantiles_list,
+             analysis_parameters = analyses_list[[s]]$analysis_parameters),
+           scenario_data  = analyses_list[[s]]$scenario_data,
+           decision_rules = list(cohort_names   = cohort_names,
+                                  gamma_levels   = gamma_levels,
+                                  boundary_rules = boundary_rules))
+  }
+  
+  names(decisions_list) <- names(analyses_list)
+  
+  class(decisions_list) <- "decision_list"
+  
+  return (decisions_list)
+  
+}
