@@ -1,34 +1,53 @@
-test_that("print.decision_list: for multiple methods, one row per method is printed per scenario", {
-  # This test uses:
-  #   go_probs <- getGoProbabilities(x)
-  #   mat_out <- do.call(rbind, lapply(go_probs, function(y) y[[n]]))
-  #
-  # For each scenario, mat_out has one row per method.
-  # print.decision_list loops over *all scenarios* and prints that block each time,
-  # so across the full output we expect:
-  #   total method label lines = n_scenarios * n_methods.
-  go_probs <- getGoProbabilities(decisions_dl)
-
-  # For scenario 1, reconstruct mat_out as in print.decision_list
-  scenario_index <- 1L
-  mat_ref <- do.call(
-    rbind,
-    lapply(go_probs, function(y) y[[scenario_index]])
+negateGoDecisions <- function (
+  
+  go_decisions_list,
+  overall_min_nogos = "all"
+  
+) {
+  
+  checkmate::assertClass(go_decisions_list, "decision_list", .var.name = "go_decisions_list")
+  
+  checkmate::assert(
+    checkmate::checkChoice(overall_min_nogos, choices = "all"),
+    checkmate::checkInt(overall_min_nogos, lower = 0),
+    combine = "or",
+    .var.name = "overall_min_nogos"
   )
-
-  output <- capture.output(print(decisions_dl))
-
-  # Lines starting with "    - " are the method label rows we created as rownames.
-  method_label_lines <- grep("^    - ", output, value = TRUE)
-
-  expected_total_rows <- n_scenarios * nrow(mat_ref)
-
-  expect_equal(
-    length(method_label_lines),
-    expected_total_rows,
-    info = paste(
-      "Number of printed method label lines (", length(method_label_lines),
-      ") does not match expected total rows (", expected_total_rows, ")"
-    )
-  )
-})
+  
+  ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+  
+  overall_min_nogos_org <- overall_min_nogos
+  nogo_decisions_list   <- go_decisions_list
+  
+  for (s in seq_along(go_decisions_list)) {
+    
+    for (m in seq_along(go_decisions_list[[s]]$decisions_list)) {
+      
+      ## negate decisions
+      nogo_decisions_list[[s]]$decisions_list[[m]] <-
+        !go_decisions_list[[s]]$decisions_list[[m]]
+      
+      ## check for overall decisions
+      n_decisions <- ncol(nogo_decisions_list[[s]]$decisions_list[[m]])
+      
+      if (n_decisions > 1) {
+        
+        if (identical(overall_min_nogos_org, "all")) {
+          
+          overall_min_nogos <- n_decisions - 1L
+          
+        }
+        
+        nogo_decisions_list[[s]]$decisions_list[[m]][, 1] <-
+          apply(nogo_decisions_list[[s]]$decisions_list[[m]][, -1], 1,
+                function(x) sum(x) >= overall_min_nogos)
+        
+      }
+      
+    }
+    
+  }
+  
+  return (nogo_decisions_list)
+  
+}
