@@ -1,4 +1,13 @@
-Error: all(c("overall", cohort_names) %in% colnames(method_dec)) is not TRUE
+── Failure: getGoDecisions handles list evidence_levels/boundary_rules and length checks ──
+length(scen1b$decision_rules$boundary_rules) not identical to 1L.
+1/1 mismatches
+[1] 5 - 1 == 4
 
-`actual`:   FALSE
-`expected`: TRUE 
+── Failure: getGoDecisions handles list evidence_levels/boundary_rules and length checks ──
+`getGoDecisions(...)` did not throw an error.
+
+── Failure: getGoDecisions handles list evidence_levels/boundary_rules and length checks ──
+`getGoDecisions(...)` did not throw an error.
+
+Error:
+! Test failed
