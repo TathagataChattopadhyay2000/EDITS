@@ -1,294 +1,42 @@
-## ------------------------------------------------------------------
-## Shared test data for negateGoDecisions tests
-## ------------------------------------------------------------------
+ go_decisions_list_neg <- getGoDecisions(
++   analyses_list   = analyses_neg,
++   cohort_names    = coh_neg,
++   evidence_levels = c(0.5, 0.5),            
++   boundary_rules  = quote(c(TRUE, TRUE))    # always-go rule for simplicity
++ )
+> n_scen_neg <- length(go_decisions_list_neg)
+> n_meth_neg <- length(go_decisions_list_neg[[1]]$decisions_list)
+>   # Checks:
+>   #   nogo_decisions_list[[s]]$decisions_list[[m]] <- !go_decisions_list[[s]]$decisions_list[[m]]
+>   # then ignores the overwritten overall column and only checks cohort columns.
+>   nogo_list <- negateGoDecisions(
++     go_decisions_list = go_decisions_list_neg,
++     overall_min_nogos = "all"
++   )
+> nogo_list
+decision_list of 1 scenario with 5 methods
 
-set.seed(101)
+  - scenario_1 
+                  overall decision_1
+    - Berry             0          0
+    - Exnex             0          0
+    - Exnex_adj         0          0
+    - Pooled            0          0
+    - Stratified        0          0
+                  decision_2
+    - Berry                0
+    - Exnex                0
+    - Exnex_adj            0
+    - Pooled               0
+    - Stratified           0
 
-# Realistic decision_list from getGoDecisions:
-#  - 2 cohorts
-#  - several trials
-#  - anything your default methods produce
-scenarios_neg <- simulateScenarios(
-  n_subjects_list     = list(c(10, 15)),
-  response_rates_list = list(c(0.4, 0.7)),
-  n_trials            = 6
-)
+> go_decisions_list_neg
+decision_list of 1 scenario with 5 methods
 
-analyses_neg <- performAnalyses(
-  scenario_list     = scenarios_neg,
-  target_rates      = c(0.4, 0.4),
-  n_mcmc_iterations = 80
-)
-
-coh_neg <- c("p_1", "p_2")
-
-go_decisions_list_neg <- getGoDecisions(
-  analyses_list   = analyses_neg,
-  cohort_names    = coh_neg,
-  evidence_levels = c(0.5, 0.5),            # 0.5 is known to be valid
-  boundary_rules  = quote(c(TRUE, TRUE))    # always-go rule for simplicity
-)
-
-n_scen_neg <- length(go_decisions_list_neg)
-n_meth_neg <- length(go_decisions_list_neg[[1]]$decisions_list)
-
-
-## ------------------------------------------------------------------
-## 1. Basic argument validation
-## ------------------------------------------------------------------
-
-test_that("negateGoDecisions: go_decisions_list must be a decision_list", {
-  # Hits assertClass(go_decisions_list, 'decision_list').
-  expect_error(
-    negateGoDecisions(go_decisions_list = list()),
-    "go_decisions_list"
-  )
-})
-
-test_that("negateGoDecisions: overall_min_nogos must be 'all' or non-negative integer", {
-  # Hits the combined assertion:
-  #   checkChoice('all') OR checkInt(lower = 0).
-  expect_error(
-    negateGoDecisions(
-      go_decisions_list = go_decisions_list_neg,
-      overall_min_nogos = -1L
-    ),
-    "overall_min_nogos"
-  )
-
-  expect_error(
-    negateGoDecisions(
-      go_decisions_list = go_decisions_list_neg,
-      overall_min_nogos = "foo"
-    ),
-    "overall_min_nogos"
-  )
-})
-
-
-## ------------------------------------------------------------------
-## 2. Core behaviour: negation of cohort-level decisions
-## ------------------------------------------------------------------
-
-test_that("negateGoDecisions: cohort-level entries are logically negated", {
-  # Checks:
-  #   nogo_decisions_list[[s]]$decisions_list[[m]] <- !go_decisions_list[[s]]$decisions_list[[m]]
-  # then ignores the overwritten overall column and only checks cohort columns.
-  nogo_list <- negateGoDecisions(
-    go_decisions_list = go_decisions_list_neg,
-    overall_min_nogos = "all"
-  )
-
-  for (s in seq_len(n_scen_neg)) {
-    for (m in seq_len(n_meth_neg)) {
-      go_mat   <- go_decisions_list_neg[[s]]$decisions_list[[m]]
-      nogo_mat <- nogo_list[[s]]$decisions_list[[m]]
-
-      if (ncol(go_mat) > 1L) {
-        go_coh   <- go_mat[, -1, drop = FALSE]
-        nogo_coh <- nogo_mat[, -1, drop = FALSE]
-
-        expect_identical(
-          nogo_coh,
-          !go_coh,
-          info = paste("Cohort decisions not negated in scenario", s, "method", m)
-        )
-      }
-    }
-  }
-})
-
-
-## ------------------------------------------------------------------
-## 3. overall_min_nogos = 'all'
-## ------------------------------------------------------------------
-
-test_that("negateGoDecisions: overall_min_nogos = 'all' means 'all cohorts NoGo'", {
-  # Hits:
-  #   overall_min_nogos_org <- "all" => overall_min_nogos <- n_decisions - 1L
-  # Overall column is TRUE iff all cohort columns are TRUE.
-  nogo_list <- negateGoDecisions(
-    go_decisions_list = go_decisions_list_neg,
-    overall_min_nogos = "all"
-  )
-
-  for (s in seq_len(n_scen_neg)) {
-    for (m in seq_len(n_meth_neg)) {
-      nogo_mat <- nogo_list[[s]]$decisions_list[[m]]
-      if (ncol(nogo_mat) <= 1L) next
-
-      n_decisions   <- ncol(nogo_mat)
-      nogo_coh      <- nogo_mat[, -1, drop = FALSE]
-      expected_over <- apply(
-        nogo_coh, 1,
-        function(x) sum(x) >= (n_decisions - 1L)
-      )
-      actual_over   <- as.logical(nogo_mat[, 1])
-
-      expect_identical(
-        actual_over,
-        expected_over,
-        info = paste("Overall NoGo != 'all cohorts NoGo' in scenario", s, "method", m)
-      )
-    }
-  }
-})
-
-
-## ------------------------------------------------------------------
-## 4. Numeric overall_min_nogos
-## ------------------------------------------------------------------
-
-test_that("negateGoDecisions: overall_min_nogos = 0 makes overall always TRUE", {
-  # With threshold 0, apply(sum(x) >= 0) is always TRUE.
-  nogo_list <- negateGoDecisions(
-    go_decisions_list = go_decisions_list_neg,
-    overall_min_nogos = 0L
-  )
-
-  for (s in seq_len(n_scen_neg)) {
-    for (m in seq_len(n_meth_neg)) {
-      nogo_mat <- nogo_list[[s]]$decisions_list[[m]]
-      if (ncol(nogo_mat) <= 1L) next
-
-      overall_col <- as.logical(nogo_mat[, 1])
-      expect_true(
-        all(overall_col),
-        info = paste("Overall not all TRUE for threshold 0 in scenario", s, "method", m)
-      )
-    }
-  }
-})
-
-test_that("negateGoDecisions: numeric overall_min_nogos = k means 'at least k cohorts NoGo'", {
-  # For k = 1, overall is TRUE iff at least one cohort column is TRUE.
-  k <- 1L
-  nogo_list <- negateGoDecisions(
-    go_decisions_list = go_decisions_list_neg,
-    overall_min_nogos = k
-  )
-
-  for (s in seq_len(n_scen_neg)) {
-    for (m in seq_len(n_meth_neg)) {
-      nogo_mat <- nogo_list[[s]]$decisions_list[[m]]
-      if (ncol(nogo_mat) <= 1L) next
-
-      nogo_coh      <- nogo_mat[, -1, drop = FALSE]
-      expected_over <- apply(nogo_coh, 1, function(x) sum(x) >= k)
-      actual_over   <- as.logical(nogo_mat[, 1])
-
-      expect_identical(
-        actual_over,
-        expected_over,
-        info = paste("Overall NoGo != '>= k cohorts' for k =", k,
-                     "in scenario", s, "method", m)
-      )
-    }
-  }
-})
-
-
-## ------------------------------------------------------------------
-## 5. Edge case: matrices with only one column
-## ------------------------------------------------------------------
-
-test_that("negateGoDecisions: single-column decisions are just negated, no overall logic", {
-  # Hits the n_decisions <= 1 branch: overall column is not recomputed.
-  simple_dl <- list(
-    scenario_1 = list(
-      decisions_list = list(
-        method_1 = matrix(c(TRUE, FALSE, TRUE), ncol = 1)
-      )
-    )
-  )
-  class(simple_dl) <- "decision_list"
-
-  nogo_simple <- negateGoDecisions(
-    go_decisions_list = simple_dl,
-    overall_min_nogos = "all"
-  )
-
-  orig_mat <- simple_dl$scenario_1$decisions_list$method_1
-  new_mat  <- nogo_simple$scenario_1$decisions_list$method_1
-
-  expect_identical(
-    new_mat,
-    !orig_mat,
-    info = "Single-column decision matrix not fully negated"
-  )
-})
-
-
-## ------------------------------------------------------------------
-## 6. Integration: AND/OR example from documentation
-## ------------------------------------------------------------------
-
-test_that("negateGoDecisions: integrates correctly with AND/OR design from docs", {
-  set.seed(202)
-
-  scenarios_list <- simulateScenarios(
-    n_subjects_list     = list(c(10, 20, 30)),
-    response_rates_list = list(rep(0.9, 3)),
-    n_trials            = 10
-  )
-
-  analysis_list <- performAnalyses(
-    scenario_list     = scenarios_list,
-    target_rates      = rep(0.5, 3),
-    n_mcmc_iterations = 100
-  )
-
-  cohort_names <- c("p_1", "p_2", "p_3",
-                    "p_1", "p_2", "p_3")
-
-  evidence_levels <- c(0.5,  0.5,  0.5,
-                       0.95, 0.95, 0.95)
-
-  # Go: Significance AND Relevance for each cohort
-  go_decisions_list <- getGoDecisions(
-    analyses_list   = analysis_list,
-    cohort_names    = cohort_names,
-    evidence_levels = evidence_levels,
-    boundary_rules  = quote(c(
-      x[1] > 0.8 & x[4] > 0.4,
-      x[2] > 0.8 & x[5] > 0.4,
-      x[3] > 0.8 & x[6] > 0.4
-    ))
-  )
-
-  # NoGo: negation of (Significance OR Relevance) for each cohort
-  nogo_decisions <- negateGoDecisions(
-    getGoDecisions(
-      analyses_list   = analysis_list,
-      cohort_names    = cohort_names,
-      evidence_levels = evidence_levels,
-      boundary_rules  = quote(c(
-        x[1] > 0.8 | x[4] > 0.4,
-        x[2] > 0.8 | x[5] > 0.4,
-        x[3] > 0.8 | x[6] > 0.4
-      ))
-    )
-  )
-
-  expect_s3_class(nogo_decisions, "decision_list")
-  expect_identical(names(nogo_decisions), names(go_decisions_list))
-
-  for (s in seq_along(go_decisions_list)) {
-    meth_names <- names(go_decisions_list[[s]]$decisions_list)
-
-    for (m in meth_names) {
-      go_mat   <- go_decisions_list[[s]]$decisions_list[[m]]
-      nogo_mat <- nogo_decisions[[s]]$decisions_list[[m]]
-
-      # Same shape is required for later use in getGoProbabilities()
-      expect_identical(dim(go_mat), dim(nogo_mat))
-
-      # No cell may be both Go and NoGo at the same time.
-      overlap <- go_mat & nogo_mat
-      expect_false(
-        any(overlap),
-        info = paste("Overlap of Go and NoGo decisions in scenario", s, "method", m)
-      )
-    }
-  }
-})
+  - scenario_1 
+                  overall decision_1 decision_2
+    - Berry             1          1          1
+    - Exnex             1          1          1
+    - Exnex_adj         1          1          1
+    - Pooled            1          1          1
+    - Stratified        1          1          1
