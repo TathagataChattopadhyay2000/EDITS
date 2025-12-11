@@ -1,80 +1,203 @@
-print.decision_list <- function (x, digits = 2, ...) {
-  
-  n_scenarios    <- length(x)
-  scenario_names <- names(x)
-  
-  n_methods      <- length(x[[1]]$decisions_list)
-  method_names   <- names(x[[1]]$decisions_list)
-  
-  go_probs       <- getGoProbabilities(x)
-  
-  if (!is.null(x[[1]]$decision_rules)) {
-    
-    decision_rules <- x[[1]]$decision_rules
-    
-    out_rules <- lapply(decision_rules$boundary_rules, as.character)
-    
-    for (n in seq_len(n_methods)) {
-      
-      out_rules <- lapply(out_rules, gsub,
-             pattern     = paste0("x\\[", n, "\\]"),
-             replacement = decision_rules$cohort_names[n])
-      
-    }
-    
-    out_rules <- lapply(out_rules, gsub, pattern = "p_", replacement = "P(p_")
-    
-    for (n in seq_len(n_methods)) {
-      
-      out_rules_n <- lapply(strsplit(out_rules[[n]][-1], "&&"), trimws)
-      
-      out_rules_n <- unlist(utils::as.relistable(out_rules_n))
-      
-      out_rules_n[grepl("P\\(", out_rules_n)] <-
-        paste0(out_rules_n[grepl("P\\(", out_rules_n)],
-               ") > ", decision_rules$gamma_levels[[n]])
-      
-      out_rules_n <- utils::relist(out_rules_n)
-      
-      indexAND <- sapply(out_rules_n, length) == 2
-      
-      if (any(indexAND)) {
-        
-        out_rules_n[[which(indexAND)]] <- sapply(out_rules_n[indexAND], function (y) {
-          
-          paste0(y[1], " && ", y[2])
-          
-        })
-        
-      }
-      
-      out_rules[[n]] <- unlist(unclass(out_rules_n))
-      
-    }
-    
+## ------------------------------------------------------------------
+## Shared test data for print.decision_list tests
+## ------------------------------------------------------------------
+
+set.seed(789)
+
+# We build a decision_list with:
+# - 2 scenarios (so we can see pluralisation in the header)
+# - potentially multiple methods (whatever performAnalyses uses)
+scenarios_print <- simulateScenarios(
+  n_subjects_list     = list(c(10, 20), c(10, 20)),
+  response_rates_list = list(c(0.3, 0.5), c(0.4, 0.6)),
+  n_trials            = 5
+)
+
+analyses_print <- performAnalyses(
+  scenario_list     = scenarios_print,
+  target_rates      = c(0.3, 0.3),
+  n_mcmc_iterations = 80
+)
+
+coh_print <- c("p_1", "p_2")
+
+decisions_dl <- getGoDecisions(
+  analyses_list   = analyses_print,
+  cohort_names    = coh_print,
+  evidence_levels = c(0.5, 0.5),
+  boundary_rules  = quote(c(TRUE, TRUE))
+)
+
+# Convenience values for expected header
+n_scenarios  <- length(decisions_dl)
+n_methods    <- length(decisions_dl[[1]]$decisions_list)
+
+
+## ------------------------------------------------------------------
+## 1. Header line: scenario/method counts, singular/plural
+## ------------------------------------------------------------------
+
+test_that("print.decision_list: header shows correct number of scenarios and methods", {
+  # This hits the initial cat() that prints:
+  #   "decision_list of <N> scenario(s) with <M> method(s)"
+  # We build the exact expected phrase based on our fixture.
+  header_pattern <- sprintf(
+    "decision_list of %d scenario%s with %d method%s",
+    n_scenarios,
+    ifelse(n_scenarios == 1, "", "s"),
+    n_methods,
+    ifelse(n_methods == 1, "", "s")
+  )
+
+  expect_output(
+    print(decisions_dl),
+    header_pattern
+  )
+})
+
+
+## ------------------------------------------------------------------
+## 2. Scenario sections: each scenario name is printed
+## ------------------------------------------------------------------
+
+test_that("print.decision_list: prints a section for each scenario", {
+  # After the header, the function prints:
+  #   "  - <scenario_name>"
+  # for each scenario in x.
+  scen_names <- names(decisions_dl)
+  expect_true(length(scen_names) >= 1)
+
+  output <- capture.output(print(decisions_dl))
+
+  # Every scenario name should appear at least once in the output.
+  for (nm in scen_names) {
+    expect_true(
+      any(grepl(paste0("\\b", nm, "\\b"), output)),
+      info = paste("Scenario name", nm, "not found in printed output")
+    )
   }
-  
-  cat("decision_list of ", n_scenarios, " scenario", ifelse(n_scenarios == 1, "", "s"),
-      " with ", n_methods, " method", ifelse(n_methods == 1, "", "s"),"\n\n", sep = "")
-  
-  for (n in seq_along(scenario_names)) {
-    
-    mat_out <- do.call(rbind, lapply(go_probs, function (y) y[[n]]))
-    
-    rownames(mat_out) <-  paste0(
-      "    - ",
-      paste0(
-        firstUpper(method_names),
-        sapply(method_names, function (y) {
-          getBlankString(max(nchar(method_names)) - nchar(y) + 1)
-        }))
-      )
-    
-    cat("  -", scenario_names[n], "\n")
-    print(round(mat_out, digits = digits))
-    
-    cat("\n")
-    
+})
+
+
+## ------------------------------------------------------------------
+## 3. Method labels: each method appears in the row labels
+## ------------------------------------------------------------------
+
+test_that("print.decision_list: each method name appears in printed matrix rows", {
+  # print.decision_list builds rownames from method_names using firstUpper() and some padding.
+  # We don't check the exact spacing, but we do require that the method names are visible.
+  method_names <- names(decisions_dl[[1]]$decisions_list)
+  expect_true(length(method_names) >= 1)
+
+  output <- capture.output(print(decisions_dl))
+
+  # Each method name (case-insensitive) should appear at least once.
+  for (m in method_names) {
+    # firstUpper(m) is what's actually used, so we mimic that in the search
+    m_upper <- paste0(toupper(substr(m, 1, 1)), substr(m, 2, nchar(m)))
+    expect_true(
+      any(grepl(m_upper, output, fixed = TRUE)),
+      info = paste("Method label", m_upper, "not found in printed output")
+    )
   }
-  
-}
+})
+
+
+## ------------------------------------------------------------------
+## 4. Digits argument: different digits should still print without error
+## ------------------------------------------------------------------
+
+test_that("print.decision_list: digits argument is accepted and does not error", {
+  # This hits the round(mat_out, digits = digits) call.
+  # We don't try to parse exact numeric formatting; we just assert that
+  # different digits values are accepted and produce some usable output.
+  expect_output(
+    print(decisions_dl, digits = 1),
+    "decision_list of"
+  )
+
+  expect_output(
+    print(decisions_dl, digits = 4),
+    "decision_list of"
+  )
+})
+
+
+## ------------------------------------------------------------------
+## 5. decision_rules branch: print works when decision_rules are present
+## ------------------------------------------------------------------
+
+test_that("print.decision_list: handles non-NULL decision_rules without error", {
+  # This test specifically exercises the big 'if (!is.null(x[[1]]$decision_rules))' block:
+  # - It rewrites boundary_rules expressions
+  # - Uses decision_rules$cohort_names and decision_rules$gamma_levels[[n]]
+  #
+  # Any bug in that transformation would show up as an error here.
+  expect_output(
+    print(decisions_dl),
+    "decision_list of"
+  )
+})
+
+
+## ------------------------------------------------------------------
+## 6. decision_rules branch: print also works when decision_rules are NULL
+## ------------------------------------------------------------------
+
+test_that("print.decision_list: works when decision_rules are NULL", {
+  # Here we remove decision_rules from the decision_list to ensure
+  # the function safely skips the formatting block and still prints the summary.
+  dl_no_rules <- decisions_dl
+  for (i in seq_along(dl_no_rules)) {
+    dl_no_rules[[i]]$decision_rules <- NULL
+  }
+
+  # Expect the same kind of header, and no error.
+  header_pattern <- sprintf(
+    "decision_list of %d scenario%s with %d method%s",
+    n_scenarios,
+    ifelse(n_scenarios == 1, "", "s"),
+    n_methods,
+    ifelse(n_methods == 1, "", "s")
+  )
+
+  expect_output(
+    print(dl_no_rules),
+    header_pattern
+  )
+})
+
+
+## ------------------------------------------------------------------
+## 7. Multi-method aggregation: rows for each method from getGoProbabilities
+## ------------------------------------------------------------------
+
+test_that("print.decision_list: for multiple methods, one row per method is printed", {
+  # This test uses:
+  #   go_probs <- getGoProbabilities(x)
+  #   mat_out <- do.call(rbind, lapply(go_probs, function(y) y[[n]]))
+  #
+  # For M methods and Go-only probabilities, mat_out should have M rows.
+  # We can't read mat_out directly, but we can reconstruct it ourselves and compare.
+  go_probs <- getGoProbabilities(decisions_dl)
+
+  # For scenario 1, rbind all methods exactly like print.decision_list does.
+  scenario_index <- 1L
+  mat_ref <- do.call(
+    rbind,
+    lapply(go_probs, function(y) y[[scenario_index]])
+  )
+
+  # Now capture the printed matrix for scenario_1 and count how many "    - " lines appear,
+  # which correspond to rows (one per method).
+  output <- capture.output(print(decisions_dl))
+
+  method_label_lines <- grep("^    - ", output, value = TRUE)
+
+  # There is one label line per method row in mat_out.
+  expect_equal(
+    length(method_label_lines),
+    nrow(mat_ref),
+    info = "Number of printed method rows does not match number of methods"
+  )
+})
