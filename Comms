@@ -1,53 +1,108 @@
-negateGoDecisions <- function (
-  
-  go_decisions_list,
-  overall_min_nogos = "all"
-  
-) {
-  
-  checkmate::assertClass(go_decisions_list, "decision_list", .var.name = "go_decisions_list")
-  
-  checkmate::assert(
-    checkmate::checkChoice(overall_min_nogos, choices = "all"),
-    checkmate::checkInt(overall_min_nogos, lower = 0),
-    combine = "or",
-    .var.name = "overall_min_nogos"
-  )
-  
-  ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
-  
-  overall_min_nogos_org <- overall_min_nogos
-  nogo_decisions_list   <- go_decisions_list
-  
-  for (s in seq_along(go_decisions_list)) {
-    
-    for (m in seq_along(go_decisions_list[[s]]$decisions_list)) {
-      
-      ## negate decisions
-      nogo_decisions_list[[s]]$decisions_list[[m]] <-
-        !go_decisions_list[[s]]$decisions_list[[m]]
-      
-      ## check for overall decisions
-      n_decisions <- ncol(nogo_decisions_list[[s]]$decisions_list[[m]])
-      
-      if (n_decisions > 1) {
-        
-        if (identical(overall_min_nogos_org, "all")) {
-          
-          overall_min_nogos <- n_decisions - 1L
-          
-        }
-        
-        nogo_decisions_list[[s]]$decisions_list[[m]][, 1] <-
-          apply(nogo_decisions_list[[s]]$decisions_list[[m]][, -1], 1,
-                function(x) sum(x) >= overall_min_nogos)
-        
-      }
-      
-    }
-    
-  }
-  
-  return (nogo_decisions_list)
-  
-}
+
+negateGoDecisions {bhmbasket}	(preview) R Documentation
+negateGoDecisions
+Description
+Negates the go decisions derived with getGoDecisions.
+
+Usage
+negateGoDecisions(go_decisions_list, overall_min_nogos = "all")
+Arguments
+go_decisions_list	
+An object of class decision_list, as returned by getGoDecisions
+
+overall_min_nogos	
+Either a non-negative integer or the string all for the minimum number of cohort-level NoGo decisions required for an overall NoGo decision, Default: all
+
+Details
+This function is intended for implementing decision rules with a consider zone as e.g. proposed in "Bayesian design of proof-of-concept trials" by Fisch et al. (2015). This approach involves two criteria, Significance and Relevance.
+
+Significance: high evidence that the treatment effect is greater than some smaller value (e.g. treatment effect under H0)
+
+Relevance: moderate evidence that the treatment effect is greater than some larger value (e.g. treatment effect under a certain alternative)
+
+The decision for a cohort is then taken as follows:
+
+Go decision: Significance and Relevance
+
+Consider decision: either Significance, or Relevance, but not both
+
+NoGo decision: no Significance and no Relevance
+
+In the example below, the following criteria for are implemented for each of the three cohorts:
+
+Significance: 
+P
+(
+p
+j
+>
+0.4
+)
+>
+0.95
+P(p 
+j
+​
+ >0.4)>0.95
+
+Relevance: 
+P
+(
+p
+j
+>
+0.8
+)
+>
+0.5
+P(p 
+j
+​
+ >0.8)>0.5
+
+Value
+A list of NoGo decisions of class decision_list
+
+Author(s)
+Stephan Wojciekowski
+
+References
+Fisch, Roland, et al. "Bayesian design of proof-of-concept trials." Therapeutic innovation & regulatory science 49.1 (2015): 155-162.
+
+See Also
+getGoDecisions
+
+Examples
+Run examples
+
+scenarios_list <- simulateScenarios(
+  n_subjects_list     = list(c(10, 20, 30)),
+  response_rates_list = list(rep(0.9, 3)),
+  n_trials            = 10)
+
+analysis_list <- performAnalyses(
+  scenario_list      = scenarios_list,
+  target_rates       = rep(0.5, 3),
+  n_mcmc_iterations  = 100)
+
+go_decisions_list <- getGoDecisions(
+  analyses_list   = analysis_list,
+  cohort_names    = c("p_1", "p_2", "p_3",
+                      "p_1", "p_2", "p_3"),
+  evidence_levels = c(0.5,  0.5,  0.5,
+                      0.95, 0.95, 0.95),
+  boundary_rules  = quote(c(x[1] > 0.8 & x[4] > 0.4,
+                            x[2] > 0.8 & x[5] > 0.4,
+                            x[3] > 0.8 & x[6] > 0.4)))
+
+nogo_decisions <- negateGoDecisions(getGoDecisions(
+  analyses_list   = analysis_list,
+  cohort_names    = c("p_1", "p_2", "p_3",
+                      "p_1", "p_2", "p_3"),
+  evidence_levels = c(0.5,  0.5,  0.5,
+                      0.95, 0.95, 0.95),
+  boundary_rules  = quote(c(x[1] > 0.8 | x[4] > 0.4,
+                            x[2] > 0.8 | x[5] > 0.4,
+                            x[3] > 0.8 | x[6] > 0.4))))
+
+getGoProbabilities(go_decisions_list, nogo_decisions)
