@@ -1,79 +1,251 @@
-getGoProbabilities <- function (
-  
-  go_decisions_list,
-  nogo_decisions_list = NULL
-  
-) {
-  
-  checkmate::assertClass(go_decisions_list, "decision_list", .var.name = "go_decisions_list")
-  
-  checkmate::assertClass(nogo_decisions_list, "decision_list", null.ok = TRUE,)
-  
-  # Validate that both decision lists have the same dimensions if nogo_decisions_list is not NULL
-  if (!is.null(nogo_decisions_list)) {
-    checkmate::assertTRUE(
-      identical(
-        dim(go_decisions_list[[1]]$decisions_list[[1]]),
-        dim(nogo_decisions_list[[1]]$decisions_list[[1]])
-      ),
-      .var.name = "decision_list dimensions"
+## ------------------------------------------------------------------
+## Shared test data for getGoProbabilities tests
+## ------------------------------------------------------------------
+
+set.seed(456)
+
+# We simulate a simple 2-cohort scenario and run getGoDecisions() twice:
+#   - once for Go rules
+#   - once for NoGo rules
+# These two decision_list objects are then reused across all tests.
+
+scenarios_list_prob <- simulateScenarios(
+  n_subjects_list     = list(c(10, 20)),
+  response_rates_list = list(rep(0.9, 2)),
+  n_trials            = 10
+)
+
+analyses_list_prob <- performAnalyses(
+  scenario_list     = scenarios_list_prob,
+  target_rates      = rep(0.5, 2),
+  n_mcmc_iterations = 100
+)
+
+prob_cohorts <- c("p_1", "p_2")
+
+# Use only 0.5 as evidence_level because it is guaranteed to be valid
+go_decisions_list <- getGoDecisions(
+  analyses_list   = analyses_list_prob,
+  cohort_names    = prob_cohorts,
+  evidence_levels = c(0.5, 0.5),
+  # Simple "go" rule: require fairly high posterior to go
+  boundary_rules  = quote(c(x[1] > 0.8, x[2] > 0.6))
+)
+
+nogo_decisions_list <- getGoDecisions(
+  analyses_list   = analyses_list_prob,
+  cohort_names    = prob_cohorts,
+  evidence_levels = c(0.5, 0.5),
+  # Simple "nogo" rule: require very low posterior to nogo
+  boundary_rules  = quote(c(x[1] < 0.5, x[2] < 0.3))
+)
+
+
+## ------------------------------------------------------------------
+## 1. Basic argument validation
+## ------------------------------------------------------------------
+
+test_that("getGoProbabilities: errors if go_decisions_list is not a decision_list", {
+  # This hits checkmate::assertClass(go_decisions_list, "decision_list").
+  # Passing a plain list is invalid and should trigger an informative error.
+  expect_error(
+    getGoProbabilities(go_decisions_list = list()),
+    "go_decisions_list"
+  )
+})
+
+test_that("getGoProbabilities: errors if nogo_decisions_list has wrong class", {
+  # This hits checkmate::assertClass(nogo_decisions_list, ..., null.ok = TRUE).
+  # go_decisions_list is OK, but nogo_decisions_list is a raw list -> error.
+  expect_error(
+    getGoProbabilities(
+      go_decisions_list   = go_decisions_list,
+      nogo_decisions_list = list()
+    ),
+    "decision_list"
+  )
+})
+
+test_that("getGoProbabilities: errors if Go and NoGo matrices have different dimensions", {
+  # This targets the explicit dimension check:
+  #   identical(dim(go_decisions_list[[1]]$decisions_list[[1]]),
+  #             dim(nogo_decisions_list[[1]]$decisions_list[[1]]))
+  # We deliberately break the dimensions of the first NoGo matrix.
+  bad_nogo <- nogo_decisions_list
+  bad_nogo[[1]]$decisions_list[[1]] <-
+    bad_nogo[[1]]$decisions_list[[1]][, -1, drop = FALSE]  # drop one column
+
+  expect_error(
+    getGoProbabilities(
+      go_decisions_list   = go_decisions_list,
+      nogo_decisions_list = bad_nogo
+    ),
+    "decision_list dimensions"
+  )
+})
+
+
+## ------------------------------------------------------------------
+## 2. Go-only case: basic structure and semantics
+## ------------------------------------------------------------------
+
+test_that("getGoProbabilities: Go-only call returns list-of-lists of matrices", {
+  # This exercises the main loop without nogo_decisions_list:
+  #   - only "Go" row is created
+  #   - listPerMethod is applied at the end
+  probs <- getGoProbabilities(go_decisions_list)
+
+  # Top-level: one element per method (after listPerMethod)
+  expect_type(probs, "list")
+  expect_true(all(sapply(probs, is.list)))
+
+  # Inspect first method, first scenario
+  first_method   <- names(probs)[1]
+  first_scenario <- names(probs[[first_method]])[1]
+  mat            <- probs[[first_method]][[first_scenario]]
+
+  # In Go-only mode, we expect a single "Go" row and ≥1 column (overall + cohorts)
+  expect_true(is.matrix(mat))
+  expect_identical(rownames(mat), "Go")
+  expect_true(ncol(mat) >= 1)
+})
+
+test_that("getGoProbabilities: Go row equals column means of go_decisions", {
+  # This test directly checks the core numeric logic:
+  # decisions_matrix <- t(as.matrix(colMeans(go_decisions)))
+  probs <- getGoProbabilities(go_decisions_list)
+
+  # Method and scenario names derived from the go_decisions_list structure
+  method_names   <- names(go_decisions_list[[1]]$decisions_list)
+  scenario_names <- names(go_decisions_list)
+
+  for (m in method_names) {
+    for (s in scenario_names) {
+      mat_prob <- probs[[m]][[s]]
+      go_mat   <- go_decisions_list[[s]]$decisions_list[[m]]
+
+      # Row "Go" should match the column means of the original go_decisions matrix
+      expected <- colMeans(go_mat)
+      expect_equal(
+        mat_prob["Go", ],
+        expected,
+        tolerance = 1e-8,
+        info = paste("Mismatch in method", m, "scenario", s)
+      )
+    }
+  }
+})
+
+
+## ------------------------------------------------------------------
+## 3. Go + NoGo case: structure and probability semantics
+## ------------------------------------------------------------------
+
+test_that("getGoProbabilities: Go + NoGo returns Go/Consider/NoGo rows", {
+  # This exercises the branch where nogo_decisions_list is not NULL:
+  #   - "Go" and "NoGo" based on colMeans
+  #   - "Consider" computed as 1 - p(Go) - p(NoGo)
+  probs <- getGoProbabilities(
+    go_decisions_list   = go_decisions_list,
+    nogo_decisions_list = nogo_decisions_list
+  )
+
+  first_method   <- names(probs)[1]
+  first_scenario <- names(probs[[first_method]])[1]
+  mat            <- probs[[first_method]][[first_scenario]]
+
+  # With NoGo decisions, we expect exactly three rows in this order.
+  expect_true(is.matrix(mat))
+  expect_identical(rownames(mat), c("Go", "Consider", "NoGo"))
+  expect_true(ncol(mat) >= 1)
+})
+
+test_that("getGoProbabilities: Go and NoGo rows match colMeans of input decisions", {
+  # This checks that:
+  #   - "Go" row = colMeans(go_decisions)
+  #   - "NoGo" row = colMeans(nogo_decisions)
+  probs <- getGoProbabilities(
+    go_decisions_list   = go_decisions_list,
+    nogo_decisions_list = nogo_decisions_list
+  )
+
+  method_names   <- names(go_decisions_list[[1]]$decisions_list)
+  scenario_names <- names(go_decisions_list)
+
+  for (m in method_names) {
+    for (s in scenario_names) {
+      mat_prob <- probs[[m]][[s]]
+
+      go_mat   <- go_decisions_list[[s]]$decisions_list[[m]]
+      nogo_mat <- nogo_decisions_list[[s]]$decisions_list[[m]]
+
+      expected_go   <- colMeans(go_mat)
+      expected_nogo <- colMeans(nogo_mat)
+
+      expect_equal(
+        mat_prob["Go", ],
+        expected_go,
+        tolerance = 1e-8,
+        info = paste("Go row mismatch in method", m, "scenario", s)
+      )
+
+      expect_equal(
+        mat_prob["NoGo", ],
+        expected_nogo,
+        tolerance = 1e-8,
+        info = paste("NoGo row mismatch in method", m, "scenario", s)
+      )
+    }
+  }
+})
+
+test_that("getGoProbabilities: columns sum to 1 when NoGo decisions are provided", {
+  # This checks the probability normalization:
+  #   Consider = round(1 - p(Go) - p(NoGo), 9)
+  # so row sums per column should be ~1.
+  probs <- getGoProbabilities(
+    go_decisions_list   = go_decisions_list,
+    nogo_decisions_list = nogo_decisions_list
+  )
+
+  first_method <- names(probs)[1]
+  for (scen_name in names(probs[[first_method]])) {
+    mat <- probs[[first_method]][[scen_name]]
+
+    col_sums <- colSums(mat)
+    expect_true(
+      all(abs(col_sums - 1) < 1e-6),
+      info = paste("Column sums not close to 1 for scenario", scen_name)
     )
   }
-  
-  ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
-  
-  go_probs_per_scenario <- vector(mode = "list",
-                                  length = length(go_decisions_list))
-  names(go_probs_per_scenario) <- names(go_decisions_list)
-  
-  for (s in seq_along(go_probs_per_scenario)) {
-    
-    method_names <- names(go_decisions_list[[s]]$decisions_list)
-    
-    go_probs_per_method_list <- vector(mode = "list",
-                                       length = length(method_names))
-    names(go_probs_per_method_list) <- method_names
-    
-    for (n in seq_along(method_names)) {
-      
-      go_decisions     <- go_decisions_list[[s]]$decisions_list[[n]]
-      decisions_matrix <- t(as.matrix(colMeans(go_decisions)))
-      row.names(decisions_matrix) <- "Go"
-      
-      if (!is.null(nogo_decisions_list)) {
-        
-        nogo_decisions <- nogo_decisions_list[[s]]$decisions_list[[n]]
-        nogo_probs     <- t(as.matrix(colMeans(nogo_decisions)))
-        consider_probs <- round(1 - nogo_probs - decisions_matrix, 9)
-        
-        # calculate consider decision probabilities directly:
-        # consider_decisions <- sapply(2:5, function (i) {
-        #   !apply(cbind(nogo_decisions[, i], go_decisions[, i]), 1, any)
-        # })
-        # consider_decisions <- cbind(apply(consider_decisions, 1, any) &
-        #                               !go_decisions[, 1],
-        #                             consider_decisions)
-        # consider_probs     <- t(as.matrix(colMeans(consider_decisions)))
-        
-        if (!isTRUE(all.equal(sum(go_decisions * nogo_decisions), 0)))
-          stop (paste("There are cohorts for which both go and nogo decisions",
-                      "are TRUE. Please revise your decision rules."))
-        
-        decisions_matrix <- rbind(decisions_matrix, consider_probs, nogo_probs)
-        row.names(decisions_matrix) <- c("Go", "Consider", "NoGo")
-        
-      }
-      
-      go_probs_per_method_list[[n]] <- decisions_matrix
-      
-    }
-    
-    go_probs_per_scenario[[s]] <- go_probs_per_method_list
-    
-  }
-  
-  go_probs_per_method <- listPerMethod(go_probs_per_scenario)
-  
-  return (go_probs_per_method)
-  
-}
+})
+
+
+## ------------------------------------------------------------------
+## 4. Overlap check: Go and NoGo cannot both be TRUE for the same cell
+## ------------------------------------------------------------------
+
+test_that("getGoProbabilities: errors if any decision is both Go and NoGo", {
+  # This directly hits:
+  #   if (!isTRUE(all.equal(sum(go_decisions * nogo_decisions), 0))) stop(...)
+  #
+  # We artificially modify one scenario/method so that at least one entry
+  # is TRUE in both go_decisions and nogo_decisions, forcing the error.
+  overlap_go   <- go_decisions_list
+  overlap_nogo <- nogo_decisions_list
+
+  # Pick scenario_1, first method, first column (arbitrary but consistent).
+  scen1_name <- names(overlap_go)[1]
+  meth1_name <- names(overlap_go[[scen1_name]]$decisions_list)[1]
+
+  overlap_go[[scen1_name]]$decisions_list[[meth1_name]][1, 1]   <- TRUE
+  overlap_nogo[[scen1_name]]$decisions_list[[meth1_name]][1, 1] <- TRUE
+
+  expect_error(
+    getGoProbabilities(
+      go_decisions_list   = overlap_go,
+      nogo_decisions_list = overlap_nogo
+    ),
+    "both go and nogo decisions"
+  )
+})
