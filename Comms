@@ -1,9 +1,34 @@
-── Failure: print.decision_list: for multiple methods, one row per method is printed ────────────────
-length(method_label_lines) not equal to nrow(mat_ref).
-1/1 mismatches
-[1] 10 - 5 == 5
-Number of printed method rows does not match number of methods
+test_that("print.decision_list: for multiple methods, one row per method is printed per scenario", {
+  # This test uses:
+  #   go_probs <- getGoProbabilities(x)
+  #   mat_out <- do.call(rbind, lapply(go_probs, function(y) y[[n]]))
+  #
+  # For each scenario, mat_out has one row per method.
+  # print.decision_list loops over *all scenarios* and prints that block each time,
+  # so across the full output we expect:
+  #   total method label lines = n_scenarios * n_methods.
+  go_probs <- getGoProbabilities(decisions_dl)
 
-Error:
-! Test failed
-Run `rlang::last_trace()` to see where the error occurred.
+  # For scenario 1, reconstruct mat_out as in print.decision_list
+  scenario_index <- 1L
+  mat_ref <- do.call(
+    rbind,
+    lapply(go_probs, function(y) y[[scenario_index]])
+  )
+
+  output <- capture.output(print(decisions_dl))
+
+  # Lines starting with "    - " are the method label rows we created as rownames.
+  method_label_lines <- grep("^    - ", output, value = TRUE)
+
+  expected_total_rows <- n_scenarios * nrow(mat_ref)
+
+  expect_equal(
+    length(method_label_lines),
+    expected_total_rows,
+    info = paste(
+      "Number of printed method label lines (", length(method_label_lines),
+      ") does not match expected total rows (", expected_total_rows, ")"
+    )
+  )
+})
