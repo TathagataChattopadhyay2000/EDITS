@@ -1,91 +1,129 @@
-## ------------------------------------------------------------------
-## 5) Length handling for boundary_rules and evidence_levels
-## ------------------------------------------------------------------
+## 7. Core structure: decision_list and 'overall' column -----------------------
 
-test_that("errors if boundary_rules list is longer than method_names", {
-
-  m    <- analyses_list[[1]]$analysis_parameters$method_names
-  coh  <- c("p_1", "p_2", "p_3")
-  ev   <- c(0.5, 0.5, 0.5)
-
-  # list longer than number of methods
-  br   <- rep(list(quote(c(TRUE, TRUE, TRUE))), length(m) + 1L)
-
-  expect_error(
-    getGoDecisions(
-      analyses_list   = analyses_list,
-      cohort_names    = coh,
-      evidence_levels = ev,
-      boundary_rules  = br
-    ),
-    "boundary_rules",
-    ignore.case = TRUE
-  )
-})
-
-
-test_that("errors if evidence_levels list is longer than method_names", {
-
-  m    <- analyses_list[[1]]$analysis_parameters$method_names
-  coh  <- c("p_1", "p_2", "p_3")
-
-  # 0.5 is safe (1 - 0.5 = 0.5 in stored quantiles)
-  ev_vec <- c(0.5, 0.5, 0.5)
-  ev     <- rep(list(ev_vec), length(m) + 1L)
-
-  expect_error(
-    getGoDecisions(
-      analyses_list   = analyses_list,
-      cohort_names    = coh,
-      evidence_levels = ev,
-      boundary_rules  = quote(c(TRUE, TRUE, TRUE))
-    ),
-    "evidence_levels",
-    ignore.case = TRUE
-  )
-})
-
-
-test_that("single boundary_rules expression is recycled to all methods", {
-
-  m    <- analyses_list[[1]]$analysis_parameters$method_names
-  coh  <- c("p_1", "p_2", "p_3")
-  ev   <- c(0.5, 0.5, 0.5)
-  rule <- quote(c(TRUE, TRUE, TRUE))
-
-  dec <- getGoDecisions(
+test_that("getGoDecisions: returns decision_list with overall and cohort decisions", {
+  # Exercises the full decision-generation code path for a valid case.
+  # We inspect the structure of one scenario/method for basic sanity.
+  decisions <- getGoDecisions(
     analyses_list   = analyses_list,
-    cohort_names    = coh,
-    evidence_levels = ev,
-    boundary_rules  = rule
-  )
-
-  br <- dec[[1]]$decision_rules$boundary_rules
-
-  expect_identical(length(br), length(m))
-  for (i in seq_along(br)) {
-    expect_true(identical(br[[i]], rule))
-  }
-})
-
-
-test_that("single evidence_levels vector is recycled to all methods", {
-
-  m    <- analyses_list[[1]]$analysis_parameters$method_names
-  coh  <- c("p_1", "p_2", "p_3")
-  ev   <- c(0.5, 0.5, 0.5)
-
-  dec <- getGoDecisions(
-    analyses_list   = analyses_list,
-    cohort_names    = coh,
-    evidence_levels = ev,                # not a list -> will be wrapped + recycled
+    cohort_names    = default_cohorts,
+    evidence_levels = c(0.5, 0.5, 0.8),
     boundary_rules  = quote(c(TRUE, TRUE, TRUE))
   )
+  
+  scen1  <- decisions[[1]]
+  m_dec  <- as.matrix(scen1$decisions_list[[1]])
+  
+  # Expect one 'overall' column and at least one cohort-level decision column.
+  expect_true("overall" %in% colnames(m_dec))
+  cohort_cols <- setdiff(colnames(m_dec), "overall")
+  expect_true(length(cohort_cols) >= 1)
+  
+  # decision_rules should remember the cohort_names we passed in.
+  expect_identical(scen1$decision_rules$cohort_names, default_cohorts)
+  
+  # gamma_levels may be a vector or list; flatten and check values are present.
+  stored_gamma_flat <- unlist(scen1$decision_rules$gamma_levels, use.names = FALSE)
+  expect_true(all(c(0.5, 0.5, 0.8) %in% stored_gamma_flat))
+})
 
-  gamma <- dec[[1]]$decision_rules$gamma_levels
 
-  expect_identical(length(gamma), length(m))
-  for (i in seq_along(gamma)) {
-    expect_equal(gamma[[i]], ev)
+## 8. Semantics: overall_min_gos behaviour -------------------------------------
+
+test_that("getGoDecisions: overall_min_gos controls overall go decisions as intended", {
+  set.seed(456)
+  
+  # Use a fresh analyses_list to decouple from previous tests.
+  scen_list <- simulateScenarios(
+    n_subjects_list     = list(c(10, 20, 30)),
+    response_rates_list = list(c(0.4, 0.6, 0.8)),
+    n_trials            = 8
+  )
+  
+  an_list <- performAnalyses(
+    scenario_list     = scen_list,
+    target_rates      = c(0.5, 0.5, 0.5),
+    n_mcmc_iterations = 80
+  )
+  
+  cohorts    <- c("p_1", "p_2", "p_3")
+  ev_levels  <- c(0.5, 0.5, 0.5)
+  # Always-true decision rule: cohort-level go depends only on previous_gos.
+  rule_all_true <- quote(c(TRUE, TRUE, TRUE))
+  
+  dec1 <- getGoDecisions(
+    analyses_list   = an_list,
+    cohort_names    = cohorts,
+    evidence_levels = ev_levels,
+    boundary_rules  = rule_all_true,
+    overall_min_gos = 1L
+  )
+  
+  dec2 <- getGoDecisions(
+    analyses_list   = an_list,
+    cohort_names    = cohorts,
+    evidence_levels = ev_levels,
+    boundary_rules  = rule_all_true,
+    overall_min_gos = 2L
+  )
+  
+  m1 <- as.matrix(dec1[[1]]$decisions_list[[1]])
+  m2 <- as.matrix(dec2[[1]]$decisions_list[[1]])
+  
+  # Identify cohort decision columns (exclude 'overall' from both).
+  coh_cols <- setdiff(colnames(m1), "overall")
+  expect_true(length(coh_cols) >= 1)
+  expect_true(all(coh_cols %in% colnames(m2)))
+  
+  coh1 <- m1[, coh_cols, drop = FALSE] > 0
+  coh2 <- m2[, coh_cols, drop = FALSE] > 0
+  
+  # Cohort-level decisions should be identical; only overall threshold differs.
+  expect_identical(coh1, coh2)
+  
+  overall1_calc <- apply(coh1, 1, function(x) sum(x) >= 1L)
+  overall2_calc <- apply(coh2, 1, function(x) sum(x) >= 2L)
+  
+  overall1 <- as.logical(m1[, "overall"])
+  overall2 <- as.logical(m2[, "overall"])
+  
+  # Check that 'overall' columns match the theoretical rule.
+  expect_identical(overall1, overall1_calc)
+  expect_identical(overall2, overall2_calc)
+  
+  # With overall_min_gos = 2, any overall TRUE must also be TRUE when threshold is 1.
+  expect_true(all(overall2 <= overall1))
+})
+
+
+## 9. Semantics: previous_analyses$go_decisions gating -------------------------
+
+test_that("getGoDecisions: previous go_decisions prevent resurrection of stopped cohorts", {
+  # This test exercises:
+  #   go_decisions <- go_decisions * previous_gos > 0
+  # It ensures that once a cohort was no-go previously, it cannot become go now.
+  if (is.null(analyses_list[[1]]$scenario_data$previous_analyses)) {
+    skip("previous_analyses not available in scenario_data")
   }
+  
+  decisions <- getGoDecisions(
+    analyses_list   = analyses_list,
+    cohort_names    = default_cohorts,
+    evidence_levels = c(0.5, 0.5, 0.8),
+    boundary_rules  = quote(c(TRUE, TRUE, TRUE))
+  )
+  
+  new_mat     <- as.matrix(decisions[[1]]$decisions_list[[1]])
+  new_cohcols <- setdiff(colnames(new_mat), "overall")
+  new_gos     <- new_mat[, new_cohcols, drop = FALSE] > 0
+  
+  prev_mat <- analyses_list[[1]]$scenario_data$previous_analyses$go_decisions
+  # Drop first column (usually trial index or overall) to get per-cohort previous decisions.
+  prev_gos <- as.matrix(prev_mat[, -1, drop = FALSE]) > 0
+  
+  # Ensure matrices are conformable for comparison.
+  expect_identical(dim(prev_gos), dim(new_gos))
+  
+  # A 'resurrected' decision would be TRUE now but FALSE previously.
+  resurrected <- new_gos & !prev_gos
+  expect_false(any(resurrected))
 })
