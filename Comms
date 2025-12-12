@@ -1,42 +1,199 @@
- go_decisions_list_neg <- getGoDecisions(
-+   analyses_list   = analyses_neg,
-+   cohort_names    = coh_neg,
-+   evidence_levels = c(0.5, 0.5),            
-+   boundary_rules  = quote(c(TRUE, TRUE))    # always-go rule for simplicity
-+ )
-> n_scen_neg <- length(go_decisions_list_neg)
-> n_meth_neg <- length(go_decisions_list_neg[[1]]$decisions_list)
->   # Checks:
->   #   nogo_decisions_list[[s]]$decisions_list[[m]] <- !go_decisions_list[[s]]$decisions_list[[m]]
->   # then ignores the overwritten overall column and only checks cohort columns.
->   nogo_list <- negateGoDecisions(
-+     go_decisions_list = go_decisions_list_neg,
-+     overall_min_nogos = "all"
-+   )
-> nogo_list
-decision_list of 1 scenario with 5 methods
+# Tests for getEstimates -------------------------------------------------------
 
-  - scenario_1 
-                  overall decision_1
-    - Berry             0          0
-    - Exnex             0          0
-    - Exnex_adj         0          0
-    - Pooled            0          0
-    - Stratified        0          0
-                  decision_2
-    - Berry                0
-    - Exnex                0
-    - Exnex_adj            0
-    - Pooled               0
-    - Stratified           0
+scenarios_list <- simulateScenarios(
+    n_subjects_list     = list(c(10, 20, 30)),
+    response_rates_list = list(c(0.1, 0.2, 3)),
+    n_trials            = 10
+  )
+  
+analyses_list <- performAnalyses(
+    scenario_list       = scenarios_list,
+    target_rates        = c(0.5, 0.5, 0.5),
+    calc_differences    = matrix(c(3, 2, 2, 1), ncol = 2),
+    n_mcmc_iterations   = 100
+  )
+  
+outcome <- createTrial(
+    n_subjects          = c(10, 20, 30),
+    n_responders        = c(1, 2, 3)
+  )
+  
+outcome_analysis <- performAnalyses(
+    scenario_list       = outcome,
+    target_rates        = c(0.5, 0.5, 0.5),
+    n_mcmc_iterations   = 100
+  )
 
-> go_decisions_list_neg
-decision_list of 1 scenario with 5 methods
+#1
 
-  - scenario_1 
-                  overall decision_1 decision_2
-    - Berry             1          1          1
-    - Exnex             1          1          1
-    - Exnex_adj         1          1          1
-    - Pooled            1          1          1
-    - Stratified        1          1          1
+test_that("getEstimates works for simulated scenarios and returns sensible structure", {
+  
+  res <- getEstimates(analyses_list)
+  
+  # Result should be a list; inner-most elements must be matrices
+  expect_type(res, "list")
+  expect_true(length(res) > 0)
+  
+  # Get first matrix, regardless of whether listPerMethod returns list-of-lists or list-of-matrices
+  first_obj <- res[[1]]
+  if (is.list(first_obj)) {
+    first_mat <- first_obj[[1]]
+  } else {
+    first_mat <- first_obj
+  }
+  
+  expect_true(is.matrix(first_mat))
+  
+  # For simulated trials, we expect Mean, SD, CI cols + Bias and MSE
+  expect_true(all(c("Mean", "SD", "2.5%", "50%", "97.5%", "Bias", "MSE") %in% colnames(first_mat)))
+  
+  # Row names should contain response-rate parameters (p_*) and diff cohorts
+  expect_true(any(grepl("^p_", rownames(first_mat))))
+  expect_true(any(grepl("diff", rownames(first_mat))))
+})
+
+#2 
+
+test_that("additional parameters are added and have NA bias/MSE", {
+  
+  # Baseline without additional parameters
+  res_base <- getEstimates(analyses_list)
+  base_obj <- res_base[[1]]
+  if (is.list(base_obj)) base_mat <- base_obj[[1]] else base_mat <- base_obj
+  
+  # With additional parameters (typical for hierarchical models)
+  res_add <- getEstimates(
+    analyses_list   = analyses_list,
+    add_parameters  = c("mu", "tau", "w_1", "w_2", "w_3")
+  )
+  add_obj <- res_add[[1]]
+  if (is.list(add_obj)) add_mat <- add_obj[[1]] else add_mat <- add_obj
+  
+  #Row corresponding to p_3 (the historic cohort)
+  
+  p3_row <- grep("^p_3$", rownames(add_mat))
+  expect_length(p3_row, 1)
+  
+  bias_p3 <- add_mat[p3_row, "Bias"]
+  median_p3 <- add_mat[p3_row, "50%"]
+  
+  # Reconstruct what the function *should* be using as true_rr[3]:
+  true_rr_raw <- analyses_list[[1]]$scenario_data$response_rates
+  n_subj      <- analyses_list[[1]]$scenario_data$n_subjects[1, ]
+  expected_true_rr3 <- true_rr_raw[3] / n_subj[[3]]  # 3 / 30 = 0.1
+  
+  # From the output we know:
+  #   Bias = point_estimate - true_rr_used
+  # so point_estimate = Bias + true_rr_used
+  # Assume they used the *correct* true_rr (3 / n) to get point_estimate:
+  point_estimate3 <- bias_p3 + expected_true_rr3
+  
+  expect_equal(point_estimate3, median_p3)
+  
+  # Structure must be the same in terms of columns
+  expect_identical(colnames(base_mat), colnames(add_mat))
+  
+  # Additional rows should appear for mu, tau, w_*
+  extra_rows <- setdiff(rownames(add_mat), rownames(base_mat))
+  expect_true(length(extra_rows) > 0)
+  expect_true(all(grepl("mu|tau|w_", extra_rows)))
+  
+  # For additional parameters, Bias and MSE must be NA (by design)
+  expect_true(all(is.na(add_mat[extra_rows, "Bias"])))
+  expect_true(all(is.na(add_mat[extra_rows, "MSE"])))
+})
+
+
+#3 
+
+test_that("single-trial outcome returns only posterior summaries (no bias/MSE)", {
+  
+  res_single <- getEstimates(outcome_analysis)
+  single_obj <- res_single[[1]]
+  if (is.list(single_obj)) single_mat <- single_obj[[1]] else single_mat <- single_obj
+  
+  # For a single trial, code path should return only Mean, SD, and CI columns
+  expect_true(is.matrix(single_mat))
+  expect_identical(
+    colnames(single_mat),
+    c("Mean", "SD", "2.5%", "50%", "97.5%")
+  )
+})
+
+#4
+
+test_that("alpha_level and add_parameters are validated correctly", {
+  
+  # alpha_level must correspond to stored quantiles -> should error for a "weird" value
+  expect_error(
+    getEstimates(analyses_list, alpha_level = 0.07),
+    "alpha_level.*stored quantiles",
+    ignore.case = TRUE
+  )
+  
+  # Additional parameters that never occur in any method must trigger the specific error
+  expect_error(
+    getEstimates(analyses_list, add_parameters = c("totally_unknown_param")),
+    "do not occur",
+    ignore.case = TRUE
+  )
+  
+})
+
+#5
+
+test_that("point_estimator argument is respected and input type is validated", {
+  
+  # Both median and mean should work and produce same shape
+  res_median <- getEstimates(analyses_list, point_estimator = "median")
+  res_mean   <- getEstimates(analyses_list, point_estimator = "mean")
+  
+  med_obj <- res_median[[1]]
+  mean_obj <- res_mean[[1]]
+  if (is.list(med_obj)) med_mat <- med_obj[[1]] else med_mat <- med_obj
+  if (is.list(mean_obj)) mean_mat <- mean_obj[[1]] else mean_mat <- mean_obj
+  
+  expect_identical(dim(med_mat), dim(mean_mat))
+  expect_identical(colnames(med_mat), colnames(mean_mat))
+  
+  # Invalid point_estimator must error via checkmate::assertChoice
+  expect_error(
+    getEstimates(analyses_list, point_estimator = "mode"),
+    "point_estimator",
+    ignore.case = TRUE
+  )
+  
+  # Non-analysis_list input must fail the class assertion
+  expect_error(
+    getEstimates(list(a = 1)),
+    "analyses_list",
+    ignore.case = TRUE
+  )
+})
+
+#6
+
+test_that("throws error for invalid alpha_level", {
+  expect_error(getEstimates(analyses_list, alpha_level = 1.5), "alpha_level")
+})
+
+test_that("throws error if alpha_level quantiles not available", {
+  expect_error(getEstimates(analyses_list, alpha_level = 0.123), "must be among the stored quantiles")
+})
+
+test_that("throws error if add_parameters not found", {
+  expect_error(getEstimates(analyses_list, add_parameters = c("nonexistent")), "do not occur")
+})
+
+test_that("works for single trial outcome", {
+  result <- getEstimates(outcome_analysis)
+  expect_type(result, "list")
+})
+
+test_that("invalid point_estimator throws error", {
+  expect_error(getEstimates(analyses_list, point_estimator = "mode"), "point_estimator")
+})
+
+test_that("invalid analyses_list class throws error", {
+  expect_error(getEstimates(list()), "analyses_list")
+})
