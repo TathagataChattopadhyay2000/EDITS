@@ -1,13 +1,91 @@
-if (length(method_names) < length(boundary_rules)) {
-    stop (paste0("The lengths of 'boundary_rules' must be less than or equal to",
-                 " the length of 'method_names'"))
-  } else if (length(method_names) > length(boundary_rules)) {
-    boundary_rules <- rep(boundary_rules, length.out = length(method_names))
+## ------------------------------------------------------------------
+## 5) Length handling for boundary_rules and evidence_levels
+## ------------------------------------------------------------------
+
+test_that("errors if boundary_rules list is longer than method_names", {
+
+  m    <- analyses_list[[1]]$analysis_parameters$method_names
+  coh  <- c("p_1", "p_2", "p_3")
+  ev   <- c(0.5, 0.5, 0.5)
+
+  # list longer than number of methods
+  br   <- rep(list(quote(c(TRUE, TRUE, TRUE))), length(m) + 1L)
+
+  expect_error(
+    getGoDecisions(
+      analyses_list   = analyses_list,
+      cohort_names    = coh,
+      evidence_levels = ev,
+      boundary_rules  = br
+    ),
+    "boundary_rules",
+    ignore.case = TRUE
+  )
+})
+
+
+test_that("errors if evidence_levels list is longer than method_names", {
+
+  m    <- analyses_list[[1]]$analysis_parameters$method_names
+  coh  <- c("p_1", "p_2", "p_3")
+
+  # 0.5 is safe (1 - 0.5 = 0.5 in stored quantiles)
+  ev_vec <- c(0.5, 0.5, 0.5)
+  ev     <- rep(list(ev_vec), length(m) + 1L)
+
+  expect_error(
+    getGoDecisions(
+      analyses_list   = analyses_list,
+      cohort_names    = coh,
+      evidence_levels = ev,
+      boundary_rules  = quote(c(TRUE, TRUE, TRUE))
+    ),
+    "evidence_levels",
+    ignore.case = TRUE
+  )
+})
+
+
+test_that("single boundary_rules expression is recycled to all methods", {
+
+  m    <- analyses_list[[1]]$analysis_parameters$method_names
+  coh  <- c("p_1", "p_2", "p_3")
+  ev   <- c(0.5, 0.5, 0.5)
+  rule <- quote(c(TRUE, TRUE, TRUE))
+
+  dec <- getGoDecisions(
+    analyses_list   = analyses_list,
+    cohort_names    = coh,
+    evidence_levels = ev,
+    boundary_rules  = rule
+  )
+
+  br <- dec[[1]]$decision_rules$boundary_rules
+
+  expect_identical(length(br), length(m))
+  for (i in seq_along(br)) {
+    expect_true(identical(br[[i]], rule))
   }
-  if (length(method_names) < length(gamma_levels)) {
-    stop (paste0("The lengths of 'evidence_levels' must be less than or equal to",
-                 " the length of 'method_names'"))
-  } else if (length(method_names) > length(gamma_levels)) {
-    gamma_levels <- rep(gamma_levels, length.out = length(method_names))
+})
+
+
+test_that("single evidence_levels vector is recycled to all methods", {
+
+  m    <- analyses_list[[1]]$analysis_parameters$method_names
+  coh  <- c("p_1", "p_2", "p_3")
+  ev   <- c(0.5, 0.5, 0.5)
+
+  dec <- getGoDecisions(
+    analyses_list   = analyses_list,
+    cohort_names    = coh,
+    evidence_levels = ev,                # not a list -> will be wrapped + recycled
+    boundary_rules  = quote(c(TRUE, TRUE, TRUE))
+  )
+
+  gamma <- dec[[1]]$decision_rules$gamma_levels
+
+  expect_identical(length(gamma), length(m))
+  for (i in seq_along(gamma)) {
+    expect_equal(gamma[[i]], ev)
   }
-  
+})
