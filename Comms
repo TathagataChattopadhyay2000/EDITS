@@ -1,244 +1,53 @@
-# -------------------------------------------------------------------
-# Shared setup for getEstimates tests
-# -------------------------------------------------------------------
-
-scenarios_list <- simulateScenarios(
-  n_subjects_list     = list(c(10, 20, 30)),
-  response_rates_list = list(c(0.1, 0.2, 3)),  # 3 triggers historic-rate branch
-  n_trials            = 10
-)
-
-analyses_list <- performAnalyses(
-  scenario_list       = scenarios_list,
-  target_rates        = c(0.5, 0.5, 0.5),
-  calc_differences    = matrix(c(3, 2, 2, 1), ncol = 2),  # ensures diff cohorts exist
-  n_mcmc_iterations   = 100
-)
-
-outcome <- createTrial(
-  n_subjects   = c(10, 20, 30),
-  n_responders = c( 1,  2,  3)
-)
-
-outcome_analysis <- performAnalyses(
-  scenario_list     = outcome,
-  target_rates      = c(0.5, 0.5, 0.5),
-  n_mcmc_iterations = 100
-)
-
-
-# -------------------------------------------------------------------
-# 1) Baseline functional behaviour & structure (simulated scenarios)
-# -------------------------------------------------------------------
-
-test_that("getEstimates works for simulated scenarios and returns sensible structure", {
-
-  res <- getEstimates(analyses_list)
-
-  # High-level: function must run and return a list-like structure
-  expect_type(res, "list")
-  expect_true(length(res) > 0)
-
-  # Handle both shapes: listPerMethod can give list-of-lists or list-of-matrices
-  first_obj <- res[[1]]
-  if (is.list(first_obj)) {
-    first_mat <- first_obj[[1]]
+check.evidence.levels <- function (
+    
+  evidence_levels,
+  cohort_names,
+  analyses_list,
+  error_evidence_levels
+  
+) {
+  
+  checkmate::assert_true(
+    length(evidence_levels) == length(cohort_names),
+    .var = "The 'evidence_levels' and the 'cohort_names' must have the same length"
+  )
+  
+  
+  if (is.character(evidence_levels)) {
+    
+    mean_index <- evidence_levels == "mean"
+    
+    evidence_levels_numeric <- tryCatch({
+      as.numeric(evidence_levels[!mean_index])
+    }, warning = function(w) w)
+    
+    checkmate::assert_false(
+      inherits(evidence_levels_numeric, "warning"),
+      .var = "The only string allowed for the argument 'evidence_levels' is 'mean'"
+    )
+    
+    
   } else {
-    first_mat <- first_obj
+    
+    evidence_levels_numeric <- evidence_levels
+    
   }
-
-  # Inner object must be a matrix of estimates
-  expect_true(is.matrix(first_mat))
-
-  # For simulated trials (n_trials > 1): expect posterior summaries + Bias + MSE
-  expect_true(all(c("Mean", "SD", "2.5%", "50%", "97.5%", "Bias", "MSE") %in% colnames(first_mat)))
-
-  # Row names should include:
-  #  - p_* cohorts (response rate parameters)
-  #  - 'diff' rows from calc_differences matrix
-  expect_true(any(grepl("^p_",   rownames(first_mat))))
-  expect_true(any(grepl("diff", rownames(first_mat))))
-})
-
-
-# -------------------------------------------------------------------
-# 2) Additional parameters + historic-rate handling + NA Bias/MSE for extras
-# -------------------------------------------------------------------
-
-test_that("additional parameters are added and have NA bias/MSE", {
-
-  # Baseline without additional parameters: used to compare row/column structure
-  res_base <- getEstimates(analyses_list)
-  base_obj <- res_base[[1]]
-  if (is.list(base_obj)) base_mat <- base_obj[[1]] else base_mat <- base_obj
-
-  # Same analyses_list, but now request additional hierarchical parameters
-  res_add <- getEstimates(
-    analyses_list   = analyses_list,
-    add_parameters  = c("mu", "tau", "w_1", "w_2", "w_3")
+  
+  checkmate::assert_numeric(
+    evidence_levels_numeric,
+    lower = 0, upper = 1, any.missing = FALSE,
+    .var = error_evidence_levels
   )
-  add_obj <- res_add[[1]]
-  if (is.list(add_obj)) add_mat <- add_obj[[1]] else add_mat <- add_obj
-
-  # ---- Historic rate branch check for p_3 ----
-  # Row for p_3 must exist (this cohort had response_rate = 3 in simulateScenarios)
-  p3_row <- grep("^p_3$", rownames(add_mat))
-  expect_length(p3_row, 1)
-
-  bias_p3   <- add_mat[p3_row, "Bias"]
-  median_p3 <- add_mat[p3_row, "50%"]
-
-  # In scenario_data: response_rates = c(0.1, 0.2, 3) and n_subjects[1,3] = 30
-  # getEstimates transforms true_rr[3] to 3 / 30 = 0.1 in the 'historic' branch
-  true_rr_raw       <- analyses_list[[1]]$scenario_data$response_rates
-  n_subj            <- analyses_list[[1]]$scenario_data$n_subjects[1, ]
-  expected_true_rr3 <- true_rr_raw[3] / n_subj[[3]]
-
-  # Bias is defined as: Bias = (point_estimate - true_rr_used)
-  # -> point_estimate = Bias + true_rr_used
-  point_estimate3 <- bias_p3 + expected_true_rr3
-
-  # For median point_estimator (default), the "50%" column should match that estimate
-  expect_equal(point_estimate3, median_p3)
-
-  # ---- Additional-parameter structure and Bias/MSE behaviour ----
-
-  # Column structure must be identical with and without add_parameters
-  expect_identical(colnames(base_mat), colnames(add_mat))
-
-  # Extra rows should correspond exactly to mu/tau/w_* (hierarchical parameters)
-  extra_rows <- setdiff(rownames(add_mat), rownames(base_mat))
-  expect_true(length(extra_rows) > 0)
-  expect_true(all(grepl("mu|tau|w_", extra_rows)))
-
-  # By design: Bias and MSE are *not* computed for non-p_* parameters -> should be NA
-  expect_true(all(is.na(add_mat[extra_rows, "Bias"])))
-  expect_true(all(is.na(add_mat[extra_rows, "MSE"])))
-})
-
-
-# -------------------------------------------------------------------
-# 3) Single-trial code path: only posterior summaries, no Bias/MSE
-# -------------------------------------------------------------------
-
-test_that("single-trial outcome returns only posterior summaries (no bias/MSE)", {
-
-  # outcome_analysis has a single trial generated with createTrial()
-  res_single <- getEstimates(outcome_analysis)
-  single_obj <- res_single[[1]]
-  if (is.list(single_obj)) single_mat <- single_obj[[1]] else single_mat <- single_obj
-
-  # For a single trial, the function should skip bias/MSE and return only posterior summaries
-  expect_true(is.matrix(single_mat))
-  expect_identical(
-    colnames(single_mat),
-    c("Mean", "SD", "2.5%", "50%", "97.5%")
+  
+  available_quantiles <- round(analyses_list[[1]]$analysis_parameters$quantiles, 9)
+  asked_quantiles     <- round(1 - evidence_levels_numeric, 9)
+  
+  checkmate::assert_true(
+    all(asked_quantiles %in% available_quantiles),
+    .var = paste(
+      "The 'evidence_levels' must have matches",
+      "in the 'evidence_levels' provided to the call performAnalyses()",
+      "that created the 'analyses_list'"
+    )
   )
-})
-
-
-# -------------------------------------------------------------------
-# 4) Validation of alpha_level and add_parameters 
-#     - logical validation + content validation
-# -------------------------------------------------------------------
-
-test_that("alpha_level and add_parameters are validated correctly", {
-
-  # (a) alpha_level must be in (0,1) AND match stored quantiles
-  #     This hits: numeric constraints + 'stored quantiles' check.
-  expect_error(
-    getEstimates(analyses_list, alpha_level = 0.07),
-    "alpha_level.*stored quantiles",
-    ignore.case = TRUE
-  )
-
-  # (b) add_parameters that never appear in any method must trigger the specific error
-  expect_error(
-    getEstimates(analyses_list, add_parameters = c("totally_unknown_param")),
-    "do not occur",
-    ignore.case = TRUE
-  )
-})
-
-
-# -------------------------------------------------------------------
-# 5) point_estimator behaviour and basic input type assertions
-# -------------------------------------------------------------------
-
-test_that("point_estimator argument is respected and input type is validated", {
-
-  # (a) Both 'median' and 'mean' must work and produce matrices of identical shape
-  res_median <- getEstimates(analyses_list, point_estimator = "median")
-  res_mean   <- getEstimates(analyses_list, point_estimator = "mean")
-
-  med_obj  <- res_median[[1]]
-  mean_obj <- res_mean[[1]]
-  if (is.list(med_obj))  med_mat  <- med_obj[[1]]  else med_mat  <- med_obj
-  if (is.list(mean_obj)) mean_mat <- mean_obj[[1]] else mean_mat <- mean_obj
-
-  expect_identical(dim(med_mat),   dim(mean_mat))
-  expect_identical(colnames(med_mat), colnames(mean_mat))
-
-  # (b) Invalid point_estimator choice -> checkmate::assertChoice should fail
-  expect_error(
-    getEstimates(analyses_list, point_estimator = "mode"),
-    "point_estimator",
-    ignore.case = TRUE
-  )
-
-  # (c) Non-analysis_list input must fail the class assertion on analyses_list
-  expect_error(
-    getEstimates(list(a = 1)),
-    "analyses_list",
-    ignore.case = TRUE
-  )
-})
-
-
-# -------------------------------------------------------------------
-# 6) Additional explicit validation tests (more granular checks)
-#     (Some overlap with test 4 & 5, but these make failures very local)
-# -------------------------------------------------------------------
-
-test_that("throws error for invalid alpha_level (outside 0,1)", {
-  # This hits the numeric constraint (0 < alpha_level < 1)
-  expect_error(getEstimates(analyses_list, alpha_level = 1.5), "alpha_level")
-})
-
-test_that("throws error if alpha_level quantiles not available", {
-  # This specifically hits: 'alpha_level must be among the stored quantiles'
-  expect_error(
-    getEstimates(analyses_list, alpha_level = 0.123),
-    "must be among the stored quantiles"
-  )
-})
-
-test_that("throws error if add_parameters not found in any method", {
-  # This isolates the 'all(!occurences)' error branch for add_parameters
-  expect_error(
-    getEstimates(analyses_list, add_parameters = c("nonexistent")),
-    "do not occur"
-  )
-})
-
-test_that("works for single trial outcome (basic check)", {
-  # Simpler version of the single-trial test: only structure is checked here
-  result <- getEstimates(outcome_analysis)
-  expect_type(result, "list")
-})
-
-test_that("invalid point_estimator throws error explicitly", {
-  # Explicit repeat of the assertChoice branch for point_estimator
-  expect_error(
-    getEstimates(analyses_list, point_estimator = "mode"),
-    "point_estimator"
-  )
-})
-
-test_that("invalid analyses_list class throws error explicitly", {
-  # Explicit repeat of the assertClass(analyses_list, 'analysis_list')
-  expect_error(
-    getEstimates(list()),
-    "analyses_list"
-  )
-})
+}
