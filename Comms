@@ -1,53 +1,13 @@
-check.evidence.levels <- function (
-    
-  evidence_levels,
-  cohort_names,
-  analyses_list,
-  error_evidence_levels
-  
-) {
-  
-  checkmate::assert_true(
-    length(evidence_levels) == length(cohort_names),
-    .var = "The 'evidence_levels' and the 'cohort_names' must have the same length"
-  )
-  
-  
-  if (is.character(evidence_levels)) {
-    
-    mean_index <- evidence_levels == "mean"
-    
-    evidence_levels_numeric <- tryCatch({
-      as.numeric(evidence_levels[!mean_index])
-    }, warning = function(w) w)
-    
-    checkmate::assert_false(
-      inherits(evidence_levels_numeric, "warning"),
-      .var = "The only string allowed for the argument 'evidence_levels' is 'mean'"
-    )
-    
-    
-  } else {
-    
-    evidence_levels_numeric <- evidence_levels
-    
+if (length(method_names) < length(boundary_rules)) {
+    stop (paste0("The lengths of 'boundary_rules' must be less than or equal to",
+                 " the length of 'method_names'"))
+  } else if (length(method_names) > length(boundary_rules)) {
+    boundary_rules <- rep(boundary_rules, length.out = length(method_names))
+  }
+  if (length(method_names) < length(gamma_levels)) {
+    stop (paste0("The lengths of 'evidence_levels' must be less than or equal to",
+                 " the length of 'method_names'"))
+  } else if (length(method_names) > length(gamma_levels)) {
+    gamma_levels <- rep(gamma_levels, length.out = length(method_names))
   }
   
-  checkmate::assert_numeric(
-    evidence_levels_numeric,
-    lower = 0, upper = 1, any.missing = FALSE,
-    .var = error_evidence_levels
-  )
-  
-  available_quantiles <- round(analyses_list[[1]]$analysis_parameters$quantiles, 9)
-  asked_quantiles     <- round(1 - evidence_levels_numeric, 9)
-  
-  checkmate::assert_true(
-    all(asked_quantiles %in% available_quantiles),
-    .var = paste(
-      "The 'evidence_levels' must have matches",
-      "in the 'evidence_levels' provided to the call performAnalyses()",
-      "that created the 'analyses_list'"
-    )
-  )
-}
