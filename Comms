@@ -1,1 +1,115 @@
-
+performAnalyses <- function (
+  
+  scenario_list,
+  evidence_levels       = c(0.025, 0.05, 0.5, 0.8, 0.9, 0.95, 0.975),
+  
+  method_names          = c("berry", "exnex", "exnex_adj", "pooled", "stratified"),
+  target_rates          = NULL,
+  prior_parameters_list = NULL,
+  
+  calc_differences      = NULL,
+  
+  n_mcmc_iterations     = 1e4,
+  n_cores               = 1,
+  seed                  = 1,
+  verbose               = TRUE
+  
+) {
+  
+  error_scenario_list <-
+    simpleError("Please provide an object of class scenario_list for the argument 'scenario_list'")
+  error_evidence_levels <-
+    simpleError("Please provide a vector of numerics in (0, 1) for the argument 'evidence_levels'")
+  error_method_names <-
+    simpleError(paste("Please provide a (vector of) strings for the argument 'method_names'\n",
+                      "Must be one of 'berry', 'exnex', 'exnex_adj', 'pooled', 'stratified'"))
+  error_target_rates <-
+    simpleError(paste("Please provide either 'NULL' or a vector of numerics in (0, 1)",
+                      "for the argument 'target_rates'"))
+  error_prior_parameters_list <-
+    simpleError("Please provide either 'NULL' or an object of class 'prior_parameters_list'")
+  error_calc_differences <-
+    simpleError(paste("Please provide either 'NULL' or a matrix of integers with ncol = 2.",
+                      "The values of the integers must be less than or equal to the number",
+                      "of cohorts"))
+  error_n_mcmc_iterations <-
+    simpleError("Please provide a positive integer for the argument 'n_mcmc_iterations'")
+  error_verbose <-
+    simpleError("Please provide a logical for the argument 'verbose'")
+  
+  warning_n_cores <- "The argument 'n_cores' is deprecated as of version 0.9.3."
+  warning_seed    <- "The argument 'seed' is deprecated as of version 0.9.3."
+  
+  if (!missing(n_cores)) warning(warning_n_cores)
+  if (!missing(seed))    warning(warning_seed)
+  
+  if (missing(scenario_list)) stop (error_scenario_list)
+  
+  method_names <- tryCatch({
+    
+    match.arg(
+      method_names,
+      choices    = c('berry', 'exnex', 'exnex_adj', 'pooled', 'stratified'),
+      several.ok = TRUE)
+    
+  }, error = function (e) e)
+  
+  if (!is.scenario_list(scenario_list))                   stop (error_scenario_list)
+  if (!is.numeric.in.zero.one(evidence_levels))           stop (error_evidence_levels)
+  if (inherits(method_names, "error"))                    stop (error_method_names)
+  if (!is.null(target_rates) &&
+      !is.numeric.in.zero.one(target_rates))              stop (error_target_rates)
+  if (!is.null(prior_parameters_list) &&
+      !is.prior_parameters_list(prior_parameters_list))   stop (prior_parameters_list)
+  
+  if (is.null(target_rates)) {
+    if (any(c("berry", "exnex_adj") %in% method_names)) stop (simpleError(
+      "Please provide 'target_rates' when using the methods 'berry' and/or 'exnex_adj'"))
+    if (is.null(prior_parameters_list)) stop (simpleError(
+      "Please provide at least one of 'prior_parameters_list' or 'target_rates'"))
+  } else {
+    if (!identical(length(target_rates), ncol(scenario_list[[1]]$n_subjects))) stop (simpleError(
+      "The length of 'target_rates' does not match the number of cohorts"))
+  }
+  
+  if (!is.null(prior_parameters_list)) {
+    if (!all(method_names %in% names(prior_parameters_list))) stop (simpleError(
+      paste("Not all specified methods in 'method_names'",
+            "have prior parameters specified in 'prior_parameters_list'")))
+    if (any(sapply(names(prior_parameters_list), function (name) {
+      if (name %in% c('exnex', 'exnex_adj', 'stratified')) {
+        !identical(max(sapply(prior_parameters_list[[name]], length)),
+                   ncol(scenario_list[[1]]$n_subjects))
+      } else FALSE
+    }))) stop (simpleError(paste(
+      "The number of cohorts specified in 'prior_parameters_list' does not match",
+      "the number of cohorts specified in 'scenario_list'")))
+  }
+  
+  n_cohorts_min <- min(sapply(scenario_list, function (x) {
+    ncol(x$n_responders)
+  }))
+  if (!is.null(calc_differences) && (
+    !is.numeric(calc_differences) ||
+    !(identical(length(calc_differences), 2L) ||
+      identical(ncol(calc_differences), 2L)) ||
+    !is.positive.wholenumber(calc_differences) ||
+    max(calc_differences) > n_cohorts_min))            stop (error_calc_differences)
+  rm (n_cohorts_min)
+  
+  ## check whether n_mcmc_iterations is present in global environment
+  if ("n_mcmc_iterations" %in% ls(envir = .GlobalEnv) & missing(n_mcmc_iterations)) {
+    n_mcmc_iterations <- get("n_mcmc_iterations", envir = .GlobalEnv)
+  }
+  
+  if (!is.single.positive.wholenumber(n_mcmc_iterations)) stop (error_n_mcmc_iterations)
+  if (!is.logical(verbose))                               stop (error_verbose)
+  
+  ## check for parallel backend
+  if (!all(sapply(method_names,
+                  function (x) grepl(x, "stratified") | grepl(x, "pooled")))) {
+    
+    checkForParallelBackend()
+    
+  }
+  
