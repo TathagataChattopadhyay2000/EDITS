@@ -15,101 +15,196 @@ performAnalyses <- function (
   verbose               = TRUE
   
 ) {
-  
-  error_scenario_list <-
-    simpleError("Please provide an object of class scenario_list for the argument 'scenario_list'")
-  error_evidence_levels <-
-    simpleError("Please provide a vector of numerics in (0, 1) for the argument 'evidence_levels'")
-  error_method_names <-
-    simpleError(paste("Please provide a (vector of) strings for the argument 'method_names'\n",
-                      "Must be one of 'berry', 'exnex', 'exnex_adj', 'pooled', 'stratified'"))
-  error_target_rates <-
-    simpleError(paste("Please provide either 'NULL' or a vector of numerics in (0, 1)",
-                      "for the argument 'target_rates'"))
-  error_prior_parameters_list <-
-    simpleError("Please provide either 'NULL' or an object of class 'prior_parameters_list'")
-  error_calc_differences <-
-    simpleError(paste("Please provide either 'NULL' or a matrix of integers with ncol = 2.",
-                      "The values of the integers must be less than or equal to the number",
-                      "of cohorts"))
-  error_n_mcmc_iterations <-
-    simpleError("Please provide a positive integer for the argument 'n_mcmc_iterations'")
-  error_verbose <-
-    simpleError("Please provide a logical for the argument 'verbose'")
-  
+  ## ---------------------------------------------------------------------------
+  ## Deprecation warnings for old arguments
+  ## ---------------------------------------------------------------------------
   warning_n_cores <- "The argument 'n_cores' is deprecated as of version 0.9.3."
   warning_seed    <- "The argument 'seed' is deprecated as of version 0.9.3."
   
   if (!missing(n_cores)) warning(warning_n_cores)
   if (!missing(seed))    warning(warning_seed)
   
-  if (missing(scenario_list)) stop (error_scenario_list)
+  ## ---------------------------------------------------------------------------
+  ## Basic presence & class checks
+  ## ---------------------------------------------------------------------------
   
-  method_names <- tryCatch({
-    
-    match.arg(
-      method_names,
-      choices    = c('berry', 'exnex', 'exnex_adj', 'pooled', 'stratified'),
-      several.ok = TRUE)
-    
-  }, error = function (e) e)
+  # scenario_list must be supplied and have the correct class
+  checkmate::assertClass(
+    scenario_list,
+    "scenario_list",
+    .var.name = "scenario_list"
+  )
   
-  if (!is.scenario_list(scenario_list))                   stop (error_scenario_list)
-  if (!is.numeric.in.zero.one(evidence_levels))           stop (error_evidence_levels)
-  if (inherits(method_names, "error"))                    stop (error_method_names)
-  if (!is.null(target_rates) &&
-      !is.numeric.in.zero.one(target_rates))              stop (error_target_rates)
-  if (!is.null(prior_parameters_list) &&
-      !is.prior_parameters_list(prior_parameters_list))   stop (prior_parameters_list)
+  # evidence_levels: numeric, all in (0, 1)
+  checkmate::assertNumeric(
+    evidence_levels,
+    any.missing = FALSE,
+    .var.name   = "evidence_levels"
+  )
+  checkmate::assertTRUE(
+    all(evidence_levels > 0 & evidence_levels < 1),
+    .var.name = "evidence_levels must be in (0, 1)"
+  )
+  
+  # method_names: character and must be one of the allowed methods
+  checkmate::assertCharacter(
+    method_names,
+    any.missing = FALSE,
+    min.len     = 1,
+    .var.name   = "method_names"
+  )
+  method_names <- match.arg(
+    method_names,
+    choices    = c("berry", "exnex", "exnex_adj", "pooled", "stratified"),
+    several.ok = TRUE
+  )
+  
+  # target_rates: either NULL or numeric in (0, 1)
+  if (!is.null(target_rates)) {
+    checkmate::assertNumeric(
+      target_rates,
+      any.missing = FALSE,
+      .var.name   = "target_rates"
+    )
+    checkmate::assertTRUE(
+      all(target_rates > 0 & target_rates < 1),
+      .var.name = "target_rates must be in (0, 1)"
+    )
+  }
+  
+  # prior_parameters_list: either NULL or object with class 'prior_parameters_list'
+  if (!is.null(prior_parameters_list)) {
+    checkmate::assertClass(
+      prior_parameters_list,
+      "prior_parameters_list",
+      .var.name = "prior_parameters_list"
+    )
+  }
+  
+  ## ---------------------------------------------------------------------------
+  ## Logical constraints: target_rates vs methods / priors
+  ## ---------------------------------------------------------------------------
   
   if (is.null(target_rates)) {
-    if (any(c("berry", "exnex_adj") %in% method_names)) stop (simpleError(
-      "Please provide 'target_rates' when using the methods 'berry' and/or 'exnex_adj'"))
-    if (is.null(prior_parameters_list)) stop (simpleError(
-      "Please provide at least one of 'prior_parameters_list' or 'target_rates'"))
+    
+    # If target_rates are missing, berry and exnex_adj are not allowed
+    checkmate::assertTRUE(
+      !any(c("berry", "exnex_adj") %in% method_names),
+      .var.name = "target_rates must be provided when using 'berry' or 'exnex_adj'"
+    )
+    
+    # Need at least one of prior_parameters_list or target_rates
+    checkmate::assertTRUE(
+      !is.null(prior_parameters_list),
+      .var.name = "provide at least one of 'prior_parameters_list' or 'target_rates'"
+    )
+    
   } else {
-    if (!identical(length(target_rates), ncol(scenario_list[[1]]$n_subjects))) stop (simpleError(
-      "The length of 'target_rates' does not match the number of cohorts"))
+    # If target_rates is present, its length must match the number of cohorts
+    n_coh <- ncol(scenario_list[[1]]$n_subjects)
+    checkmate::assertTRUE(
+      identical(length(target_rates), n_coh),
+      .var.name = "length(target_rates) must match number of cohorts"
+    )
   }
+  
+  ## ---------------------------------------------------------------------------
+  ## Logical constraints: prior_parameters_list content per method
+  ## ---------------------------------------------------------------------------
   
   if (!is.null(prior_parameters_list)) {
-    if (!all(method_names %in% names(prior_parameters_list))) stop (simpleError(
-      paste("Not all specified methods in 'method_names'",
-            "have prior parameters specified in 'prior_parameters_list'")))
-    if (any(sapply(names(prior_parameters_list), function (name) {
-      if (name %in% c('exnex', 'exnex_adj', 'stratified')) {
-        !identical(max(sapply(prior_parameters_list[[name]], length)),
-                   ncol(scenario_list[[1]]$n_subjects))
-      } else FALSE
-    }))) stop (simpleError(paste(
-      "The number of cohorts specified in 'prior_parameters_list' does not match",
-      "the number of cohorts specified in 'scenario_list'")))
+    
+    # All methods used must have entries in prior_parameters_list
+    checkmate::assertTRUE(
+      all(method_names %in% names(prior_parameters_list)),
+      .var.name = "all method_names must appear in names(prior_parameters_list)"
+    )
+    
+    # For exnex / exnex_adj / stratified, per-cohort prior lengths must
+    # match the number of cohorts in scenario_list
+    n_coh <- ncol(scenario_list[[1]]$n_subjects)
+    
+    inconsistent_cohorts <- any(
+      sapply(
+        intersect(names(prior_parameters_list),
+                  c("exnex", "exnex_adj", "stratified")),
+        function(name) {
+          max(sapply(prior_parameters_list[[name]], length)) != n_coh
+        }
+      )
+    )
+    
+    checkmate::assertFALSE(
+      inconsistent_cohorts,
+      .var.name = "number of cohorts in prior_parameters_list must match scenario_list"
+    )
   }
   
-  n_cohorts_min <- min(sapply(scenario_list, function (x) {
-    ncol(x$n_responders)
-  }))
-  if (!is.null(calc_differences) && (
-    !is.numeric(calc_differences) ||
-    !(identical(length(calc_differences), 2L) ||
-      identical(ncol(calc_differences), 2L)) ||
-    !is.positive.wholenumber(calc_differences) ||
-    max(calc_differences) > n_cohorts_min))            stop (error_calc_differences)
-  rm (n_cohorts_min)
+  ## ---------------------------------------------------------------------------
+  ## calc_differences: NULL or (length-2 vector OR matrix with 2 columns) of
+  ## positive integer indices <= n_cohorts_min
+  ## ---------------------------------------------------------------------------
   
-  ## check whether n_mcmc_iterations is present in global environment
-  if ("n_mcmc_iterations" %in% ls(envir = .GlobalEnv) & missing(n_mcmc_iterations)) {
+  n_cohorts_min <- min(sapply(scenario_list, function(x) ncol(x$n_responders)))
+  
+  if (!is.null(calc_differences)) {
+    
+    checkmate::assertNumeric(
+      calc_differences,
+      any.missing = FALSE,
+      .var.name   = "calc_differences"
+    )
+    
+    is_len2   <- identical(length(calc_differences), 2L)
+    has_2cols <- !is.null(dim(calc_differences)) &&
+      identical(ncol(calc_differences), 2L)
+    
+    checkmate::assertTRUE(
+      is_len2 || has_2cols,
+      .var.name = "calc_differences must be length-2 vector or matrix with 2 columns"
+    )
+    
+    checkmate::assertIntegerish(
+      calc_differences,
+      lower       = 1,
+      any.missing = FALSE,
+      .var.name   = "calc_differences"
+    )
+    
+    checkmate::assertTRUE(
+      max(calc_differences) <= n_cohorts_min,
+      .var.name = "calc_differences indices must not exceed number of cohorts"
+    )
+  }
+  rm(n_cohorts_min)
+  
+  ## ---------------------------------------------------------------------------
+  ## n_mcmc_iterations & verbose
+  ## ---------------------------------------------------------------------------
+  
+  # If n_mcmc_iterations exists in .GlobalEnv and argument is missing, reuse it
+  if ("n_mcmc_iterations" %in% ls(envir = .GlobalEnv) && missing(n_mcmc_iterations)) {
     n_mcmc_iterations <- get("n_mcmc_iterations", envir = .GlobalEnv)
   }
   
-  if (!is.single.positive.wholenumber(n_mcmc_iterations)) stop (error_n_mcmc_iterations)
-  if (!is.logical(verbose))                               stop (error_verbose)
+  checkmate::assertInt(
+    n_mcmc_iterations,
+    lower    = 1,
+    .var.name = "n_mcmc_iterations"
+  )
   
-  ## check for parallel backend
-  if (!all(sapply(method_names,
-                  function (x) grepl(x, "stratified") | grepl(x, "pooled")))) {
-    
+  checkmate::assertLogical(
+    verbose,
+    len         = 1L,
+    any.missing = FALSE,
+    .var.name   = "verbose"
+  )
+  
+  ## ---------------------------------------------------------------------------
+  ## Parallel backend check
+  ## ---------------------------------------------------------------------------
+  
+  # Only need a parallel backend if there is at least one method that is not pooled/stratified
+  if (!all(method_names %in% c("stratified", "pooled"))) {
     checkForParallelBackend()
-    
   }
-  
