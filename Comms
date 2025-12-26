@@ -1,144 +1,186 @@
-### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
+## Setup: small scenario_list used in all tests --------------------------------
+
+set.seed(123)
+
+scenario_list_pa <- simulateScenarios(
+  n_subjects_list     = list(c(10, 20, 30)),
+  response_rates_list = list(c(0.3, 0.5, 0.7)),
+  n_trials            = 5
+)
+
+## 1. Basic structure of returned analysis_list --------------------------------
+
+test_that("performAnalyses returns a well-formed analysis_list", {
+  # Here we test the overall structure of the result:
+  # - class 'analysis_list'
+  # - one element per scenario
+  # - each scenario element has quantiles_list, scenario_data, analysis_parameters
+  # - scenario_data is preserved from input
+
+  res <- performAnalyses(
+    scenario_list       = scenario_list_pa,
+    target_rates        = c(0.5, 0.5, 0.5),
+    method_names        = c("pooled", "berry"),
+    n_mcmc_iterations   = 50,
+    verbose             = FALSE
+  )
   
-  ## message to user
-  if (verbose) message(format(Sys.time(), "%d-%h-%Y"), " Performing Analyses")
+  # Top-level class and length
+  expect_s3_class(res, "analysis_list")
+  expect_equal(length(res), length(scenario_list_pa))
+  expect_identical(names(res), paste0("scenario_", sapply(scenario_list_pa, `[[`, "scenario_number")))
   
-  ## some housekeeping
-  method_names <- sort(method_names)
-  quantiles    <- sort(unique(round(1 - c(0.025, 0.05, 0.5, 0.8, 0.9, 0.95, 0.975,
-                                          evidence_levels), 9)))
-  if (!is.null(calc_differences)) {
-    calc_differences <- convertVector2Matrix(calc_differences)
-  }
+  # One scenario element should have the expected sub-structure
+  scen1 <- res[[1]]
+  expect_true(is.list(scen1))
+  expect_true(all(c("quantiles_list", "scenario_data", "analysis_parameters") %in% names(scen1)))
   
-  ## get scenario numbers
-  scenario_numbers <- sapply(scenario_list, function (x) x$scenario_number)
+  # scenario_data should be the original scenario_list element
+  expect_identical(scen1$scenario_data, scenario_list_pa[[1]])
+})
+
+
+## 2. method_names are sorted and stored correctly -----------------------------
+
+test_that("performAnalyses sorts method_names and stores them in analysis_parameters", {
+  # We deliberately pass method_names in a strange order and check that
+  # - analysis_parameters$method_names are sorted
+  # - quantiles_list uses the same sorted order
+
+  res <- performAnalyses(
+    scenario_list       = scenario_list_pa,
+    target_rates        = c(0.5, 0.5, 0.5),
+    method_names        = c("stratified", "berry", "pooled"),
+    n_mcmc_iterations   = 30,
+    verbose             = FALSE
+  )
   
-  ## get unique trials over all scenarios
-  trials_unique <- getUniqueTrials(scenario_list)
-  n_cohorts     <- (ncol(trials_unique) - 1L) / 2
+  scen1 <- res[[1]]
   
-  ## analyze only unique trials that have not been previously analyzed
-  applicable_previous_trials <- applicablePreviousTrials(
-    scenario_list    = scenario_list,
-    method_names     = method_names,
-    quantiles        = quantiles,
-    n_cohorts        = n_cohorts,
-    calc_differences = calc_differences)
+  # Methods should be sorted alphabetically
+  expected_sorted <- sort(c("stratified", "berry", "pooled"))
+  expect_identical(scen1$analysis_parameters$method_names, expected_sorted)
   
-  ## only get previous go indices if all conditions for previous trials are met
-  if (applicable_previous_trials) {
-    calc_trial_indices <- trials_unique[, ncol(trials_unique)] > 0
-  } else {
-    calc_trial_indices <- rep(TRUE, nrow(trials_unique))
-  }
+  # quantiles_list must have one entry per method in the same order
+  expect_true(is.list(scen1$quantiles_list))
+  expect_identical(names(scen1$quantiles_list), expected_sorted)
+})
+
+
+## 3. quantiles include 1 - evidence_levels plus default set -------------------
+
+test_that("performAnalyses constructs quantiles from defaults and evidence_levels", {
+  # The function defines:
+  #   quantiles <- sort(unique(round(1 - c(defaults, evidence_levels), 9)))
+  # We check that all 1 - evidence_levels are contained and that defaults are there.
+
+  ev_levels <- c(0.1, 0.2, 0.3)  # non-default values to make the test informative
   
-  ## get resulting unique number of responders and number of subjects
-  trials_unique_calc <- trials_unique[calc_trial_indices, -ncol(trials_unique)]
-  n_responders       <- trials_unique_calc[, seq_len(n_cohorts)]
-  n_subjects         <- trials_unique_calc[, seq_len(n_cohorts) + n_cohorts]
+  res <- performAnalyses(
+    scenario_list       = scenario_list_pa,
+    evidence_levels     = ev_levels,
+    target_rates        = c(0.5, 0.5, 0.5),
+    method_names        = c("pooled"),
+    n_mcmc_iterations   = 30,
+    verbose             = FALSE
+  )
   
-  ## message to user
-  if (verbose) {
-    
-    message("         Analyzing ", length(scenario_numbers) ," scenario", ifelse(length(scenario_numbers) == 1, "", "s")," ",
-            "(", nrow(n_responders), " unique", ifelse(applicable_previous_trials, " updated ", " "),
-            "trial realization", ifelse(nrow(trials_unique) == 1, "", "s"),")")
-    
-  }
+  q <- res[[1]]$analysis_parameters$quantiles
+  expect_true(is.numeric(q))
+  expect_true(is.unsorted(q) == FALSE)  # should be sorted
   
-  ## get default prior parameters if needed
-  if(is.null(prior_parameters_list)) {
-    
-    prior_parameters_list <- getPriorParameters(
-      method_names = method_names,
-      target_rates = target_rates)
-    
-  }
+  defaults <- c(0.025, 0.05, 0.5, 0.8, 0.9, 0.95, 0.975)
+  expected_q <- sort(unique(round(1 - c(defaults, ev_levels), 9)))
   
-  ## Create lists to save all results of the unique trials
-  method_quantiles_list        <- vector(mode = "list", length = length(method_names))
-  names(method_quantiles_list) <- method_names
+  # All expected quantiles must appear in the stored quantiles
+  expect_true(all(expected_q %in% q))
+})
+
+
+## 4. prior_parameters_list is auto-filled when NULL ---------------------------
+
+test_that("performAnalyses fills prior_parameters_list when not supplied", {
+  # When prior_parameters_list = NULL, the function calls getPriorParameters()
+  # and stores the resulting list in analysis_parameters$prior_parameters_list.
+  # We check that:
+  # - it is non-NULL in the result
+  # - it has entries for all methods used.
+
+  methods <- c("berry", "pooled")
   
-  ## For each method
-  for (n in seq_along(method_names)) {
-    
-    ## message to user
-    if (verbose) {
-      start_time  <- Sys.time()
-      out_message <- paste0(format(start_time, "   %H:%M", digits = 1),
-                            " - with ", firstUpper(method_names[n]), " ...")
-      message(out_message, rep(".", 33 - nchar(out_message)))
-    }
-    
-    ## prepare analysis
-    prepare_analysis <- prepareAnalysis(
-      method_name       = method_names[n],
-      target_rates      = target_rates,
-      prior_parameters  = prior_parameters_list[[method_names[n]]])
-    
-    ## run analysis
-    method_quantiles_list[[method_names[n]]] <- getPostQuantiles(
-      method_name       = method_names[n],
-      quantiles         = quantiles,
-      scenario_data     = list(n_subjects   = n_subjects,
-                               n_responders = n_responders),
-      calc_differences  = calc_differences,
-      j_parameters      = prepare_analysis$j_parameters,
-      j_model_file      = prepare_analysis$j_model_file,
-      j_data            = prepare_analysis$j_data,
-      n_mcmc_iterations = n_mcmc_iterations,
-      save_path         = NULL,
-      save_trial        = NULL)
-    
-    ## message to user
-    if (verbose) {
-      message("             finished after ", round(Sys.time() - start_time, 1), " ",
-              units(Sys.time() - start_time), ".")
-      rm(start_time)
-    }
-    
-  }
+  res <- performAnalyses(
+    scenario_list       = scenario_list_pa,
+    target_rates        = c(0.5, 0.5, 0.5),
+    method_names        = methods,
+    prior_parameters_list = NULL,
+    n_mcmc_iterations   = 30,
+    verbose             = FALSE
+  )
   
-  ## message to user
-  if (verbose) {
-    start_time  <- Sys.time()
-    message("         Processing scenarios ...")
-  }
+  priors <- res[[1]]$analysis_parameters$prior_parameters_list
   
-  ## Process scenarios
-  scenario_method_quantiles_list <- mapUniqueTrials(
-    scenario_list              = scenario_list,
-    method_quantiles_list      = method_quantiles_list,
-    trials_unique_calc         = trials_unique_calc,
-    applicable_previous_trials = applicable_previous_trials)
+  expect_false(is.null(priors))
+  expect_true(is.list(priors))
+  expect_true(all(methods %in% names(priors)))
+})
+
+
+## 5. calc_differences adds difference-parameters to quantiles -----------------
+
+test_that("performAnalyses: calc_differences leads to extra 'diff' parameters", {
+  # calc_differences is converted with convertVector2Matrix() and passed to getPostQuantiles().
+  # This should create additional "diff" parameters in the quantiles output.
+  # We compare runs with and without calc_differences for the same scenario/method.
+
+  # Without differences
+  res_no_diff <- performAnalyses(
+    scenario_list       = scenario_list_pa,
+    target_rates        = c(0.5, 0.5, 0.5),
+    method_names        = c("pooled"),
+    calc_differences    = NULL,
+    n_mcmc_iterations   = 30,
+    verbose             = FALSE
+  )
   
-  ## message to user
-  if (verbose) {
-    message("             finished after ", round(Sys.time() - start_time, 1), " ",
-            units(Sys.time() - start_time), ".")
-    rm(start_time)
-  }
+  # With differences between two cohorts (e.g. cohort 2 - cohort 1)
+  res_diff <- performAnalyses(
+    scenario_list       = scenario_list_pa,
+    target_rates        = c(0.5, 0.5, 0.5),
+    method_names        = c("pooled"),
+    calc_differences    = c(2, 1),
+    n_mcmc_iterations   = 30,
+    verbose             = FALSE
+  )
   
-  ## combine results from all scenarios & return
-  analyses_list        <- vector(mode = "list", length = length(scenario_numbers))
-  names(analyses_list) <- paste0("scenario_", scenario_numbers)
+  # Extract first method's first trial quantile matrices
+  mat_no   <- res_no_diff[[1]]$quantiles_list[[1]][[1]]
+  mat_diff <- res_diff[[1]]$quantiles_list[[1]][[1]]
   
-  for (s in seq_along(scenario_numbers)) {
-    
-    analyses_list[[s]] <- list(
-      quantiles_list      = scenario_method_quantiles_list[[s]],
-      scenario_data       = scenario_list[[s]],
-      analysis_parameters = list(
-        quantiles             = quantiles,
-        method_names          = method_names,
-        prior_parameters_list = prior_parameters_list,
-        n_mcmc_iterations     = n_mcmc_iterations))
-    
-  }
+  expect_true(is.matrix(mat_no))
+  expect_true(is.matrix(mat_diff))
   
-  class(analyses_list) <- "analysis_list"
+  # With differences, we expect at least one extra row
+  expect_gt(nrow(mat_diff), nrow(mat_no))
   
-  return (analyses_list)
-  
-}
+  # And at least one row name indicating a difference parameter (contains 'diff')
+  expect_true(any(grepl("diff", rownames(mat_diff))))
+})
+
+
+## 6. verbose controls user-facing progress messages ---------------------------
+
+test_that("performAnalyses prints a progress message when verbose = TRUE", {
+  # We don't try to capture every message, just the initial
+  # "Performing Analyses" message to verify that the verbose branch is active.
+
+  expect_message(
+    performAnalyses(
+      scenario_list       = scenario_list_pa,
+      target_rates        = c(0.5, 0.5),
+      method_names        = c("pooled"),
+      n_mcmc_iterations   = 10,
+      verbose             = TRUE
+    ),
+    "Performing Analyses"
+  )
+})
