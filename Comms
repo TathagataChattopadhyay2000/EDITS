@@ -1,4 +1,47 @@
-── Error: performAnalyses prints a progress message when verbose = TRUE ──
-Error in `performAnalyses(scenario_list = scenario_list_pa, target_rates = c(0.5, 
-    0.5), method_names = c("pooled"), n_mcmc_iterations = 10, 
-    verbose = TRUE)`: Assertion on 'length(target_rates) must match number of cohorts' failed: Must be TRUE.
+applicablePreviousTrials <- function(
+  
+  scenario_list,
+  method_names,
+  quantiles,
+  n_cohorts,
+  calc_differences
+  
+) {
+  
+  ## analyze only unique trials that have not been previously analyzed,
+  ## i.e. trials that were updated with continueRecruitment(),
+  ## i.e. trials that have an overall go decision from a previous decision rule
+  ## i.e. trials that have quantiles stored for each cohort that is to be analysed
+  applicable_previous_trials <-
+    ## check that in each scenario the same analysis methods were analyzed previously
+    all(sapply(seq_along(scenario_list), function (i) {
+      isTRUE(all.equal(names(scenario_list[[i]]$previous_analyses$post_quantiles),
+                       names(scenario_list[[1]]$previous_analyses$post_quantiles)))
+    })) &
+    ## check that the current analysis method names match the method names of the previous analyses
+    isTRUE(all.equal(names(scenario_list[[1]]$previous_analyses$post_quantiles), method_names)) &
+    ## check that the stored quantiles are the same across all scenarios
+    all(sapply(seq_along(scenario_list), function (i) {
+      isTRUE(all.equal(rownames(scenario_list[[i]]$previous_analyses$post_quantiles[[1]][[1]]),
+                       rownames(scenario_list[[1]]$previous_analyses$post_quantiles[[1]][[1]])))
+    })) &
+    ## check that the new quantiles are within the stored quantiles
+    all(paste0(as.character(quantiles * 100), "%") %in%
+          rownames(scenario_list[[1]]$previous_analyses$post_quantiles[[1]][[1]])) &
+    ## check that there are stored quantiles for each cohort that is to be analysed
+    all(paste0("p_", seq_len(n_cohorts)) %in%
+          colnames(scenario_list[[1]]$previous_analyses$post_quantiles[[1]][[1]]))
+  
+  ## check that all differences have been previously calculated
+  if (!is.null(calc_differences)) {
+    
+    applicable_previous_trials <- applicable_previous_trials &
+      all(apply(calc_differences, 1, function (x) {
+        paste0("p_diff_", paste0(as.character(x), collapse = ""))
+      }) %in% colnames(scenario_list[[1]]$previous_analyses$post_quantiles[[1]][[1]]))
+    
+  }
+  
+  return (applicable_previous_trials)
+  
+}
