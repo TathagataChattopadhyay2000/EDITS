@@ -1,11 +1,4 @@
-── Failure: performAnalyses: calc_differences leads to extra 'diff' parameters ──
-nrow(mat_diff) is not strictly more than nrow(mat_no). Difference: 0
-
-── Failure: performAnalyses: calc_differences leads to extra 'diff' parameters ──
-any(grepl("diff", rownames(mat_diff))) is not TRUE
-
-`actual`:   FALSE
-`expected`: TRUE 
-
-Error:
-! Test failed
+── Error: performAnalyses prints a progress message when verbose = TRUE ──
+Error in `performAnalyses(scenario_list = scenario_list_pa, target_rates = c(0.5, 
+    0.5), method_names = c("pooled"), n_mcmc_iterations = 10, 
+    verbose = TRUE)`: Assertion on 'length(target_rates) must match number of cohorts' failed: Must be TRUE.
