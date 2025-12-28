@@ -53,3 +53,60 @@ test_that("getPosteriors: basic posterior sampling and name cleaning (no exch we
   # i.e. no "exch" left in the names either
   expect_false(any(grepl("exch", colnames(post))))
 })
+
+
+test_that("getPosteriors: exNEX exchangeability weights are renamed to w_j and extras dropped", {
+  skip_if_not_installed("rjags")
+  
+  set.seed(456)
+  
+  # 1) Simple two-cohort scenario (numbers don't matter much, we just want JAGS to run)
+  scen_list <- simulateScenarios(
+    n_subjects_list     = list(c(10, 20)),
+    response_rates_list = list(c(0.6, 0.7)),
+    n_trials            = 1
+  )
+  scen1 <- scen_list$scenario_1
+  
+  # 2) Prepare exNEX analysis, which uses exchangeability weights in the JAGS model
+  target_rates <- c(0.5, 0.5)
+  priors       <- getPriorParameters(
+    method_names = "exnex",
+    target_rates = target_rates
+  )
+  
+  prep <- prepareAnalysis(
+    method_name      = "exnex",
+    target_rates     = target_rates,
+    prior_parameters = priors[["exnex"]]
+  )
+  
+  # Like in getPostQuantilesOfTrial, fill in actual data r and n
+  j_data <- prep$j_data
+  j_data$r <- as.numeric(scen1$n_responders[1, ])
+  j_data$n <- as.numeric(scen1$n_subjects[1, ])
+  
+  # 3) Call getPosteriors – this should create 'exch[...]' columns inside
+  post <- getPosteriors(
+    j_parameters      = prep$j_parameters,
+    j_model_file      = prep$j_model_file,
+    j_data            = j_data,
+    n_mcmc_iterations = 300
+  )
+  
+  # Sanity: still a proper numeric matrix
+  expect_true(is.matrix(post))
+  expect_gt(nrow(post), 0)
+  expect_true(all(is.finite(post)))
+  
+  # 4) Weight-handling behaviour:
+  # (a) No raw 'exch' strings should survive in the column names
+  expect_false(any(grepl("exch", colnames(post))))
+  
+  # (b) We should see one w_j column per cohort (length(j_data$n))
+  w_cols <- grep("^w_", colnames(post))
+  expect_equal(length(w_cols), length(j_data$n))
+  
+  # (c) No leftover JAGS-style index ",1" should be present anymore
+  expect_false(any(grepl(",1", colnames(post))))
+})
