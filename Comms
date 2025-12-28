@@ -1,204 +1,87 @@
-## 1. Basic structure: header, scenario labels, method label, numeric values ----
+#' @title saveAnalyses
+#' @md
+#' @description This function saves an object of class `analysis_list`
+#' @param analyses_list An object of class `analysis_list`,
+#' as created with \code{\link[bhmbasket]{performAnalyses}}
+#' @param save_path A string for the path where the scenarios are being stored,
+#' Default: \code{\link[base]{tempfile}}
+#' @param analysis_numbers A positive integer naming the analysis number.
+#' If `NULL`, the function will look for the number of saved analyses of the scenario
+#' in the directory and add 1, Default: `NULL`
+#' @return A named list of length 3 of vectors with scenario and analysis numbers and
+#' the `save_path`
+#' @seealso
+#'  \code{\link[bhmbasket]{performAnalyses}}
+#'  \code{\link[bhmbasket]{loadAnalyses}}
+#'  \code{\link[base]{tempfile}}
+#' @rdname saveAnalyses
+#' @examples
+#'   trial_data <- createTrial(
+#'     n_subjects   = c(10, 20, 30),
+#'     n_responders = c(1, 2, 3))
+#'
+#'   analysis_list <- performAnalyses(
+#'     scenario_list      = trial_data,
+#'     target_rates       = rep(0.5, 3),
+#'     n_mcmc_iterations  = 100)
+#'
+#'   save_info     <- saveAnalyses(analysis_list)
+#'   analysis_list <- loadAnalyses(scenario_numbers = save_info$scenario_numbers,
+#'                                 analysis_numbers = save_info$analysis_numbers,
+#'                                 load_path        = save_info$path)
+#' @author Stephan Wojciekowski
+#' @export
+saveAnalyses <- function (
 
-test_that("print.analysis_list: prints header, scenario blocks, method label, and numeric estimates", {
-  set.seed(123)
+  analyses_list,
+  save_path        = tempdir(),
+  analysis_numbers = NULL
 
-  # Two scenarios so print.analysis_list uses the y[[n]][, 1:2] branch
-  scen <- simulateScenarios(
-    n_subjects_list     = list(c(10, 20),
-                               c(10, 20)),
-    response_rates_list = list(c(0.3, 0.6),   # scenario_1
-                               c(0.4, 0.7)),  # scenario_2
-    n_trials            = 50
-  )
+) {
 
-  analyses <- performAnalyses(
-    scenario_list      = scen,
-    method_names       = "pooled",
-    target_rates       = c(0.5, 0.5),
-    n_mcmc_iterations  = 20,
-    verbose            = FALSE
-  )
+  error_analyses_list <- simpleError(
+    "Please provide an object of class analysis_list for the argument 'analyses_list'")
+  error_save_path     <- simpleError(
+    "Please provide a string containing a path for the argument 'save_path'")
+  error_analysis_numbers <- simpleError(paste(
+    "Please provide a vector of positive integers for the argument 'analysis_numbers'",
+    "with length equal to the length of 'analyses_list'"))
 
-  # Reference estimates used by print.analysis_list
-  est_list <- getEstimates(analyses)
+  if (missing(analyses_list))                                     stop (error_analyses_list)
 
-  # For multi-scenario: est_list[[1]] is a list of matrices, one per scenario
-  expect_true(is.list(est_list[[1]]))
-  est_mat1 <- est_list[[1]][[1]]  # scenario_1, method 'pooled'
+  if (!is.analysis_list(analyses_list))                           stop (error_analyses_list)
+  if (!is.character(save_path) || length(save_path) > 1)          stop (error_save_path)
+  if (!is.null(analysis_numbers) && (
+    any(!is.positive.wholenumber(analysis_numbers)) ||
+    !identical(length(analyses_list), length(analysis_numbers)))) stop(error_analysis_numbers)
 
-  # We know print.analysis_list uses y[[n]][, 1:2] → typically Mean & SD
-  mean_p1 <- round(est_mat1["p_1", "Mean"], digits = 2)
-  sd_p1   <- round(est_mat1["p_1", "SD"],   digits = 2)
+  ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
 
-  out <- capture.output(print(analyses))
-  flat_out <- paste(out, collapse = " ")
+  scenario_numbers <- sapply(analyses_list, function (x) x$scenario_data$scenario_number)
 
-  # 1) Header: "analysis_list of 2 scenarios with 1 method"
-  expect_true(
-    any(grepl("analysis_list of 2 scenarios with 1 method", out)),
-    info = "Header should say we have 2 scenarios and 1 method"
-  )
+  if (is.null(analysis_numbers)) {
+    analysis_numbers <- rep(0, length(analyses_list))
+  }
 
-  # 2) Scenario labels: "  - scenario_1" and "  - scenario_2"
-  expect_true(
-    any(grepl("^  - scenario_1", out)),
-    info = "First scenario block label should be 'scenario_1'"
-  )
-  expect_true(
-    any(grepl("^  - scenario_2", out)),
-    info = "Second scenario block label should be 'scenario_2'"
-  )
+  for (s in seq_along(analyses_list)) {
 
-  # 3) Method label: firstUpper('pooled') = 'Pooled'
-  expect_true(
-    any(grepl("Pooled", out)),
-    info = "Method name 'Pooled' must be printed as a row label"
-  )
+    ## Get analysis number
+    if (identical(analysis_numbers[s], 0)) {
 
-  # 4) Check that *actual numeric estimates* for scenario_1 (Mean & SD for p_1) appear
-  mean_str <- sprintf("%.2f", mean_p1)
-  sd_str   <- sprintf("%.2f", sd_p1)
+      analysis_numbers[s] <- sum(grepl(paste0("analysis_data_", scenario_numbers[s], "_"),
+                                       list.files(save_path))) + 1L
 
-  expect_true(
-    grepl(mean_str, flat_out),
-    info = "Rounded Mean for p_1 from scenario_1 must appear in the printed output"
-  )
-  expect_true(
-    grepl(sd_str, flat_out),
-    info = "Rounded SD for p_1 from scenario_1 must appear in the printed output"
-  )
+    }
 
-  # 5) Footer: MCMC iterations + evidence levels
-  expect_true(
-    any(grepl("MCMC iterationns per BHM method", out)),
-    info = "Footer line must mention MCMC iterations (typo 'iterationns' kept as in code)"
-  )
-  expect_true(
-    any(grepl("Available evidence levels:", out)),
-    info = "Footer must list available evidence levels"
-  )
-})
+    ## Save the analysis
+    file_name <- paste0("analysis_data_", scenario_numbers[s], "_", analysis_numbers[s],".rds")
+    saveRDS(analyses_list[[s]], file = file.path(save_path, file_name),
+            compress = "xz")
 
+  }
 
-## 2. Multiple scenarios: scenario-specific estimates differ -------------------
+  return (list(scenario_numbers = scenario_numbers,
+               analysis_numbers = analysis_numbers,
+               path             = save_path))
 
-test_that("print.analysis_list: multiple scenarios print distinct scenario-specific estimates", {
-  set.seed(456)
-
-  n_subj <- c(10, 20)
-  rr1    <- c(0.3, 0.6)  # scenario_1
-  rr2    <- c(0.7, 0.2)  # scenario_2, clearly different pattern
-
-  scen_multi <- simulateScenarios(
-    n_subjects_list     = list(n_subj, n_subj),
-    response_rates_list = list(rr1, rr2),
-    n_trials            = 30
-  )
-
-  analyses_multi <- performAnalyses(
-    scenario_list      = scen_multi,
-    method_names       = "pooled",
-    target_rates       = c(0.5, 0.5),
-    n_mcmc_iterations  = 20,
-    verbose            = FALSE
-  )
-
-  est_multi <- getEstimates(analyses_multi)
-
-  # Multi-scenario: est_multi[[1]] is a list of matrices, one per scenario
-  expect_true(is.list(est_multi[[1]]))
-  m1 <- est_multi[[1]][[1]]  # scenario_1
-  m2 <- est_multi[[1]][[2]]  # scenario_2
-
-  mean1 <- round(m1["p_1", "Mean"], 2)
-  mean2 <- round(m2["p_1", "Mean"], 2)
-
-  out <- capture.output(print(analyses_multi))
-  flat_out <- paste(out, collapse = " ")
-
-  # 1) Header: 2 scenarios, 1 method
-  expect_true(
-    any(grepl("analysis_list of 2 scenarios with 1 method", out)),
-    info = "Header should reflect 2 scenarios and 1 method"
-  )
-
-  # 2) Scenario blocks
-  expect_true(any(grepl("^  - scenario_1", out)),
-              info = "scenario_1 header must be printed")
-  expect_true(any(grepl("^  - scenario_2", out)),
-              info = "scenario_2 header must be printed")
-
-  # 3) Scenario-specific Means for p_1 must both appear somewhere
-  mean1_str <- sprintf("%.2f", mean1)
-  mean2_str <- sprintf("%.2f", mean2)
-
-  expect_true(
-    grepl(mean1_str, flat_out),
-    info = "Scenario 1 Mean(p_1) should be printed somewhere in the output"
-  )
-  expect_true(
-    grepl(mean2_str, flat_out),
-    info = "Scenario 2 Mean(p_1) should be printed somewhere in the output"
-  )
-
-  # 4) Since response rates differ, these means should differ too
-  expect_false(
-    isTRUE(all.equal(mean1, mean2)),
-    info = "Means for p_1 in the two scenarios should differ for different underlying data"
-  )
-})
-
-
-## 3. digits argument: controls rounding of printed numeric values -------------
-
-test_that("print.analysis_list: digits argument controls printed numeric precision", {
-  set.seed(789)
-
-  # Again, 2 scenarios to avoid the 1-scenario branch
-  scen <- simulateScenarios(
-    n_subjects_list     = list(c(10, 20),
-                               c(10, 20)),
-    response_rates_list = list(c(0.33, 0.66),
-                               c(0.33, 0.66)),
-    n_trials            = 40
-  )
-
-  analyses <- performAnalyses(
-    scenario_list      = scen,
-    method_names       = "pooled",
-    target_rates       = c(0.5, 0.5),
-    n_mcmc_iterations  = 20,
-    verbose            = FALSE
-  )
-
-  est_list <- getEstimates(analyses)
-  est_obj  <- est_list[[1]]
-  # Multi-scenario: list of matrices
-  expect_true(is.list(est_obj))
-  est_mat1 <- est_obj[[1]]   # scenario_1
-
-  mean_p1 <- est_mat1["p_1", "Mean"]
-
-  # Capture with low vs. high precision
-  out_2 <- capture.output(print(analyses, digits = 2))
-  out_4 <- capture.output(print(analyses, digits = 4))
-
-  flat_2 <- paste(out_2, collapse = " ")
-  flat_4 <- paste(out_4, collapse = " ")
-
-  fmt2 <- sprintf("%.2f", round(mean_p1, 2))
-  fmt4 <- sprintf("%.4f", round(mean_p1, 4))
-
-  # With digits = 2, a 2-decimal version should appear
-  expect_true(
-    grepl(fmt2, flat_2),
-    info = "digits = 2 should print Mean(p_1) rounded to 2 decimals"
-  )
-
-  # With digits = 4, a more precise 4-decimal version should appear
-  expect_true(
-    grepl(fmt4, flat_4),
-    info = "digits = 4 should print Mean(p_1) rounded to 4 decimals"
-  )
-})
+}
