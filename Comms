@@ -1,79 +1,56 @@
-test_that("loadAnalyses: loads saved analyses and sets class/names correctly", {
-  tmpdir <- tempdir()
+#' @export
+print.analysis_list <- function (x, digits = 2, ...) {
+  
+  n_scenarios    <- length(x)
+  scenario_names <- names(x)
+  
+  n_methods      <- length(x[[1]]$quantiles_list)
+  method_names   <- names(x[[1]]$quantiles_list)
+  
+  estimates          <- getEstimates(x)
+  n_mcmc_interations <- x[[1]]$analysis_parameters$n_mcmc_iterations
+  
+  evidence_levels <- sort(1 - x[[1]]$analysis_parameters$quantiles)
+  
+  cat("analysis_list of ", n_scenarios, " scenario", ifelse(n_scenarios == 1, "", "s"),
+      " with ", n_methods, " method", ifelse(n_methods == 1, "", "s"),"\n\n", sep = "")
+  
+  for (n in seq_along(scenario_names)) {
+    
+    if (n_scenarios == 1L) {
+      
+      expr <- quote(t(y[, 1:2]))
+      
+    } else {
+      
+      expr <- quote(t(y[[n]][, 1:2]))
+      
+    }
+    
+    mat_out <- do.call(rbind, lapply(estimates, function (y) eval(expr)))
+    
+    rownames(mat_out) <-  paste0(
+      c("    - ", "      "),
+      c(rbind(
+        paste0(
+          firstUpper(method_names),
+          sapply(method_names, function (y) {
+            getBlankString(max(nchar(method_names)) - nchar(y) + 1)
+          })),
+        rep(getBlankString(max(nchar(method_names)) + 3),
+            length = length(method_names))
+      )),
+      rownames(mat_out))
+    
+    cat("  -", scenario_names[n], "\n")
+    print(round(mat_out, digits = digits))
+    
+    cat("\n")
+    
+  }
+  
+  cat("  -", n_mcmc_interations, "MCMC iterationns per BHM method\n")
+  cat("  - Available evidence levels:", evidence_levels, "\n")
+  
+}
 
-  # Create two dummy analyses and save them as the package would
-  scen_nums <- c(1, 2)
-  anal_nums <- c(1, 2)
-
-  dummy1 <- list(foo = 1)
-  dummy2 <- list(bar = 2)
-
-  saveRDS(dummy1, file = file.path(tmpdir, "analysis_data_1_1.rds"))
-  saveRDS(dummy2, file = file.path(tmpdir, "analysis_data_2_2.rds"))
-
-  loaded <- loadAnalyses(
-    scenario_numbers = scen_nums,
-    analysis_numbers = anal_nums,
-    load_path        = tmpdir
-  )
-
-  # Structure
-  expect_s3_class(loaded, "analysis_list")
-  expect_identical(names(loaded), c("scenario_1", "scenario_2"))
-
-  # Contents match what we saved
-  expect_identical(loaded[[1]], dummy1)
-  expect_identical(loaded[[2]], dummy2)
-})
-
-
-test_that("loadAnalyses: scenario_numbers must be positive integers", {
-  tmpdir <- tempdir()
-
-  # Non-numeric
-  expect_error(
-    loadAnalyses(scenario_numbers = "a", load_path = tmpdir),
-    "scenario_numbers"
-  )
-
-  # Zero / negative
-  expect_error(
-    loadAnalyses(scenario_numbers = c(0, 1), load_path = tmpdir),
-    "scenario_numbers"
-  )
-})
-
-test_that("loadAnalyses: analysis_numbers must be positive integers of same length", {
-  tmpdir <- tempdir()
-
-  # Wrong length
-  expect_error(
-    loadAnalyses(
-      scenario_numbers = c(1, 2),
-      analysis_numbers = c(1),
-      load_path        = tmpdir
-    ),
-    "analysis_numbers"
-  )
-
-  # Non-integerish / negative
-  expect_error(
-    loadAnalyses(
-      scenario_numbers = c(1, 2),
-      analysis_numbers = c(1, -1),
-      load_path        = tmpdir
-    ),
-    "analysis_numbers"
-  )
-})
-
-test_that("loadAnalyses: load_path must be a single character string", {
-  expect_error(
-    loadAnalyses(scenario_numbers = 1, load_path = 123),
-    "load_path"
-  )
-  expect_error(
-    loadAnalyses(scenario_numbers = 1, load_path = c("a", "b")),
-    "load_path"
-  )
-})
