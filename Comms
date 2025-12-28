@@ -1,95 +1,17 @@
-
-test_that("getPostQuantiles (pooled): uses pooled backend and matches Beta posterior", {
-  skip_if_not_installed("foreach")
-  skip_if_not_installed("doRNG")
-
-  # Force foreach to run sequentially (no parallel backend needed)
-  foreach::registerDoSEQ()
-
-  ## Scenario: single trial, 2 cohorts, provided as *matrices*
-  ## This avoids the vector→matrix magic that gave us 2 analyses before.
-  n_subjects_mat   <- matrix(c(10, 20), nrow = 1)
-  n_responders_mat <- matrix(c(3, 5),   nrow = 1)
-
-  scenario_data <- list(
-    n_subjects   = n_subjects_mat,
-    n_responders = n_responders_mat
-  )
-
-  ## Prior for pooled model: Beta(1, 1)
-  ## j_data$a, j_data$b are the only things needed up-front;
-  ## j_data$r and j_data$n are filled inside getPostQuantilesOfTrial()
-  ## from the scenario row.
-  j_data <- list(
-    a = 1,
-    b = 1
-  )
-
-  quantiles <- c(0.025, 0.5, 0.975)
-
-  # Call getPostQuantiles for pooled method
-  out <- getPostQuantiles(
-    method_name       = "pooled",
-    quantiles         = quantiles,
-    scenario_data     = scenario_data,
-    calc_differences  = NULL,
-    j_parameters      = NULL,    # not used for pooled
-    j_model_file      = NULL,    # not used for pooled
-    j_data            = j_data,
-    n_mcmc_iterations = 1000,
-    save_path         = NULL,
-    save_trial        = NULL
-  )
-
-  # 1) Structure checks -------------------------------------------------
-  # One trial row -> one element in the list
-  expect_type(out, "list")
-  expect_length(out, 1)
-
-  mat <- out[[1]]
-  expect_true(is.matrix(mat))
-
-  # rows = quantiles + Mean + SD
-  expect_identical(
-    rownames(mat),
-    c("2.5%", "50%", "97.5%", "Mean", "SD")
-  )
-
-  # cols = one posterior per cohort p_1, p_2 (pooled model still reports
-  # a separate posterior for each cohort, but it's the same distribution)
-  expect_identical(colnames(mat), c("p_1", "p_2"))
-
-  expect_identical(
-    dim(mat),
-    c(length(quantiles) + 2L, 2L)
-  )
-
-  # 2) Numerical Beta check ---------------------------------------------
-  # pooled shape parameters:
-  # shape_1 = a + sum(r), shape_2 = b + sum(n) - sum(r)
-  r_tot <- sum(n_responders_mat[1, ])
-  n_tot <- sum(n_subjects_mat[1, ])
-
-  shape_1 <- j_data$a + r_tot
-  shape_2 <- j_data$b + (n_tot - r_tot)
-
-  expected_q  <- stats::qbeta(quantiles, shape1 = shape_1, shape2 = shape_2)
-  expected_mu <- shape_1 / (shape_1 + shape_2)
-  expected_sd <- ((shape_1 * shape_2) /
-                    ((shape_1 + shape_2)^2 * (shape_1 + shape_2 + 1)))^0.5
-
-  # Every column should equal the same pooled Beta posterior
-  expect_equal(
-    mat[c("2.5%", "50%", "97.5%"), 1],
-    expected_q,
-    tolerance = 1e-8
-  )
-  expect_equal(
-    mat[c("2.5%", "50%", "97.5%"), 2],
-    expected_q,
-    tolerance = 1e-8
-  )
-
-  expect_equal(mat["Mean", ], rep(expected_mu, 2), tolerance = 1e-8)
-  expect_equal(mat["SD",   ], rep(expected_sd, 2), tolerance = 1e-8)
-})
+>   # Every column should equal the same pooled Beta posterior
+>   expect_equal(
++     mat[c("2.5%", "50%", "97.5%"), 1],
++     expected_q,
++     tolerance = 1e-8
++   )
+Error: mat[c("2.5%", "50%", "97.5%"), 1] not equal to `expected_q`.
+names for target but not for current
+> expected_q
+[1] 0.1422285 0.2766453 0.4461339
+> expected_mu
+[1] 0.28125
+> expected_sd
+[1] 0.07826692
+> mat[c("2.5%", "50%", "97.5%"), 1]
+     2.5%       50%     97.5% 
+0.1422285 0.2766453 0.4461339 
