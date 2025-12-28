@@ -1,48 +1,79 @@
-loadAnalyses <- function (
-  scenario_numbers,
-  analysis_numbers = rep(1, length(scenario_numbers)),
-  load_path        = tempdir()
-) {
-  # --- Argument validation with checkmate ------------------------------------
-  checkmate::assertNumeric(
-    scenario_numbers,
-    any.missing = FALSE,
-    .var.name   = "scenario_numbers"
-  )
-  checkmate::assertIntegerish(
-    scenario_numbers,
-    lower     = 1,
-    .var.name = "scenario_numbers"
-  )
+test_that("loadAnalyses: loads saved analyses and sets class/names correctly", {
+  tmpdir <- tempdir()
 
-  checkmate::assertIntegerish(
-    analysis_numbers,
-    lower   = 1,
-    len     = length(scenario_numbers),
-    .var.name = "analysis_numbers"
+  # Create two dummy analyses and save them as the package would
+  scen_nums <- c(1, 2)
+  anal_nums <- c(1, 2)
+
+  dummy1 <- list(foo = 1)
+  dummy2 <- list(bar = 2)
+
+  saveRDS(dummy1, file = file.path(tmpdir, "analysis_data_1_1.rds"))
+  saveRDS(dummy2, file = file.path(tmpdir, "analysis_data_2_2.rds"))
+
+  loaded <- loadAnalyses(
+    scenario_numbers = scen_nums,
+    analysis_numbers = anal_nums,
+    load_path        = tmpdir
   )
 
-  checkmate::assertCharacter(
-    load_path,
-    len       = 1,
-    any.missing = FALSE,
-    .var.name = "load_path"
+  # Structure
+  expect_s3_class(loaded, "analysis_list")
+  expect_identical(names(loaded), c("scenario_1", "scenario_2"))
+
+  # Contents match what we saved
+  expect_identical(loaded[[1]], dummy1)
+  expect_identical(loaded[[2]], dummy2)
+})
+
+
+test_that("loadAnalyses: scenario_numbers must be positive integers", {
+  tmpdir <- tempdir()
+
+  # Non-numeric
+  expect_error(
+    loadAnalyses(scenario_numbers = "a", load_path = tmpdir),
+    "scenario_numbers"
   )
 
-  # --- Core logic ------------------------------------------------------------
-  analyses_list <- vector(mode = "list", length = length(scenario_numbers))
+  # Zero / negative
+  expect_error(
+    loadAnalyses(scenario_numbers = c(0, 1), load_path = tmpdir),
+    "scenario_numbers"
+  )
+})
 
-  for (s in seq_along(scenario_numbers)) {
-    analyses_list[[s]] <- readRDS(
-      file.path(
-        load_path,
-        paste0("analysis_data_", scenario_numbers[s], "_", analysis_numbers[s], ".rds")
-      )
-    )
-  }
+test_that("loadAnalyses: analysis_numbers must be positive integers of same length", {
+  tmpdir <- tempdir()
 
-  names(analyses_list) <- paste0("scenario_", scenario_numbers)
-  class(analyses_list) <- "analysis_list"
+  # Wrong length
+  expect_error(
+    loadAnalyses(
+      scenario_numbers = c(1, 2),
+      analysis_numbers = c(1),
+      load_path        = tmpdir
+    ),
+    "analysis_numbers"
+  )
 
-  return(analyses_list)
-}
+  # Non-integerish / negative
+  expect_error(
+    loadAnalyses(
+      scenario_numbers = c(1, 2),
+      analysis_numbers = c(1, -1),
+      load_path        = tmpdir
+    ),
+    "analysis_numbers"
+  )
+})
+
+test_that("loadAnalyses: load_path must be a single character string", {
+  expect_error(
+    loadAnalyses(scenario_numbers = 1, load_path = 123),
+    "load_path"
+  )
+  expect_error(
+    loadAnalyses(scenario_numbers = 1, load_path = c("a", "b")),
+    "load_path"
+  )
+})
