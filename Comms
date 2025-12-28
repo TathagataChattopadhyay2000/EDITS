@@ -1,240 +1,41 @@
-set.seed(123)
-
-# Base scenarios: 1 scenario, 3 cohorts, 10 trials
-scen_initial <- simulateScenarios(
-  n_subjects_list     = list(c(10, 20, 30)),
-  response_rates_list = list(c(0.4, 0.6, 0.8)),
-  n_trials            = 10
-)
-
-# First analysis (no calc_differences)
-anal_initial <- performAnalyses(
-  scenario_list       = scen_initial,
-  target_rates        = c(0.5, 0.5, 0.5),
-  method_names        = c("pooled"),
-  n_mcmc_iterations   = 50,
-  verbose             = FALSE
-)
-
-# Go decisions based on a trivial always-TRUE boundary rule
-go_initial <- getGoDecisions(
-  analyses_list   = anal_initial,
-  cohort_names    = c("p_1", "p_2", "p_3"),
-  evidence_levels = c(0.5, 0.5, 0.5),
-  boundary_rules  = quote(c(TRUE, TRUE, TRUE))
-)
-
-# Continue recruitment: this creates scenario_list with previous_analyses filled
-scen_next <- continueRecruitment(
-  n_subjects_add_list = list(c(5, 5, 5)),
-  decisions_list      = go_initial,
-  method_name         = "pooled"
-)
-
-# Second analysis WITH calc_differences to get p_diff_* columns
-anal_with_diff <- performAnalyses(
-  scenario_list       = scen_initial,
-  target_rates        = c(0.5, 0.5, 0.5),
-  method_names        = c("pooled"),
-  calc_differences    = c(3, 2),              # will produce p_diff_32
-  n_mcmc_iterations   = 50,
-  verbose             = FALSE
-)
-
-go_with_diff <- getGoDecisions(
-  analyses_list   = anal_with_diff,
-  cohort_names    = c("p_1", "p_2", "p_3", "p_1", "p_2", "p_3"),
-  evidence_levels = c(0.5, 0.5, 0.5, 0.5, 0.5, 0.5),
-  boundary_rules  = quote(c(TRUE, TRUE, TRUE, TRUE, TRUE, TRUE))
-)
-
-scen_next_diff <- continueRecruitment(
-  n_subjects_add_list = list(c(5, 5, 5)),
-  decisions_list      = go_with_diff,
-  method_name         = "pooled"
-)
-
-# Common objects for tests
-method_names_prev <- anal_initial[[1]]$analysis_parameters$method_names   # "pooled"
-quantiles_prev    <- anal_initial[[1]]$analysis_parameters$quantiles      # numeric vector
-n_coh_prev        <- ncol(scen_next[[1]]$n_subjects)                      # 3 cohorts
-
-
-
-## 1. Happy path (no calc_differences): all conditions satisfied → TRUE ---------------------
-
-set.seed(123)
-
-# Base scenarios: 1 scenario, 3 cohorts, 10 trials
-scen_initial <- simulateScenarios(
-  n_subjects_list     = list(c(10, 20, 30)),
-  response_rates_list = list(c(0.4, 0.6, 0.8)),
-  n_trials            = 10
-)
-
-# First analysis (no calc_differences)
-anal_initial <- performAnalyses(
-  scenario_list       = scen_initial,
-  target_rates        = c(0.5, 0.5, 0.5),
-  method_names        = c("pooled"),
-  n_mcmc_iterations   = 50,
-  verbose             = FALSE
-)
-
-# Go decisions based on a trivial always-TRUE boundary rule
-go_initial <- getGoDecisions(
-  analyses_list   = anal_initial,
-  cohort_names    = c("p_1", "p_2", "p_3"),
-  evidence_levels = c(0.5, 0.5, 0.5),
-  boundary_rules  = quote(c(TRUE, TRUE, TRUE))
-)
-
-# Continue recruitment: this creates scenario_list with previous_analyses filled
-scen_next <- continueRecruitment(
-  n_subjects_add_list = list(c(5, 5, 5)),
-  decisions_list      = go_initial,
-  method_name         = "pooled"
-)
-
-# Common objects for tests
-method_names_prev <- anal_initial[[1]]$analysis_parameters$method_names   # "pooled"
-quantiles_prev    <- anal_initial[[1]]$analysis_parameters$quantiles      # numeric vector
-n_coh_prev        <- ncol(scen_next[[1]]$n_subjects)                      # 3 cohorts
-
-test_that("applicablePreviousTrials returns TRUE when all conditions are met (no differences)", {
-  res <- applicablePreviousTrials(
-    scenario_list    = scen_next,
-    method_names     = method_names_prev,  # "pooled"
-    quantiles        = quantiles_prev,
-    n_cohorts        = n_coh_prev,
-    calc_differences = NULL
-  )
+performJags <- function (
   
-  expect_true(is.logical(res))
-  expect_length(res, 1L)
-  expect_true(res)
-})
+  data,
+  parameters_to_save,
+  model_file, 
+  n_chains = 2,
+  n_iter   = 1e4,
+  n_burnin = floor(n_iter/3)
 
-
-## 2. Happy path WITH calc_differences: diff columns present → TRUE ---------------------
-
-# Second analysis WITH calc_differences to get p_diff_* columns
-anal_with_diff <- performAnalyses(
-  scenario_list       = scen_initial,
-  target_rates        = c(0.5, 0.5, 0.5),
-  method_names        = c("pooled"),
-  calc_differences    = c(3, 2),              # will produce p_diff_32
-  n_mcmc_iterations   = 50,
-  verbose             = FALSE
-)
-
-go_with_diff <- getGoDecisions(
-  analyses_list   = anal_with_diff,
-  cohort_names    = c("p_1", "p_2", "p_3", "p_1", "p_2", "p_3"),
-  evidence_levels = c(0.5, 0.5, 0.5, 0.5, 0.5, 0.5),
-  boundary_rules  = quote(c(TRUE, TRUE, TRUE, TRUE, TRUE, TRUE))
-)
-
-scen_next_diff <- continueRecruitment(
-  n_subjects_add_list = list(c(5, 5, 5)),
-  decisions_list      = go_with_diff,
-  method_name         = "pooled"
-)
-
-test_that("applicablePreviousTrials returns TRUE when required diff columns exist", {
-  quantiles_diff <- anal_with_diff[[1]]$analysis_parameters$quantiles
-  calc_diff      <- matrix(c(3, 2), ncol = 2)   # corresponds to "p_diff_32"
+) {
+    
   
-  res <- applicablePreviousTrials(
-    scenario_list    = scen_next_diff,
-    method_names     = method_names_prev,
-    quantiles        = quantiles_diff,
-    n_cohorts        = n_coh_prev,
-    calc_differences = calc_diff
-  )
+  n_adapt <- ifelse(n_burnin > 0, n_burnin, 100)
   
-  expect_true(is.logical(res))
-  expect_length(res, 1L)
-  expect_true(res)
-})
-
-
-## 3. Negative diff case: missing p_diff_* column → FALSE ---------------------
-
-test_that("applicablePreviousTrials returns FALSE when required diff columns are missing", {
-  scen_broken <- scen_next_diff
-  
-  # Remove the diff column from the first method's first trial matrix
-  pq      <- scen_broken[[1]]$previous_analyses$post_quantiles
-  method1 <- names(pq)[1]
-  mat1    <- pq[[method1]][[1]]
-  diff_cols <- grepl("^p_diff_", colnames(mat1))
-  
-  if (any(diff_cols)) {
-    mat1 <- mat1[, !diff_cols, drop = FALSE]
-    pq[[method1]][[1]] <- mat1
-    scen_broken[[1]]$previous_analyses$post_quantiles <- pq
-  } else {
-    skip("No p_diff_* column to remove; check calc_differences setup")
+  inits <- vector("list", n_chains)
+  for (i in 1:n_chains) {
+    inits[[i]]$.RNG.name <- "base::Wichmann-Hill"
+    inits[[i]]$.RNG.seed <- stats::runif(1, 0, 2^31)
   }
   
-  quantiles_diff <- anal_with_diff[[1]]$analysis_parameters$quantiles
-  calc_diff      <- matrix(c(3, 2), ncol = 2)   # still asking for p_diff_32
+  j_model <- rjags::jags.model(file     = model_file,
+                               data     = data,
+                               inits    = inits, 
+                               n.chains = n_chains,
+                               n.adapt  = 0,
+                               quiet    = TRUE)
   
-  res <- applicablePreviousTrials(
-    scenario_list    = scen_broken,
-    method_names     = method_names_prev,
-    quantiles        = quantiles_diff,
-    n_cohorts        = n_coh_prev,
-    calc_differences = calc_diff
-  )
+  rjags::adapt(object         = j_model,
+               n.iter         = n_adapt,
+               progress.bar   = "none",
+               end.adaptation = TRUE)
   
-  expect_true(is.logical(res))
-  expect_length(res, 1L)
-  expect_false(res)
-})
-
-
-## 4. Method names differ across scenarios → FALSE ---------------------
-
-test_that("applicablePreviousTrials returns FALSE when method_names differ across scenarios", {
-  # Copy scen_next to two scenarios, then break method-name consistency in scenario_2
-  scen_multi <- scen_next
-  scen_multi$scenario_2 <- scen_multi$scenario_1
-  names(scen_multi) <- c("scenario_1", "scenario_2")
-  class(scen_multi) <- "scenario_list"
+  samples <- rjags::coda.samples(model          = j_model,
+                                 variable.names = parameters_to_save, 
+                                 n.iter         = n_iter - n_burnin,
+                                 thin           = 1, 
+                                 progress.bar   = "none")
   
-  names(scen_multi$scenario_2$previous_analyses$post_quantiles) <-
-    paste0("alt_", names(scen_multi$scenario_2$previous_analyses$post_quantiles))
-  
-  res <- applicablePreviousTrials(
-    scenario_list    = scen_multi,
-    method_names     = method_names_prev,
-    quantiles        = quantiles_prev,
-    n_cohorts        = n_coh_prev,
-    calc_differences = NULL
-  )
-  
-  expect_true(is.logical(res))
-  expect_length(res, 1L)
-  expect_false(res)
-})
-
-
-## 5. Validation: scenario_list must have correct class → error ---------------------
-
-test_that("applicablePreviousTrials enforces scenario_list class", {
-  # Strip the class so it's just a plain list
-  bad_scen <- as.list(scen_next)
-  
-  expect_error(
-    applicablePreviousTrials(
-      scenario_list    = bad_scen,
-      method_names     = method_names_prev,
-      quantiles        = quantiles_prev,
-      n_cohorts        = n_coh_prev,
-      calc_differences = NULL
-    ),
-    "scenario_list"
-  )
-})
+  return(do.call(rbind, samples))
+    
+}
