@@ -1,112 +1,153 @@
-test_that("getPosteriors: basic posterior sampling and name cleaning (no exch weights)", {
-  skip_if_not_installed("rjags")
+test_that("getPostQuantiles (pooled): converts vectors, calls pooled backend, and matches Beta math", {
+  skip_if_not_installed("doParallel")
+  skip_if_not_installed("doRNG")
+  skip_if_not_installed("foreach")
   
-  set.seed(123)
+  # Use a sequential backend so foreach behaves deterministically and
+  # doesn't require a parallel backend in tests.
+  doParallel::registerDoSEQ()
   
-  # 1) Build a tiny one-scenario dataset
-  scen_list <- simulateScenarios(
-    n_subjects_list     = list(c(10, 20)),
-    response_rates_list = list(c(0.5, 0.6)),
-    n_trials            = 1
-  )
-  scen1 <- scen_list$scenario_1
+  ## Scenario: single trial, 2 cohorts, provided as *vectors* to hit the
+  ##   `if (is.null(dim(scenario_data$n_responders)))` conversion branch.
+  n_subjects_vec   <- c(10, 20)
+  n_responders_vec <- c(3, 5)
   
-  # 2) Prepare Berry analysis to get a real JAGS model, parameters and j_data skeleton
-  target_rates <- c(0.5, 0.5)
-  priors       <- getPriorParameters(
-    method_names = "berry",
-    target_rates = target_rates
-  )
-  
-  prep <- prepareAnalysis(
-    method_name      = "berry",
-    target_rates     = target_rates,
-    prior_parameters = priors[["berry"]]
+  scenario_data <- list(
+    n_subjects   = n_subjects_vec,
+    n_responders = n_responders_vec
   )
   
-  # Fill in r and n as getPostQuantilesOfTrial would do
-  j_data <- prep$j_data
-  j_data$r <- as.numeric(scen1$n_responders[1, ])
-  j_data$n <- as.numeric(scen1$n_subjects[1, ])
+  ## Simple Beta(1,1) prior for pooled model
+  j_data <- list(
+    a = 1,
+    b = 1
+  )
   
-  # 3) Call getPosteriors on this real model
-  post <- getPosteriors(
-    j_parameters      = prep$j_parameters,
-    j_model_file      = prep$j_model_file,
+  quantiles <- c(0.025, 0.5, 0.975)
+  
+  # Call getPostQuantiles for the pooled method.
+  out <- getPostQuantiles(
+    method_name       = "pooled",
+    quantiles         = quantiles,
+    scenario_data     = scenario_data,
+    calc_differences  = NULL,
+    j_parameters      = NULL,       # not used by pooled
+    j_model_file      = NULL,       # not used by pooled
     j_data            = j_data,
-    n_mcmc_iterations = 200
+    n_mcmc_iterations = 1000,
+    save_path         = NULL,
+    save_trial        = NULL
   )
   
-  # 4) Check: we got a numeric matrix with cleaned names
-  expect_true(is.matrix(post))
-  expect_gt(nrow(post), 0)
-  expect_true(all(is.finite(post)))
+  # We expect a list of length 1 (one unique trial).
+  expect_type(out, "list")
+  expect_length(out, 1)
   
-  # Column names should no longer contain square brackets
-  expect_false(any(grepl("\\[", colnames(post))))
-  expect_false(any(grepl("\\]", colnames(post))))
+  mat <- out[[1]]
+  expect_true(is.matrix(mat))
   
-  # And in this Berry case we do NOT expect any w_ weight columns
-  expect_false(any(grepl("^w_", colnames(post))))
+  # Dimensions:
+  #   rows: length(quantiles) + 2  (Mean, SD)
+  #   cols: number of cohorts (2)
+  expect_identical(dim(mat), c(length(quantiles) + 2L, 2L))
   
-  # Also, weights_indices branch should have been skipped:
-  # i.e. no "exch" left in the names either
-  expect_false(any(grepl("exch", colnames(post))))
+  # Column and row names should follow getPostQuantilesPooled convention.
+  expect_identical(colnames(mat), c("p_1", "p_2"))
+  expect_identical(
+    sort(rownames(mat)),
+    sort(c(paste0(quantiles * 100, "%"), "Mean", "SD"))
+  )
+  
+  # --- Math check: pooled Beta posterior ---
+  # shape_1 = a + sum(r), shape_2 = b + sum(n) - sum(r)
+  shape_1 <- j_data$a + sum(n_responders_vec)
+  shape_2 <- j_data$b + sum(n_subjects_vec) - sum(n_responders_vec)
+  
+  expected_q  <- stats::qbeta(quantiles, shape1 = shape_1, shape2 = shape_2)
+  expected_mu <- shape_1 / (shape_1 + shape_2)
+  expected_sd <- ((shape_1 * shape_2) /
+                    ((shape_1 + shape_2)^2 * (shape_1 + shape_2 + 1)))^0.5
+  
+  # Each column of mat (p_1, p_2) should equal these values, because pooled model
+  # uses a shared Beta posterior for all cohorts.
+  expect_equal(mat[paste0(quantiles * 100, "%"), 1], expected_q, tolerance = 1e-8)
+  expect_equal(mat[paste0(quantiles * 100, "%"), 2], expected_q, tolerance = 1e-8)
+  expect_equal(mat["Mean", ], rep(expected_mu, 2), tolerance = 1e-8)
+  expect_equal(mat["SD", ],   rep(expected_sd, 2), tolerance = 1e-8)
 })
 
 
-test_that("getPosteriors: exNEX exchangeability weights are renamed to w_j and extras dropped", {
-  skip_if_not_installed("rjags")
+test_that("getPostQuantiles (stratified): multiple trials and calc_differences produce p_j and p_diff_*", {
+  skip_if_not_installed("doParallel")
+  skip_if_not_installed("doRNG")
+  skip_if_not_installed("foreach")
   
-  set.seed(456)
+  doParallel::registerDoSEQ()
   
-  # 1) Simple two-cohort scenario (numbers don't matter much, we just want JAGS to run)
-  scen_list <- simulateScenarios(
-    n_subjects_list     = list(c(10, 20)),
-    response_rates_list = list(c(0.6, 0.7)),
-    n_trials            = 1
+  ## Scenario: 2 trials, 2 cohorts, provided as matrices so we *skip* the
+  ## vector→matrix conversion branch this time.
+  n_subjects_mat <- rbind(
+    c(10, 10),
+    c(20, 20)
   )
-  scen1 <- scen_list$scenario_1
-  
-  # 2) Prepare exNEX analysis, which uses exchangeability weights in the JAGS model
-  target_rates <- c(0.5, 0.5)
-  priors       <- getPriorParameters(
-    method_names = "exnex",
-    target_rates = target_rates
+  n_responders_mat <- rbind(
+    c(3, 5),
+    c(6, 10)
   )
   
-  prep <- prepareAnalysis(
-    method_name      = "exnex",
-    target_rates     = target_rates,
-    prior_parameters = priors[["exnex"]]
+  scenario_data <- list(
+    n_subjects   = n_subjects_mat,
+    n_responders = n_responders_mat
   )
   
-  # Like in getPostQuantilesOfTrial, fill in actual data r and n
-  j_data <- prep$j_data
-  j_data$r <- as.numeric(scen1$n_responders[1, ])
-  j_data$n <- as.numeric(scen1$n_subjects[1, ])
+  ## Simple Beta(1,1) priors per cohort for stratified model.
+  j_data <- list(
+    a_j = c(1, 1),
+    b_j = c(1, 1)
+  )
   
-  # 3) Call getPosteriors – this should create 'exch[...]' columns inside
-  post <- getPosteriors(
-    j_parameters      = prep$j_parameters,
-    j_model_file      = prep$j_model_file,
+  quantiles        <- c(0.25, 0.5, 0.75)
+  calc_differences <- matrix(c(1, 2), ncol = 2)
+  
+  out <- getPostQuantiles(
+    method_name       = "stratified",
+    quantiles         = quantiles,
+    scenario_data     = scenario_data,
+    calc_differences  = calc_differences,
+    j_parameters      = NULL,          # not used by stratified
+    j_model_file      = NULL,          # not used by stratified
     j_data            = j_data,
-    n_mcmc_iterations = 300
+    n_mcmc_iterations = 1000,
+    save_path         = NULL,
+    save_trial        = NULL
   )
   
-  # Sanity: still a proper numeric matrix
-  expect_true(is.matrix(post))
-  expect_gt(nrow(post), 0)
-  expect_true(all(is.finite(post)))
+  # We expect a list of length 2 (two unique trial outcomes).
+  expect_type(out, "list")
+  expect_length(out, 2)
   
-  # 4) Weight-handling behaviour:
-  # (a) No raw 'exch' strings should survive in the column names
-  expect_false(any(grepl("exch", colnames(post))))
-  
-  # (b) We should see one w_j column per cohort (length(j_data$n))
-  w_cols <- grep("^w_", colnames(post))
-  expect_equal(length(w_cols), length(j_data$n))
-  
-  # (c) No leftover JAGS-style index ",1" should be present anymore
-  expect_false(any(grepl(",1", colnames(post))))
+  # Each element should be a matrix with:
+  #   columns: p_1, p_2, p_diff_12
+  #   rows: quantiles + Mean + SD
+  for (mat in out) {
+    expect_true(is.matrix(mat))
+    
+    expect_setequal(
+      colnames(mat),
+      c("p_1", "p_2", "p_diff_12")
+    )
+    
+    expect_setequal(
+      rownames(mat),
+      c(paste0(quantiles * 100, "%"), "Mean", "SD")
+    )
+    
+    # p_j columns must be numeric and finite
+    expect_true(all(is.finite(mat[, c("p_1", "p_2")])))
+    
+    # Difference column exists, numeric, and not all zero
+    diff_col <- mat[, "p_diff_12"]
+    expect_true(is.numeric(diff_col))
+    expect_true(any(diff_col != 0))
+  }
 })
