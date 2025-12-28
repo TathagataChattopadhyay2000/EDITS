@@ -1,41 +1,274 @@
-performJags <- function (
+getPostQuantiles <- function (
   
-  data,
-  parameters_to_save,
-  model_file, 
-  n_chains = 2,
-  n_iter   = 1e4,
-  n_burnin = floor(n_iter/3)
-
+  ## The method to be applied to the likelihood and the quantiles of the posterior
+  method_name,
+  quantiles,
+  
+  ## Scenario data
+  scenario_data,
+  
+  ## Differences between cohorts
+  calc_differences  = NULL,
+  
+  ## JAGS parameters
+  j_parameters,
+  j_model_file,
+  j_data,
+  
+  ## MCMC Parameters
+  n_mcmc_iterations = 1e4,
+  
+  ## Where to save one of the posterior response rates approximations provided by JAGS
+  save_path         = NULL,
+  save_trial        = NULL
+  
 ) {
+  
+  if (is.null(dim(scenario_data$n_responders))) {
     
-  
-  n_adapt <- ifelse(n_burnin > 0, n_burnin, 100)
-  
-  inits <- vector("list", n_chains)
-  for (i in 1:n_chains) {
-    inits[[i]]$.RNG.name <- "base::Wichmann-Hill"
-    inits[[i]]$.RNG.seed <- stats::runif(1, 0, 2^31)
+    scenario_data$n_responders <- t(convertVector2Matrix(scenario_data$n_responders))
+    scenario_data$n_subjects   <- t(convertVector2Matrix(scenario_data$n_subjects))
+    
   }
   
-  j_model <- rjags::jags.model(file     = model_file,
-                               data     = data,
-                               inits    = inits, 
-                               n.chains = n_chains,
-                               n.adapt  = 0,
-                               quiet    = TRUE)
+  n_analyses <- nrow(scenario_data$n_responders)
   
-  rjags::adapt(object         = j_model,
-               n.iter         = n_adapt,
-               progress.bar   = "none",
-               end.adaptation = TRUE)
+  ## Create random index for saving one of the posterior response rates
+  if (is.null(save_trial) && !is.null(save_path)) {
+    # set.seed(seed)
+    save_trial <- sample(seq_len(n_analyses), size = 1)
+  }
   
-  samples <- rjags::coda.samples(model          = j_model,
-                                 variable.names = parameters_to_save, 
-                                 n.iter         = n_iter - n_burnin,
-                                 thin           = 1, 
-                                 progress.bar   = "none")
+  ## Run parallel loops
+  ## prepare foreach loop over 
   
-  return(do.call(rbind, samples))
+  exported_stuff <- c(
+    "posteriors2Quantiles", "getPosteriors", "getPostQuantilesOfTrial",
+    "qbetaDiff")
+  
+  ## prepare chunking
+  chunks_outer <- chunkVector(seq_len(n_analyses), foreach::getDoParWorkers())
+  
+  "%dorng%" <- doRNG::"%dorng%"
+  "%dopar%" <- foreach::"%dopar%"
+  posterior_quantiles_list <- suppressMessages(
+    foreach::foreach(
+      k = chunks_outer,
+      .combine  = c,
+      .verbose  = FALSE,
+      .packages = c("rjags"),
+      .export   = exported_stuff) %dorng% {
+        
+        chunks_inner <- chunkVector(k, foreach::getDoParWorkers())
+        
+        foreach::foreach(i = chunks_inner, .combine = c) %dorng% {
+          
+          lapply(i, function (j) {
+            
+            ## Calculate the posterior quantiles for the kth unique trial outcome
+            getPostQuantilesOfTrial(
+              n_responders      = as.numeric(scenario_data$n_responders[j, ]),
+              n_subjects        = as.numeric(scenario_data$n_subjects[j, ]),
+              j_data            = j_data,
+              j_parameters      = j_parameters,
+              j_model_file      = j_model_file,
+              method_name       = method_name,
+              quantiles         = quantiles,
+              calc_differences  = calc_differences,
+              n_mcmc_iterations = n_mcmc_iterations,
+              save_path         = save_path,
+              save_trial        = save_trial)
+            
+          })
+          
+        }
+        
+      })
+  
+  return (posterior_quantiles_list)
+  
+}
+
+getPostQuantilesOfTrial <- function (
+  
+  n_responders,
+  n_subjects,
+  
+  j_data,
+  j_parameters,
+  j_model_file,
+  method_name,
+  quantiles,
+  calc_differences,
+  n_mcmc_iterations,
+  
+  save_path,
+  save_trial
+  
+) {
+  
+  j_data$r <- n_responders
+  j_data$n <- n_subjects
+  
+  if (method_name == "stratified") {
     
+    posterior_quantiles <- getPostQuantilesStratified(
+      j_data            = j_data,
+      quantiles         = quantiles,
+      calc_differences  = calc_differences,
+      n_mcmc_iterations = n_mcmc_iterations)
+    
+  } else if (method_name == "pooled") {
+    
+    posterior_quantiles <- getPostQuantilesPooled(
+      j_data           = j_data,
+      quantiles        = quantiles,
+      calc_differences = calc_differences)
+    
+  } else {
+    
+    ## Get posterior response rates per indication
+    posterior_samples <- getPosteriors(
+      j_parameters      = j_parameters,
+      j_model_file      = j_model_file,
+      j_data            = j_data,
+      n_mcmc_iterations = n_mcmc_iterations)
+    
+    ## Calculate differences between response rates of cohorts
+    if (!is.null(calc_differences)) {
+      
+      posterior_samples <- calcDiffsMCMC(
+        posterior_samples = posterior_samples,
+        calc_differences        = calc_differences)
+      
+    }
+    
+    ## Save posterior response rates per indication for one randomly selected simulation,
+    ## due to time and storage space constraints only one simulation
+    if (!is.null(save_path)) {
+      if (k == save_trial) {
+        saveRDS(posterior_samples,
+                file = file.path(save_path, paste0("posterior_samples_",
+                                                   k, "_", method_name, "_rds")))
+      }
+    }
+    
+    ## Calculate the required quantiles for the decision rules
+    posterior_quantiles <- posteriors2Quantiles(
+      quantiles  = quantiles,
+      posteriors = posterior_samples)
+    
+  }
+  
+  return (posterior_quantiles)
+  
+}
+
+getPostQuantilesPooled <- function(
+  
+  j_data,
+  quantiles,
+  calc_differences
+  
+) {
+  
+  shape_1 <- j_data$a + sum(j_data$r)
+  shape_2 <- j_data$b + sum(j_data$n) - sum(j_data$r)
+  
+  posterior_quantiles <- stats::qbeta(quantiles, shape1 = shape_1, shape2 = shape_2)
+  
+  posterior_quantiles <- matrix(posterior_quantiles,
+                                ncol = length(j_data$r), nrow = length(quantiles))
+  
+  colnames(posterior_quantiles) <- paste0("p_", seq_along(j_data$r))
+  rownames(posterior_quantiles) <- paste0(quantiles * 100, "%")
+  
+  posterior_mean      <- shape_1 / (shape_1 + shape_2)
+  posterior_sd        <- ((shape_1 * shape_2) / ((shape_1 + shape_2)^2 * (shape_1 + shape_2 + 1)))^0.5
+  posterior_quantiles <- rbind(posterior_quantiles,
+                               Mean = posterior_mean,
+                               SD   = posterior_sd)
+  
+  if (!is.null(calc_differences)) {
+    
+    diff_quantiles <- apply(calc_differences, 1, function (x) {
+      
+      matrix(rep(0, nrow(posterior_quantiles)), ncol = 1)
+      
+    })
+    
+    diff_names <- apply(calc_differences, 1, function (x) {
+      
+      paste0("p_diff_", paste0(as.character(x), collapse = ""))
+      
+    })
+    
+    colnames(diff_quantiles) <- diff_names
+    
+    posterior_quantiles <- cbind(posterior_quantiles, diff_quantiles)
+    
+  }
+  
+  return (posterior_quantiles)
+  
+}
+
+getPostQuantilesStratified <- function(
+  
+  j_data,
+  quantiles,
+  calc_differences,
+  n_mcmc_iterations
+  
+) {
+  
+  shape_1 <- j_data$a_j + j_data$r
+  shape_2 <- j_data$b_j + j_data$n - j_data$r
+  
+  posterior_quantiles <- t(sapply(quantiles, function (x)
+    stats::qbeta(x, shape1 = shape_1, shape2 = shape_2)))
+  
+  if (nrow(posterior_quantiles) == 1) {
+    
+    posterior_quantiles <- t(posterior_quantiles)
+    
+  }
+  
+  colnames(posterior_quantiles) <- paste0("p_", seq_along(j_data$a_j))
+  rownames(posterior_quantiles) <- paste0(quantiles * 100, "%")
+  
+  posterior_mean      <- shape_1 / (shape_1 + shape_2)
+  posterior_sd        <- ((shape_1 * shape_2) / ((shape_1 + shape_2)^2 * (shape_1 + shape_2 + 1)))^0.5
+  posterior_quantiles <- rbind(posterior_quantiles,
+                               Mean = posterior_mean,
+                               SD   = posterior_sd)
+  
+  if (!is.null(calc_differences)) {
+    
+    diff_quantiles <- apply(calc_differences, 1, function (x) {
+      
+      matrix(qbetaDiff(
+        quantiles  = quantiles,
+        x_1_shape1 = shape_1[x[1]],
+        x_1_shape2 = shape_2[x[1]],
+        x_2_shape1 = shape_1[x[2]],
+        x_2_shape2 = shape_2[x[2]],
+        n_mcmc     = n_mcmc_iterations), ncol = 1)
+      
+    })
+    
+    diff_names <- apply(calc_differences, 1, function (x) {
+      
+      paste0("p_diff_", paste0(as.character(x), collapse = ""))
+      
+    })
+    
+    colnames(diff_quantiles) <- diff_names
+    
+    posterior_quantiles <- cbind(posterior_quantiles, diff_quantiles)
+    
+  }
+  
+  return (posterior_quantiles)
+  
 }
