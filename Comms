@@ -1,29 +1,95 @@
-── Failure: getPostQuantiles (pooled): converts vectors, calls pooled backend, and matches Beta math ──
-`out` has length 2, not length 1.
 
-── Failure: getPostQuantiles (pooled): converts vectors, calls pooled backend, and matches Beta math ──
-dim(mat) not identical to c(length(quantiles) + 2L, 2L).
-1/2 mismatches
-[2] 1 - 2 == -1
+test_that("getPostQuantiles (pooled): uses pooled backend and matches Beta posterior", {
+  skip_if_not_installed("foreach")
+  skip_if_not_installed("doRNG")
 
-── Failure: getPostQuantiles (pooled): converts vectors, calls pooled backend, and matches Beta math ──
-colnames(mat) not identical to c("p_1", "p_2").
-Lengths differ: 1 is not 2
+  # Force foreach to run sequentially (no parallel backend needed)
+  foreach::registerDoSEQ()
 
-── Failure: getPostQuantiles (pooled): converts vectors, calls pooled backend, and matches Beta math ──
-mat[paste0(quantiles * 100, "%"), 1] not equal to `expected_q`.
-names for target but not for current
+  ## Scenario: single trial, 2 cohorts, provided as *matrices*
+  ## This avoids the vector→matrix magic that gave us 2 analyses before.
+  n_subjects_mat   <- matrix(c(10, 20), nrow = 1)
+  n_responders_mat <- matrix(c(3, 5),   nrow = 1)
 
-── Error: getPostQuantiles (pooled): converts vectors, calls pooled backend, and matches Beta math ──
-<subscriptOutOfBoundsError/error/condition>
-Error in `mat[paste0(quantiles * 100, "%"), 2]`: subscript out of bounds
-Backtrace:
-    ▆
- 1. └─testthat::expect_equal(...) at tests/testthat/test-AnalysisFunctions.R:613:3
- 2.   └─testthat::quasi_label(enquo(object), label, arg = "object")
- 3.     └─rlang::eval_bare(expr, quo_get_env(quo))
+  scenario_data <- list(
+    n_subjects   = n_subjects_mat,
+    n_responders = n_responders_mat
+  )
 
-Error:
-! Test failed
-Run `rlang::last_trace()` to see where the error occurred.
-> 
+  ## Prior for pooled model: Beta(1, 1)
+  ## j_data$a, j_data$b are the only things needed up-front;
+  ## j_data$r and j_data$n are filled inside getPostQuantilesOfTrial()
+  ## from the scenario row.
+  j_data <- list(
+    a = 1,
+    b = 1
+  )
+
+  quantiles <- c(0.025, 0.5, 0.975)
+
+  # Call getPostQuantiles for pooled method
+  out <- getPostQuantiles(
+    method_name       = "pooled",
+    quantiles         = quantiles,
+    scenario_data     = scenario_data,
+    calc_differences  = NULL,
+    j_parameters      = NULL,    # not used for pooled
+    j_model_file      = NULL,    # not used for pooled
+    j_data            = j_data,
+    n_mcmc_iterations = 1000,
+    save_path         = NULL,
+    save_trial        = NULL
+  )
+
+  # 1) Structure checks -------------------------------------------------
+  # One trial row -> one element in the list
+  expect_type(out, "list")
+  expect_length(out, 1)
+
+  mat <- out[[1]]
+  expect_true(is.matrix(mat))
+
+  # rows = quantiles + Mean + SD
+  expect_identical(
+    rownames(mat),
+    c("2.5%", "50%", "97.5%", "Mean", "SD")
+  )
+
+  # cols = one posterior per cohort p_1, p_2 (pooled model still reports
+  # a separate posterior for each cohort, but it's the same distribution)
+  expect_identical(colnames(mat), c("p_1", "p_2"))
+
+  expect_identical(
+    dim(mat),
+    c(length(quantiles) + 2L, 2L)
+  )
+
+  # 2) Numerical Beta check ---------------------------------------------
+  # pooled shape parameters:
+  # shape_1 = a + sum(r), shape_2 = b + sum(n) - sum(r)
+  r_tot <- sum(n_responders_mat[1, ])
+  n_tot <- sum(n_subjects_mat[1, ])
+
+  shape_1 <- j_data$a + r_tot
+  shape_2 <- j_data$b + (n_tot - r_tot)
+
+  expected_q  <- stats::qbeta(quantiles, shape1 = shape_1, shape2 = shape_2)
+  expected_mu <- shape_1 / (shape_1 + shape_2)
+  expected_sd <- ((shape_1 * shape_2) /
+                    ((shape_1 + shape_2)^2 * (shape_1 + shape_2 + 1)))^0.5
+
+  # Every column should equal the same pooled Beta posterior
+  expect_equal(
+    mat[c("2.5%", "50%", "97.5%"), 1],
+    expected_q,
+    tolerance = 1e-8
+  )
+  expect_equal(
+    mat[c("2.5%", "50%", "97.5%"), 2],
+    expected_q,
+    tolerance = 1e-8
+  )
+
+  expect_equal(mat["Mean", ], rep(expected_mu, 2), tolerance = 1e-8)
+  expect_equal(mat["SD",   ], rep(expected_sd, 2), tolerance = 1e-8)
+})
