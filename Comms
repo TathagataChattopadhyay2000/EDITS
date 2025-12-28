@@ -1,36 +1,55 @@
-getPosteriors <- function (
+test_that("getPosteriors: basic posterior sampling and name cleaning (no exch weights)", {
+  skip_if_not_installed("rjags")
   
-  j_parameters,
-  j_model_file,
-  j_data,
+  set.seed(123)
   
-  n_mcmc_iterations
+  # 1) Build a tiny one-scenario dataset
+  scen_list <- simulateScenarios(
+    n_subjects_list     = list(c(10, 20)),
+    response_rates_list = list(c(0.5, 0.6)),
+    n_trials            = 1
+  )
+  scen1 <- scen_list$scenario_1
   
-) {
+  # 2) Prepare Berry analysis to get a real JAGS model, parameters and j_data skeleton
+  target_rates <- c(0.5, 0.5)
+  priors       <- getPriorParameters(
+    method_names = "berry",
+    target_rates = target_rates
+  )
   
-  ## Adaption and burn-in not included
-  posterior_samples <- performJags(
-    data               = j_data,
-    parameters_to_save = j_parameters,
-    model_file         = j_model_file, 
-    n_iter             = n_mcmc_iterations)
+  prep <- prepareAnalysis(
+    method_name      = "berry",
+    target_rates     = target_rates,
+    prior_parameters = priors[["berry"]]
+  )
   
-  ## replace squarebrackets provided by rjags with workable characters
-  colnames(posterior_samples) <- gsub("\\[", "_", colnames(posterior_samples))
-  colnames(posterior_samples) <- gsub("\\]", "", colnames(posterior_samples))
+  # Fill in r and n as getPostQuantilesOfTrial would do
+  j_data <- prep$j_data
+  j_data$r <- as.numeric(scen1$n_responders[1, ])
+  j_data$n <- as.numeric(scen1$n_subjects[1, ])
   
-  weights_indices <- grepl("exch", colnames(posterior_samples))
-  if (any(weights_indices)) {
-    
-    superfluous_weights <- !grepl(",1", colnames(posterior_samples))
-    
-    colnames(posterior_samples)[weights_indices] <-
-      paste0("w_", seq_along(j_data$n))
-    
-    posterior_samples <- posterior_samples[, !(weights_indices & superfluous_weights)]
-    
-  }
+  # 3) Call getPosteriors on this real model
+  post <- getPosteriors(
+    j_parameters      = prep$j_parameters,
+    j_model_file      = prep$j_model_file,
+    j_data            = j_data,
+    n_mcmc_iterations = 200
+  )
   
-  return (posterior_samples)
+  # 4) Check: we got a numeric matrix with cleaned names
+  expect_true(is.matrix(post))
+  expect_gt(nrow(post), 0)
+  expect_true(all(is.finite(post)))
   
-}
+  # Column names should no longer contain square brackets
+  expect_false(any(grepl("\\[", colnames(post))))
+  expect_false(any(grepl("\\]", colnames(post))))
+  
+  # And in this Berry case we do NOT expect any w_ weight columns
+  expect_false(any(grepl("^w_", colnames(post))))
+  
+  # Also, weights_indices branch should have been skipped:
+  # i.e. no "exch" left in the names either
+  expect_false(any(grepl("exch", colnames(post))))
+})
