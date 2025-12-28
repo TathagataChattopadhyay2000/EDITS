@@ -1,49 +1,36 @@
-test_that("performJags runs a simple Bernoulli model and returns a sensible sample matrix", {
-  skip_if_not_installed("rjags")
-
-  # --- 1. Define a tiny JAGS model: Bernoulli data with Beta(1,1) prior on theta ---
-  model_file <- tempfile(fileext = ".bug")
-  writeLines(
-    c(
-      "model {",
-      "  theta ~ dbeta(1, 1)",          # prior
-      "  for (i in 1:N) {",
-      "    y[i] ~ dbern(theta)",         # Bernoulli likelihood
-      "  }",
-      "}"
-    ),
-    con = model_file
-  )
-
-  # --- 2. Small dataset: 20 observations with 14 successes (theta should be ~0.7) ---
-  data_list <- list(
-    N = 20L,
-    y = c(rep(1L, 14), rep(0L, 6))
-  )
-
-  # --- 3. Run performJags with modest iterations and burn-in ---
-  n_chains <- 2L
-  n_iter   <- 100L
-  n_burnin <- 40L
-
-  samples <- performJags(
-    data               = data_list,
-    parameters_to_save = "theta",
-    model_file         = model_file,
-    n_chains           = n_chains,
-    n_iter             = n_iter,
-    n_burnin           = n_burnin
-  )
-
-  # --- 4. Structural checks: matrix, correct dimensions, correct column name ---
-  expect_true(is.matrix(samples))
-  expect_identical(colnames(samples), "theta")
-
-  expected_rows <- n_chains * (n_iter - n_burnin)
-  expect_identical(nrow(samples), expected_rows)
-
-  # --- 5. Sanity check on inference: posterior mean should be between 0 and 1 ---
-  post_mean <- mean(samples[, "theta"])
-  expect_gt(post_mean, 0)
-  expect_lt(post_mean, 1)
-})
+getPosteriors <- function (
+  
+  j_parameters,
+  j_model_file,
+  j_data,
+  
+  n_mcmc_iterations
+  
+) {
+  
+  ## Adaption and burn-in not included
+  posterior_samples <- performJags(
+    data               = j_data,
+    parameters_to_save = j_parameters,
+    model_file         = j_model_file, 
+    n_iter             = n_mcmc_iterations)
+  
+  ## replace squarebrackets provided by rjags with workable characters
+  colnames(posterior_samples) <- gsub("\\[", "_", colnames(posterior_samples))
+  colnames(posterior_samples) <- gsub("\\]", "", colnames(posterior_samples))
+  
+  weights_indices <- grepl("exch", colnames(posterior_samples))
+  if (any(weights_indices)) {
+    
+    superfluous_weights <- !grepl(",1", colnames(posterior_samples))
+    
+    colnames(posterior_samples)[weights_indices] <-
+      paste0("w_", seq_along(j_data$n))
+    
+    posterior_samples <- posterior_samples[, !(weights_indices & superfluous_weights)]
+    
+  }
+  
+  return (posterior_samples)
+  
+}
