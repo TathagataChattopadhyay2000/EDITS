@@ -1,153 +1,48 @@
-#' @title loadAnalyses
-#' @md
-#' @description This function loads an analysis performed with
-#' \code{\link[bhmbasket]{performAnalyses}}
-#' @param load_path A string providing a path where the scenarios are being stored,
-#' Default: \code{\link[base]{tempfile}}
-#' @param scenario_numbers A (vector of) positive integer(s) for the scenario number(s)
-#' @param analysis_numbers A (vector of) positive integer(s) for the analysis number(s),
-#' Default: `rep(1, length(scenario_numbers))`
-#' @return Returns an object of class `analysis_list`
-#' @seealso
-#'  \code{\link[bhmbasket]{performAnalyses}}
-#'  \code{\link[bhmbasket]{saveAnalyses}}
-#'  \code{\link[base]{tempfile}}
-#' @rdname loadAnalyses
-#' @examples
-#'   trial_data <- createTrial(
-#'     n_subjects   = c(10, 20, 30),
-#'     n_responders = c(1, 2, 3))
-#'
-#'   analysis_list <- performAnalyses(
-#'     scenario_list      = trial_data,
-#'     target_rates       = rep(0.5, 3),
-#'     n_mcmc_iterations  = 100)
-#'
-#'   save_info     <- saveAnalyses(analysis_list)
-#'   analysis_list <- loadAnalyses(scenario_numbers = save_info$scenario_numbers,
-#'                                 analysis_numbers = save_info$analysis_numbers,
-#'                                 load_path        = save_info$path)
-#' @author Stephan Wojciekowski
-#' @export
 loadAnalyses <- function (
-  
   scenario_numbers,
   analysis_numbers = rep(1, length(scenario_numbers)),
   load_path        = tempdir()
-  
 ) {
-  
-  error_scenario_numbers <- simpleError(
-    "Please provide a vector of positive integers for the argument 'scenario_numbers'")
-  error_analysis_numbers <- simpleError(
-    "Please provide a vector of positive integers for the argument 'analysis_numbers'")
-  error_load_path        <- simpleError(
-    "Please provide a string containing a path for the argument 'load_path'")
-  
-  if (missing(scenario_numbers)) stop (error_scenario_numbers)
-  
-  if (!is.character(load_path) || length(load_path) > 1) stop (error_load_path)
-  
-  if (!identical(length(scenario_numbers), length(analysis_numbers))) {
-    stop (simpleError("'scenario_numbers' and 'analysis_numbers' must have equal length"))
-  }
-  
-  ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
-  
+  # --- Argument validation with checkmate ------------------------------------
+  checkmate::assertNumeric(
+    scenario_numbers,
+    any.missing = FALSE,
+    .var.name   = "scenario_numbers"
+  )
+  checkmate::assertIntegerish(
+    scenario_numbers,
+    lower     = 1,
+    .var.name = "scenario_numbers"
+  )
+
+  checkmate::assertIntegerish(
+    analysis_numbers,
+    lower   = 1,
+    len     = length(scenario_numbers),
+    .var.name = "analysis_numbers"
+  )
+
+  checkmate::assertCharacter(
+    load_path,
+    len       = 1,
+    any.missing = FALSE,
+    .var.name = "load_path"
+  )
+
+  # --- Core logic ------------------------------------------------------------
   analyses_list <- vector(mode = "list", length = length(scenario_numbers))
-  
+
   for (s in seq_along(scenario_numbers)) {
-    
     analyses_list[[s]] <- readRDS(
-      file.path(load_path,
-                paste0("analysis_data_", scenario_numbers[s], "_", analysis_numbers[s], ".rds"))
+      file.path(
+        load_path,
+        paste0("analysis_data_", scenario_numbers[s], "_", analysis_numbers[s], ".rds")
+      )
     )
-    
   }
-  
+
   names(analyses_list) <- paste0("scenario_", scenario_numbers)
   class(analyses_list) <- "analysis_list"
-  
-  return (analyses_list)
-  
-}
 
-mapUniqueTrials <- function (
-  
-  scenario_list,
-  method_quantiles_list,
-  trials_unique_calc,
-  applicable_previous_trials
-  
-) {
-  
-  method_names     <- names(method_quantiles_list)
-  scenario_numbers <- sapply(scenario_list, function (x) x$scenario_number)
-  
-  ## Create hash tables for results for easy retrieval
-  
-  hash_keys        <- getHashKeys(trials_unique_calc)
-  hash_tables_list <- vector(mode = "list", length = length(method_quantiles_list))
-  
-  for (n in seq_along(hash_tables_list)) {
-    
-    hash_tables_list[[n]] <- createHashTable(hash_keys, method_quantiles_list[[n]])
-    
-  }
-  
-  ## prepare foreach
-  exported_stuff <- c("convertVector2Matrix")
-  
-  ## run foreach
-  "%do%" <- foreach::"%do%"
-  scenario_method_quantiles_list <- foreach::foreach(k = seq_along(scenario_numbers),
-                                                     .verbose  = FALSE,
-                                                     .export   = exported_stuff
-  ) %do% {
-    
-    ## Find the indices of the trials of a specific scenario for go trials
-    scenario_data_matrix <- cbind(scenario_list[[k]]$n_responders,
-                                  scenario_list[[k]]$n_subjects)
-    
-    ## check whether there where previous analyses
-    if (applicable_previous_trials) {
-      
-      scenario_go_flags         <- scenario_list[[k]]$previous_analyses$go_decisions[, 1] > 0
-      scenario_method_quantiles <- scenario_list[[k]]$previous_analyses$post_quantiles
-      
-    } else {
-      
-      scenario_go_flags         <- rep(TRUE, length = nrow(scenario_data_matrix))
-      scenario_method_quantiles <- vector(mode = "list", length = length(method_names))
-      names(scenario_method_quantiles) <- method_names
-      
-    }
-    
-    ## In case there are trial realizations that need updating
-    ## This should only not be the case if all trial realizations of a scenario have a NoGo decision
-    ## and there are applicable previous trials.
-    if (any(scenario_go_flags)) {
-      
-      ## Get search keys
-      scenario_data_matrix_go <- convertVector2Matrix(scenario_data_matrix[scenario_go_flags, ])
-      search_keys             <- getHashKeys(scenario_data_matrix_go)
-      
-      ## Save scenario specific posterior quantiles for each method
-      for (n in seq_along(method_names)) {
-        
-        scenario_method_quantiles[[method_names[n]]][scenario_go_flags] <-
-          getHashValues(search_keys, hash_tables_list[[n]])
-        
-      }
-      
-    } 
-    
-    return (scenario_method_quantiles)
-    
-  }
-  
-  names(scenario_method_quantiles_list) <- paste0("scenario_", scenario_numbers)
-  
-  return (scenario_method_quantiles_list)
-  
+  return(analyses_list)
 }
