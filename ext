@@ -1,1 +1,14 @@
+scenarios_list <- simulateScenarios(
+  n_subjects_list     = list(c(10, 20, 30)),
+  response_rates_list = list(c(0.1, 0.2, 0.3)),
+  n_trials            = 5
+)
 
+analyses_list <- performAnalyses(
+  scenario_list      = scenarios_list,
+  target_rates       = c(0.2, 0.2, 0.2),
+  n_mcm_iterations   = 1000
+)
+
+str(analyses_list, max.level = 2)
+str(analyses_list[[1]]$quantiles_list, max.level = 2)
