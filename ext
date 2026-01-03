@@ -1,83 +1,131 @@
-#' Simulate scenarios with a continuous (normal) endpoint
+#' Bayesian hierarchical analysis for normal (continuous) endpoints
 #'
-#' This is analogous to simulateScenarios(), but instead of binary responses
-#' it simulates continuous outcomes y ~ Normal(mean_j, sd^2) per cohort.
+#' This mirrors performAnalyses(), but assumes that
+#' scenario_list is from simulateScenariosNormal() and fits
+#' a normal-endpoint BHM in JAGS.
 #'
-#' @param n_subjects_list list of integer vectors; per scenario, number of
-#'   subjects in each cohort.
-#' @param mean_list list of numeric vectors; per scenario, true mean in each
-#'   cohort (same length as corresponding n_subjects_list element).
-#' @param sd positive numeric; common standard deviation of the endpoint.
-#' @param scenario_numbers integer vector of scenario labels.
-#' @param n_trials number of simulated trials per scenario.
-#' @return a list of scenarios of class "scenario_list_normal".
-simulateScenariosNormal <- function(
-  n_subjects_list,
-  mean_list,
-  sd,
-  scenario_numbers = seq_along(mean_list),
-  n_trials = 1000
+#' The returned object has outer structure similar to an analysis_list:
+#' list(scenario_1 = list(quantiles_list, scenario_data, analysis_parameters), ...)
+#'
+#' The only method provided here is "bhm_normal".
+#'
+#' @param scenario_list object from simulateScenariosNormal()
+#' @param evidence_levels numeric vector of quantile probabilities
+#' @param n_mcmc_iterations total MCMC iterations per chain
+#' @param seed RNG seed
+#' @return list of scenarios of class "analysis_list"
+performAnalysesNormal <- function(
+  scenario_list,
+  evidence_levels     = c(0.025, 0.05, 0.5, 0.8, 0.9, 0.95, 0.975),
+  n_mcmc_iterations   = 10000,
+  seed                = 1
 ) {
-  # Basic checks (kept light so we don't depend on internal helpers)
-  if (!is.list(n_subjects_list)) {
-    stop("'n_subjects_list' must be a list of integer vectors.")
-  }
-  if (!is.list(mean_list)) {
-    stop("'mean_list' must be a list of numeric vectors.")
-  }
-  if (length(n_subjects_list) != length(mean_list)) {
-    stop("'n_subjects_list' and 'mean_list' must have the same length.")
-  }
-  if (length(scenario_numbers) != length(mean_list)) {
-    stop("'scenario_numbers' must have same length as 'mean_list'.")
-  }
-  if (!is.numeric(sd) || length(sd) != 1L || sd <= 0) {
-    stop("'sd' must be a single positive numeric value.")
+  if (!inherits(scenario_list, "scenario_list_normal")) {
+    stop("scenario_list must be created by simulateScenariosNormal().")
   }
 
-  n_scen <- length(mean_list)
-  scenario_list <- vector("list", n_scen)
+  if (!requireNamespace("R2jags", quietly = TRUE)) {
+    stop("Package 'R2jags' is required for performAnalysesNormal().")
+  }
+
+  set.seed(seed)
+
+  n_scen <- length(scenario_list)
+  analyses_list <- vector("list", n_scen)
 
   for (s in seq_len(n_scen)) {
-    n_subj <- n_subjects_list[[s]]
-    means  <- mean_list[[s]]
+    scen   <- scenario_list[[s]]
+    trials <- scen$trials
+    n_trials <- length(trials)
+    J      <- length(trials[[1]]$n_subjects)
 
-    if (length(n_subj) != length(means)) {
-      stop(sprintf(
-        "In scenario %d, lengths of n_subjects_list and mean_list differ.",
-        scenario_numbers[s]
-      ))
-    }
-
-    J      <- length(n_subj)
-    max_n  <- max(n_subj)
-
-    # trials[[t]]$y: matrix [max_n x J] of outcomes for trial t
-    trials <- vector("list", n_trials)
+    # Store posterior quantile matrices per trial for this scenario
+    quantiles_list <- list()
+    quantiles_list[["bhm_normal"]] <- vector("list", n_trials)
 
     for (t in seq_len(n_trials)) {
-      y_mat <- matrix(NA_real_, nrow = max_n, ncol = J)
-      for (j in seq_len(J)) {
-        y_mat[seq_len(n_subj[j]), j] <-
-          stats::rnorm(n_subj[j], mean = means[j], sd = sd)
-      }
-      colnames(y_mat) <- paste0("y_", seq_len(J))
+      tr   <- trials[[t]]
+      y    <- tr$y              # matrix [max_n x J]
+      nvec <- tr$n_subjects     # length J
 
-      trials[[t]] <- list(
-        y          = y_mat,
-        n_subjects = n_subj
+      # JAGS data list
+      data_jags <- list(
+        J               = J,
+        n               = nvec,
+        y               = y,
+        mean_mu         = 0.0,
+        precision_mu    = 1 / 10^2,  # N(0, 10^2) on mu
+        precision_tau   = 1 / 1^2,   # scale for between-cohort SD
+        precision_sigma = 1 / 1^2    # scale for residual SD
       )
+
+      # Normal-endpoint BHM model
+      model_string <- "
+      model{
+        mu    ~ dnorm(mean_mu, precision_mu)
+        tau   ~ dt(0, precision_tau, 1) T(0,)
+        sigma ~ dt(0, precision_sigma, 1) T(0,)
+
+        prec_tau   <- 1 / pow(tau, 2)
+        prec_sigma <- 1 / pow(sigma, 2)
+
+        for (j in 1:J){
+          theta[j] ~ dnorm(mu, prec_tau)
+          for (i in 1:n[j]){
+            y[i,j] ~ dnorm(theta[j], prec_sigma)
+          }
+        }
+      }
+      "
+
+      fit <- R2jags::jags(
+        data       = data_jags,
+        parameters = c("theta", "mu", "tau", "sigma"),
+        model.file = textConnection(model_string),
+        n.chains   = 3,
+        n.iter     = n_mcmc_iterations,
+        n.burnin   = floor(n_mcmc_iterations / 2),
+        n.thin     = 1
+      )
+
+      theta_samps <- fit$BUGSoutput$sims.list$theta  # [iter x J]
+
+      q_mat <- apply(theta_samps, 2, function(x) {
+        stats::quantile(x, probs = evidence_levels, names = FALSE)
+      })
+
+      # Shape: rows = quantiles, cols = cohorts
+      colnames(q_mat) <- paste0("p_", seq_len(J))   # keep p_j naming for compatibility
+      rownames(q_mat) <- paste0("q_", evidence_levels)
+
+      quantiles_list[["bhm_normal"]][[t]] <- q_mat
     }
 
-    scenario_list[[s]] <- list(
-      scenario_number = scenario_numbers[s],
-      trials          = trials,
-      true_means      = means,
-      sd              = sd
+    scenario_name <- names(scenario_list)[s]
+
+    scenario_data <- list(
+      scenario_number = scen$scenario_number,
+      n_subjects      = lapply(scen$trials, `[[`, "n_subjects"),
+      true_means      = scen$true_means,
+      sd              = scen$sd,
+      endpoint        = "normal"
     )
+
+    analysis_parameters <- list(
+      evidence_levels   = evidence_levels,
+      method_names      = "bhm_normal",
+      n_mcmc_iterations = n_mcmc_iterations,
+      seed              = seed
+    )
+
+    analyses_list[[s]] <- list(
+      quantiles_list      = quantiles_list,
+      scenario_data       = scenario_data,
+      analysis_parameters = analysis_parameters
+    )
+    names(analyses_list)[s] <- scenario_name
   }
 
-  names(scenario_list) <- paste0("scenario_", scenario_numbers)
-  class(scenario_list) <- "scenario_list_normal"
-  scenario_list
+  class(analyses_list) <- "analysis_list"
+  analyses_list
 }
