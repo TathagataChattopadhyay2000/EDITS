@@ -1,33 +1,16 @@
-      go_decisions <- getGoDecisionsByCohort(
-        gamma_quantiles = getPosteriorGammaQuantiles(
-          method_name              = method_names[n],
-          gamma_levels             = gamma_levels[[n]],
-          quantiles                = analysis_data$analysis_parameters$quantiles,
-          posterior_quantiles_list = analysis_data$quantiles_list,
-          cohort_names             = cohort_names),
-        decision_rule   = boundary_rules[[n]])
+> gos_bin
+decision_list of 1 scenario with 1 method
 
-      ## ensure go_decisions is a matrix [trials x cohorts]
-      go_decisions <- as.matrix(go_decisions)
+  - scenario_1 
+                  overall
+    - Bhm_normal     0.81
+                  decision_1
+    - Bhm_normal        0.06
+                  decision_2
+    - Bhm_normal        0.81
+                  decision_3
+    - Bhm_normal           0
 
-      ## combine new decision outcomes with previous decisions (and convert to logical)
-      prev <- analysis_data$scenario_data$previous_analyses
-
-      if (is.null(prev) || is.null(prev$go_decisions)) {
-        # no previous analyses: treat all previous decisions as TRUE
-        previous_gos <- matrix(TRUE,
-                               nrow = nrow(go_decisions),
-                               ncol = ncol(go_decisions))
-      } else {
-        previous_gos <- prev$go_decisions[, -1, drop = FALSE]
-        if (!identical(dim(previous_gos), dim(go_decisions))) {
-          stop("Dimensions of previous_analyses$go_decisions and current go_decisions do not match.")
-        }
-      }
-
-      # logical AND: keep only cohorts that are Go now AND were Go previously
-      go_decisions <- (go_decisions & previous_gos)
-
-      ## Overall go:
-      overall_go   <- apply(go_decisions, 1L, function (x) sum(x) >= overall_min_gos)
-      go_decisions <- cbind(overall = overall_go, go_decisions)
+Warning message:
+In out_rules_n[grepl("P\\(", out_rules_n)] <- paste0(out_rules_n[grepl("P\\(",  :
+  number of items to replace is not a multiple of replacement length
