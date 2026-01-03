@@ -1,156 +1,18 @@
-#' @title performAnalysesNormal
-#' @md
-#' @description
-#' Analyse scenarios with a continuous (normal) endpoint using a Bayesian
-#' hierarchical normal model across baskets. The output structure mirrors that
-#' of \code{\link[bhmbasket]{performAnalyses}} so that the same OC and plotting
-#' functions can be applied (where they only depend on the analysis_list
-#' structure and not on binary-specific fields).
-#'
-#' @param scenario_list An object of class \code{"scenario_list_normal"}
-#'   as created by \code{\link[bhmbasket]{simulateScenariosNormal}}.
-#' @param evidence_levels A numeric vector of evidence levels in (0, 1).
-#'   These are mapped to quantiles via \code{1 - evidence_levels} and stored
-#'   in \code{analysis_parameters$quantiles}.
-#' @param n_mcmc_iterations A positive integer for total MCMC iterations per chain.
-#' @param seed Integer RNG seed.
-#'
-#' @return An object of class \code{"analysis_list"} with one element per
-#'   scenario, each containing \code{quantiles_list}, \code{scenario_data},
-#'   and \code{analysis_parameters}.
-#' @export
-performAnalysesNormal <- function (
+## 1) Simulate continuous endpoint scenarios
+scenarios_norm <- simulateScenariosNormal(
+  n_subjects_list = list(c(30, 30, 30)),
+  mean_list       = list(c(0.0, 0.6, 0.0)),
+  sd              = 1,
+  n_trials        = 100
+)
 
-  scenario_list,
+## 2) Analyse with the hierarchical normal model
+analyses_norm <- performAnalysesNormal(
+  scenario_list      = scenarios_norm,
   evidence_levels    = c(0.025, 0.05, 0.5, 0.8, 0.9, 0.95, 0.975),
-  n_mcmc_iterations  = 1e4,
+  n_mcmc_iterations  = 5000,
   seed               = 1
+)
 
-) {
-
-  error_scenario_list <- simpleError(
-    "Please provide an object of class 'scenario_list_normal' for the argument 'scenario_list'")
-  error_evidence_levels <- simpleError(
-    "Please provide a vector of numerics in (0, 1) for the argument 'evidence_levels'")
-  error_n_mcmc_iterations <- simpleError(
-    "Please provide a single positive integer for the argument 'n_mcmc_iterations'")
-
-  if (missing(scenario_list)) stop (error_scenario_list)
-  if (!inherits(scenario_list, "scenario_list_normal")) stop (error_scenario_list)
-
-  if (missing(evidence_levels) ||
-      !is.numeric.in.zero.one(evidence_levels)) stop (error_evidence_levels)
-
-  if (missing(n_mcmc_iterations) ||
-      !is.single.positive.wholenumber(n_mcmc_iterations)) stop (error_n_mcmc_iterations)
-
-  set.seed(seed)
-
-  n_scenarios   <- length(scenario_list)
-  analyses_list <- vector("list", n_scenarios)
-
-  ## this matches what performAnalyses stores
-  quantiles <- 1 - evidence_levels
-
-  ## JAGS model file for the hierarchical normal endpoint
-  jags_model_string <- "
-  model{
-    mu    ~ dnorm(mean_mu, precision_mu)
-    tau   ~ dt(0, precision_tau, 1) T(0,)
-    sigma ~ dt(0, precision_sigma, 1) T(0,)
-
-    prec_tau   <- 1 / pow(tau, 2)
-    prec_sigma <- 1 / pow(sigma, 2)
-
-    for (j in 1:J){
-      theta[j] ~ dnorm(mu, prec_tau)
-      for (i in 1:n[j]){
-        y[i,j] ~ dnorm(theta[j], prec_sigma)
-      }
-    }
-  }
-  "
-
-  j_model_file <- tempfile(pattern = "bhm_normal_", fileext = ".bug")
-  writeLines(jags_model_string, con = j_model_file)
-
-  for (s in seq_along(scenario_list)) {
-
-    scen      <- scenario_list[[s]]
-    trials    <- scen$trials
-    n_trials  <- length(trials)
-    J         <- length(trials[[1]]$n_subjects)
-
-    quantiles_list <- list()
-    quantiles_list[["bhm_normal"]] <- vector("list", n_trials)
-
-    for (t in seq_len(n_trials)) {
-
-      tr   <- trials[[t]]
-      y    <- tr$y              # matrix [max_n x J]
-      nvec <- tr$n_subjects     # length J
-
-      j_data <- list(
-        J               = J,
-        n               = nvec,
-        y               = y,
-        mean_mu         = 0.0,
-        precision_mu    = 1 / 10^2,  # N(0, 10^2) prior on mu
-        precision_tau   = 1 / 1^2,   # prior scale for between-basket SD
-        precision_sigma = 1 / 1^2    # prior scale for residual SD
-      )
-
-      posterior_samples <- performJags(
-        data               = j_data,
-        parameters_to_save = c("theta", "mu", "tau", "sigma"),
-        model_file         = j_model_file,
-        n_chains           = 2,
-        n_iter             = n_mcmc_iterations,
-        n_burnin           = floor(n_mcmc_iterations / 3)
-      )
-
-      ## keep only theta columns for cohort-level effects
-      theta_cols <- grepl("^theta\\[", colnames(posterior_samples))
-      theta_post <- posterior_samples[, theta_cols, drop = FALSE]
-
-      posterior_quantiles <- posteriors2Quantiles(
-        quantiles  = quantiles,
-        posteriors = theta_post)
-
-      ## Shape and naming consistent with existing methods:
-      ## rows = quantiles + Mean + SD, cols = cohorts
-      colnames(posterior_quantiles) <- paste0("p_", seq_len(J))
-
-      quantiles_list[["bhm_normal"]][[t]] <- posterior_quantiles
-    }
-
-    scenario_name <- names(scenario_list)[s]
-
-    scenario_data <- list(
-      scenario_number = scen$scenario_number,
-      n_subjects      = lapply(scen$trials, `[[`, "n_subjects"),
-      true_means      = scen$true_means,
-      sd              = scen$sd,
-      n_trials        = scen$n_trials,
-      endpoint        = "normal"
-    )
-
-    analysis_parameters <- list(
-      quantiles          = quantiles,
-      method_names       = "bhm_normal",
-      n_mcmc_iterations  = n_mcmc_iterations,
-      seed               = seed
-    )
-
-    analyses_list[[s]] <- list(
-      quantiles_list      = quantiles_list,
-      scenario_data       = scenario_data,
-      analysis_parameters = analysis_parameters
-    )
-    names(analyses_list)[s] <- scenario_name
-  }
-
-  class(analyses_list) <- "analysis_list"
-  return (analyses_list)
-
-}
+str(analyses_norm, max.level = 2)
+str(analyses_norm[[1]]$quantiles_list, max.level = 2)
