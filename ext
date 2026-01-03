@@ -1,64 +1,83 @@
- str(analyses_list, max.level = 2)
-List of 1
- $ scenario_1:List of 3
-  ..$ quantiles_list     :List of 5
-  ..$ scenario_data      :List of 6
-  ..$ analysis_parameters:List of 4
- - attr(*, "class")= chr "analysis_list"
-> str(analyses_list[[1]]$quantiles_list, max.level = 2)
-List of 5
- $ berry     :List of 5
-  ..$ : num [1:9, 1:5] -2.245 -1.848 -1.465 -1.037 -0.359 ...
-  .. ..- attr(*, "dimnames")=List of 2
-  ..$ : num [1:9, 1:5] -0.954 -0.715 -0.48 -0.214 0.18 ...
-  .. ..- attr(*, "dimnames")=List of 2
-  ..$ : num [1:9, 1:5] -1.833 -1.543 -1.212 -0.872 -0.383 ...
-  .. ..- attr(*, "dimnames")=List of 2
-  ..$ : num [1:9, 1:5] -0.71124 -0.47687 -0.23791 -0.00912 0.34871 ...
-  .. ..- attr(*, "dimnames")=List of 2
-  ..$ : num [1:9, 1:5] -0.634 -0.443 -0.231 -0.047 0.301 ...
-  .. ..- attr(*, "dimnames")=List of 2
- $ exnex     :List of 5
-  ..$ : num [1:9, 1:8] 0 0 0 0 0 ...
-  .. ..- attr(*, "dimnames")=List of 2
-  ..$ : num [1:9, 1:8] 0 0 0 0 1 ...
-  .. ..- attr(*, "dimnames")=List of 2
-  ..$ : num [1:9, 1:8] 0 0 0 0 0 ...
-  .. ..- attr(*, "dimnames")=List of 2
-  ..$ : num [1:9, 1:8] 0 0 0 0 1 ...
-  .. ..- attr(*, "dimnames")=List of 2
-  ..$ : num [1:9, 1:8] 0 0 0 0 1 ...
-  .. ..- attr(*, "dimnames")=List of 2
- $ exnex_adj :List of 5
-  ..$ : num [1:9, 1:8] 0 0 0 0 0 ...
-  .. ..- attr(*, "dimnames")=List of 2
-  ..$ : num [1:9, 1:8] 0 0 0 0 1 ...
-  .. ..- attr(*, "dimnames")=List of 2
-  ..$ : num [1:9, 1:8] 0 0 0 0 0 ...
-  .. ..- attr(*, "dimnames")=List of 2
-  ..$ : num [1:9, 1:8] 0 0 0 0 1 ...
-  .. ..- attr(*, "dimnames")=List of 2
-  ..$ : num [1:9, 1:8] 0 0 0 0 1 ...
-  .. ..- attr(*, "dimnames")=List of 2
- $ pooled    :List of 5
-  ..$ : num [1:9, 1:3] 0.123 0.136 0.151 0.171 0.213 ...
-  .. ..- attr(*, "dimnames")=List of 2
-  ..$ : num [1:9, 1:3] 0.15 0.164 0.18 0.202 0.246 ...
-  .. ..- attr(*, "dimnames")=List of 2
-  ..$ : num [1:9, 1:3] 0.0854 0.0959 0.109 0.1263 0.1636 ...
-  .. ..- attr(*, "dimnames")=List of 2
-  ..$ : num [1:9, 1:3] 0.177 0.192 0.21 0.233 0.28 ...
-  .. ..- attr(*, "dimnames")=List of 2
-  ..$ : num [1:9, 1:3] 0.163 0.178 0.195 0.217 0.263 ...
-  .. ..- attr(*, "dimnames")=List of 2
- $ stratified:List of 5
-  ..$ : num [1:9, 1:3] 6.13e-10 1.96e-08 6.27e-07 2.01e-05 1.99e-03 ...
-  .. ..- attr(*, "dimnames")=List of 2
-  ..$ : num [1:9, 1:3] 0.0322 0.0457 0.0657 0.0974 0.1815 ...
-  .. ..- attr(*, "dimnames")=List of 2
-  ..$ : num [1:9, 1:3] 6.13e-10 1.96e-08 6.27e-07 2.01e-05 1.99e-03 ...
-  .. ..- attr(*, "dimnames")=List of 2
-  ..$ : num [1:9, 1:3] 0.0322 0.0457 0.0657 0.0974 0.1815 ...
-  .. ..- attr(*, "dimnames")=List of 2
-  ..$ : num [1:9, 1:3] 0.0322 0.0457 0.0657 0.0974 0.1815 ...
-  .. ..- attr(*, "dimnames")=List of 2
+#' Simulate scenarios with a continuous (normal) endpoint
+#'
+#' This is analogous to simulateScenarios(), but instead of binary responses
+#' it simulates continuous outcomes y ~ Normal(mean_j, sd^2) per cohort.
+#'
+#' @param n_subjects_list list of integer vectors; per scenario, number of
+#'   subjects in each cohort.
+#' @param mean_list list of numeric vectors; per scenario, true mean in each
+#'   cohort (same length as corresponding n_subjects_list element).
+#' @param sd positive numeric; common standard deviation of the endpoint.
+#' @param scenario_numbers integer vector of scenario labels.
+#' @param n_trials number of simulated trials per scenario.
+#' @return a list of scenarios of class "scenario_list_normal".
+simulateScenariosNormal <- function(
+  n_subjects_list,
+  mean_list,
+  sd,
+  scenario_numbers = seq_along(mean_list),
+  n_trials = 1000
+) {
+  # Basic checks (kept light so we don't depend on internal helpers)
+  if (!is.list(n_subjects_list)) {
+    stop("'n_subjects_list' must be a list of integer vectors.")
+  }
+  if (!is.list(mean_list)) {
+    stop("'mean_list' must be a list of numeric vectors.")
+  }
+  if (length(n_subjects_list) != length(mean_list)) {
+    stop("'n_subjects_list' and 'mean_list' must have the same length.")
+  }
+  if (length(scenario_numbers) != length(mean_list)) {
+    stop("'scenario_numbers' must have same length as 'mean_list'.")
+  }
+  if (!is.numeric(sd) || length(sd) != 1L || sd <= 0) {
+    stop("'sd' must be a single positive numeric value.")
+  }
+
+  n_scen <- length(mean_list)
+  scenario_list <- vector("list", n_scen)
+
+  for (s in seq_len(n_scen)) {
+    n_subj <- n_subjects_list[[s]]
+    means  <- mean_list[[s]]
+
+    if (length(n_subj) != length(means)) {
+      stop(sprintf(
+        "In scenario %d, lengths of n_subjects_list and mean_list differ.",
+        scenario_numbers[s]
+      ))
+    }
+
+    J      <- length(n_subj)
+    max_n  <- max(n_subj)
+
+    # trials[[t]]$y: matrix [max_n x J] of outcomes for trial t
+    trials <- vector("list", n_trials)
+
+    for (t in seq_len(n_trials)) {
+      y_mat <- matrix(NA_real_, nrow = max_n, ncol = J)
+      for (j in seq_len(J)) {
+        y_mat[seq_len(n_subj[j]), j] <-
+          stats::rnorm(n_subj[j], mean = means[j], sd = sd)
+      }
+      colnames(y_mat) <- paste0("y_", seq_len(J))
+
+      trials[[t]] <- list(
+        y          = y_mat,
+        n_subjects = n_subj
+      )
+    }
+
+    scenario_list[[s]] <- list(
+      scenario_number = scenario_numbers[s],
+      trials          = trials,
+      true_means      = means,
+      sd              = sd
+    )
+  }
+
+  names(scenario_list) <- paste0("scenario_", scenario_numbers)
+  class(scenario_list) <- "scenario_list_normal"
+  scenario_list
+}
