@@ -1,10 +1,33 @@
-> gos_bin <- getGoDecisions(
-+   analyses_list = analyses_norm,
-+   cohort_names = coh_bin,
-+   evidence_levels = c(0.8, 0.8, 0.8),
-+   boundary_rules = quote(c(x[1]>0.2, x[2]>0.2, x[3]>0.6)),
-+   overall_min_gos = 1
-+   
-+ )
-Error in apply(go_decisions, 1, function(x) sum(x) >= overall_min_gos) : 
-  dim(X) must have a positive length
+      go_decisions <- getGoDecisionsByCohort(
+        gamma_quantiles = getPosteriorGammaQuantiles(
+          method_name              = method_names[n],
+          gamma_levels             = gamma_levels[[n]],
+          quantiles                = analysis_data$analysis_parameters$quantiles,
+          posterior_quantiles_list = analysis_data$quantiles_list,
+          cohort_names             = cohort_names),
+        decision_rule   = boundary_rules[[n]])
+
+      ## ensure go_decisions is a matrix [trials x cohorts]
+      go_decisions <- as.matrix(go_decisions)
+
+      ## combine new decision outcomes with previous decisions (and convert to logical)
+      prev <- analysis_data$scenario_data$previous_analyses
+
+      if (is.null(prev) || is.null(prev$go_decisions)) {
+        # no previous analyses: treat all previous decisions as TRUE
+        previous_gos <- matrix(TRUE,
+                               nrow = nrow(go_decisions),
+                               ncol = ncol(go_decisions))
+      } else {
+        previous_gos <- prev$go_decisions[, -1, drop = FALSE]
+        if (!identical(dim(previous_gos), dim(go_decisions))) {
+          stop("Dimensions of previous_analyses$go_decisions and current go_decisions do not match.")
+        }
+      }
+
+      # logical AND: keep only cohorts that are Go now AND were Go previously
+      go_decisions <- (go_decisions & previous_gos)
+
+      ## Overall go:
+      overall_go   <- apply(go_decisions, 1L, function (x) sum(x) >= overall_min_gos)
+      go_decisions <- cbind(overall = overall_go, go_decisions)
