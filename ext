@@ -1,11 +1,131 @@
-model{
- mu ~ dnorm(mean_mu,precision_mu)
- sigma ~ dt(0,precision_tau,1)T(0,)
+#' @title simulateScenariosNormal
+#' @md
+#' @description
+#' Simulate scenarios for a continuous (normal) endpoint in multiple cohorts
+#' (baskets). This function mirrors \code{\link[bhmbasket]{simulateScenarios}},
+#' but instead of binary responses it generates normally distributed outcomes
+#' with basket-specific means and common standard deviation.
+#'
+#' @param n_subjects_list A list of integer vectors; for each scenario, the
+#'   number of subjects per cohort.
+#' @param mean_list A list of numeric vectors; for each scenario, the true mean
+#'   endpoint in each cohort. Must have the same structure as n_subjects_list.
+#' @param sd A single positive numeric value for the common standard deviation
+#'   of the endpoint.
+#' @param scenario_numbers A vector of positive integers naming the scenarios.
+#'   Default: \code{seq_along(mean_list)}.
+#' @param n_trials A positive integer for the number of simulated trial
+#'   replicates per scenario, Default: \code{1e4}.
+#'
+#' @return An object of class \code{"scenario_list_normal"} with one element per
+#'   scenario. Each element contains the true means, sample sizes and simulated
+#'   trial outcomes (continuous).
+#'
+#' @examples
+#'   scenarios_norm <- simulateScenariosNormal(
+#'     n_subjects_list = list(c(30, 30, 30)),
+#'     mean_list       = list(c(0.0, 0.6, 0.0)),
+#'     sd              = 1,
+#'     n_trials        = 100)
+#'
+#' @export
+simulateScenariosNormal <- function (
 
- for(j in 1:J){
- r[j] ~ dbin(p[j],n[j])
- p[j] <- exp(theta[j])/(1+exp(theta[j]))
- theta[j] ~ dnorm(mu,1/(sigma)^2)
- }
+  n_subjects_list,
+  mean_list,
+  sd,
+  scenario_numbers = seq_along(mean_list),
+
+  n_trials         = 1e4
+
+) {
+
+  error_n_subjects_list <- simpleError(
+    "Please provide a list of vectors of positive integers for the argument 'n_subjects_list'")
+  error_mean_list <- simpleError(
+    "Please provide a list of numeric vectors for the argument 'mean_list'")
+  error_sd <- simpleError(
+    "Please provide a single positive numeric value for the argument 'sd'")
+  error_n_trials <- simpleError(
+    "Please provide a single positive integer for the argument 'n_trials'")
+  error_scenario_numbers <- simpleError(
+    "Please provide a vector of positive integers for the argument 'scenario_numbers'")
+
+  ### basic checks (mirroring style of simulateScenarios) #######################
+
+  if (missing(n_subjects_list)) stop (error_n_subjects_list)
+  if (!is.list(n_subjects_list) ||
+      any(!sapply(n_subjects_list, is.positive.wholenumber))) stop (error_n_subjects_list)
+
+  if (missing(mean_list)) stop (error_mean_list)
+  if (!is.list(mean_list) ||
+      any(!sapply(mean_list, is.numeric))) stop (error_mean_list)
+
+  if (!identical(length(n_subjects_list), length(mean_list))) stop (simpleError(
+    "'n_subjects_list' and 'mean_list' must have same length"))
+
+  if (any(!sapply(seq_along(n_subjects_list), function (i) {
+    length(n_subjects_list[[i]]) == length(mean_list[[i]])
+  }))) stop (simpleError(
+    "Within each scenario, 'n_subjects_list[[s]]' and 'mean_list[[s]]' must have the same length"))
+
+  if (missing(sd)) stop (error_sd)
+  if (!is.single.numeric(sd) || sd <= 0) stop (error_sd)
+
+  if (missing(n_trials)) stop (error_n_trials)
+  if (!is.positive.wholenumber(n_trials)) stop (error_n_trials)
+
+  if (missing(scenario_numbers)) stop (error_scenario_numbers)
+  if (!is.positive.wholenumber(scenario_numbers)) stop (error_scenario_numbers)
+
+  if (!identical(length(scenario_numbers), length(n_subjects_list))) stop (simpleError(
+    "'scenario_numbers' and 'n_subjects_list' must have same length"))
+
+  ### simulate ###############################################################
+
+  scenario_list <- vector(mode = "list", length = length(scenario_numbers))
+
+  for (s in seq_along(scenario_numbers)) {
+
+    n_subj <- n_subjects_list[[s]]
+    means  <- mean_list[[s]]
+
+    J     <- length(n_subj)
+    max_n <- max(n_subj)
+
+    trials <- vector("list", n_trials)
+
+    for (t in seq_len(n_trials)) {
+
+      y_mat <- matrix(NA_real_,
+                      nrow = max_n,
+                      ncol = J)
+
+      for (j in seq_len(J)) {
+        y_mat[seq_len(n_subj[j]), j] <-
+          stats::rnorm(n_subj[j], mean = means[j], sd = sd)
+      }
+
+      colnames(y_mat) <- paste0("y_", seq_len(J))
+
+      trials[[t]] <- list(
+        y          = y_mat,
+        n_subjects = n_subj
+      )
+    }
+
+    scenario_list[[s]] <- list(
+      scenario_number = scenario_numbers[s],
+      trials          = trials,
+      true_means      = means,
+      sd              = sd,
+      n_trials        = n_trials
+    )
+  }
+
+  names(scenario_list) <- paste0("scenario_", scenario_numbers)
+  class(scenario_list) <- "scenario_list_normal"
+
+  return (scenario_list)
 
 }
