@@ -1,42 +1,11 @@
-library(R2jags)
+model{
+ mu ~ dnorm(mean_mu,precision_mu)
+ sigma ~ dt(0,precision_tau,1)T(0,)
 
-set.seed(123)
+ for(j in 1:J){
+ r[j] ~ dbin(p[j],n[j])
+ p[j] <- exp(theta[j])/(1+exp(theta[j]))
+ theta[j] ~ dnorm(mu,1/(sigma)^2)
+ }
 
-## 1. Simulate a normal-endpoint scenario:
-#    3 baskets, 30 patients each,
-#    true means (0.0, 0.6, 0.0), sd = 1, 20 trials.
-scen_norm <- simulateScenariosNormal(
-  n_subjects_list = list(c(30, 30, 30)),
-  mean_list       = list(c(0.0, 0.6, 0.0)),
-  sd              = 1,
-  n_trials        = 20
-)
-
-str(scen_norm, max.level = 2)
-
-## 2. Analyse with normal-endpoint BHM
-analyses_norm <- performAnalysesNormal(
-  scenario_list      = scen_norm,
-  evidence_levels    = c(0.025, 0.05, 0.5, 0.8, 0.9, 0.95, 0.975),
-  n_mcmc_iterations  = 5000,
-  seed               = 1
-)
-
-str(analyses_norm, max.level = 2)
-str(analyses_norm[[1]]$quantiles_list, max.level = 2)
-
-## 3. Example: posterior means / intervals for basket 2 in trial 1
-q_mat_trial1 <- analyses_norm[[1]]$quantiles_list$bhm_normal[[1]]
-q_mat_trial1[, "p_2"]   # quantiles of theta_2 (mean effect in basket 2)
-
-## 4. Quick Go/No-Go example (single trial, single scenario)
-#    Let delta = 0.3, Go if P(theta_j > delta) > 0.8
-fit_trial1 <- analyses_norm[[1]]$quantiles_list$bhm_normal[[1]]
-# For proper probabilities, use the stored fit from the last trial:
-# (You can extend performAnalysesNormal to save all 'fit' objects if you like.)
-
-# Here’s a simple example using the most recent JAGS fit:
-theta_samps <- analyses_norm[[1]]$analysis_parameters$seed  # placeholder
-# In practice, you’d slightly extend performAnalysesNormal to also store the
-# theta samples or the JAGS 'fit' object in quantiles_list, then do:
-# prob_above_delta <- apply(theta_samps, 2, function(x) mean(x > delta))
+}
