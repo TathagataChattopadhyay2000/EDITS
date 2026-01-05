@@ -1,105 +1,23 @@
+# Use shared setup helpers
+source(testthat::test_path("Setup.R"))
+
 # Tests for applicablePreviousTrials -------------------------------------------
 
-set.seed(123)
+# Shared objects for all applicablePreviousTrials tests
+app_prev <- setup_applicable_prev_trials()
 
-# 1 scenario, 3 cohorts, 10 trials
-scen_initial <- simulateScenarios(
-  n_subjects_list     = list(c(10, 20, 30)),
-  response_rates_list = list(c(0.4, 0.6, 0.8)),
-  n_trials            = 10
-)
+scen_initial       <- app_prev$scen_initial
+analysis_initial   <- app_prev$analysis_initial
+go_initial         <- app_prev$go_initial
+scen_next          <- app_prev$scen_next
+analysis_with_diff <- app_prev$analysis_with_diff
+go_with_diff       <- app_prev$go_with_diff
+scen_next_diff     <- app_prev$scen_next_diff
+method_names_prev  <- app_prev$method_names_prev
+quantiles_prev     <- app_prev$quantiles_prev
+n_coh_prev         <- app_prev$n_coh_prev
 
-# First analysis (no calc_differences)
-analysis_initial <- performAnalyses(
-  scenario_list       = scen_initial,
-  target_rates        = c(0.5, 0.5, 0.5),
-  method_names        = c("pooled"),
-  n_mcmc_iterations   = 50,
-  verbose             = FALSE
-)
-
-go_initial <- getGoDecisions(
-  analyses_list   = analysis_initial,
-  cohort_names    = c("p_1", "p_2", "p_3"),
-  evidence_levels = c(0.5, 0.5, 0.5),
-  boundary_rules  = quote(c(TRUE, TRUE, TRUE))
-)
-
-scen_next <- continueRecruitment(
-  n_subjects_add_list = list(c(5, 5, 5)),
-  decisions_list      = go_initial,
-  method_name         = "pooled"
-)
-
-# Second analysis WITH calc_differences to get p_diff_* columns
-analysis_with_diff <- performAnalyses(
-  scenario_list       = scen_initial,
-  target_rates        = c(0.5, 0.5, 0.5),
-  method_names        = c("pooled"),
-  calc_differences    = c(3, 2),
-  n_mcmc_iterations   = 50,
-  verbose             = FALSE
-)
-
-go_with_diff <- getGoDecisions(
-  analyses_list   = analysis_with_diff,
-  cohort_names    = c("p_1", "p_2", "p_3"),
-  evidence_levels = c(0.5, 0.5, 0.5),
-  boundary_rules  = quote(c(TRUE, TRUE, TRUE))
-)
-
-scen_next_diff <- continueRecruitment(
-  n_subjects_add_list = list(c(5, 5, 5)),
-  decisions_list      = go_with_diff,
-  method_name         = "pooled"
-)
-
-# Common objects for tests
-method_names_prev <- analysis_initial[[1]]$analysis_parameters$method_names   # "pooled"
-quantiles_prev    <- analysis_initial[[1]]$analysis_parameters$quantiles      # numeric vector
-n_coh_prev        <- ncol(scen_next[[1]]$n_subjects)                      # 3 cohorts
-
-
-
-## 1. Happy path (no calc_differences): all conditions satisfied → TRUE ---------------------
-
-set.seed(123)
-
-# Base scenarios: 1 scenario, 3 cohorts, 10 trials
-scen_initial <- simulateScenarios(
-  n_subjects_list     = list(c(10, 20, 30)),
-  response_rates_list = list(c(0.4, 0.6, 0.8)),
-  n_trials            = 10
-)
-
-# First analysis (no calc_differences)
-analysis_initial <- performAnalyses(
-  scenario_list       = scen_initial,
-  target_rates        = c(0.5, 0.5, 0.5),
-  method_names        = c("pooled"),
-  n_mcmc_iterations   = 50,
-  verbose             = FALSE
-)
-
-# Go decisions based on a trivial always-TRUE boundary rule
-go_initial <- getGoDecisions(
-  analyses_list   = analysis_initial,
-  cohort_names    = c("p_1", "p_2", "p_3"),
-  evidence_levels = c(0.5, 0.5, 0.5),
-  boundary_rules  = quote(c(TRUE, TRUE, TRUE))
-)
-
-# Continue recruitment: this creates scenario_list with previous_analyses filled
-scen_next <- continueRecruitment(
-  n_subjects_add_list = list(c(5, 5, 5)),
-  decisions_list      = go_initial,
-  method_name         = "pooled"
-)
-
-# Common objects for tests
-method_names_prev <- analysis_initial[[1]]$analysis_parameters$method_names   # "pooled"
-quantiles_prev    <- analysis_initial[[1]]$analysis_parameters$quantiles      # numeric vector
-n_coh_prev        <- ncol(scen_next[[1]]$n_subjects)                      # 3 cohorts
+## 1. Happy path (no calc_differences): all conditions satisfied → TRUE --------
 
 test_that("applicablePreviousTrials returns TRUE when all conditions are met (no differences)", {
   res <- applicablePreviousTrials(
@@ -115,32 +33,7 @@ test_that("applicablePreviousTrials returns TRUE when all conditions are met (no
   expect_true(res)
 })
 
-
-## 2. Happy path WITH calc_differences: diff columns present → TRUE ---------------------
-
-# Second analysis WITH calc_differences to get p_diff_* columns
-analysis_with_diff <- performAnalyses(
-  scenario_list       = scen_initial,
-  target_rates        = c(0.5, 0.5, 0.5),
-  method_names        = c("pooled"),
-  calc_differences    = c(3, 2),              # will produce p_diff_32
-  n_mcmc_iterations   = 50,
-  verbose             = FALSE
-)
-
-
-go_initial <- getGoDecisions(
-  analyses_list   = analysis_with_diff,
-  cohort_names    = c("p_1", "p_2", "p_3"),
-  evidence_levels = c(0.5, 0.5, 0.5),
-  boundary_rules  = quote(c(TRUE, TRUE, TRUE))
-)
-
-scen_next_diff <- continueRecruitment(
-  n_subjects_add_list = list(c(5, 5, 5)),
-  decisions_list      = go_with_diff,
-  method_name         = "pooled"
-)
+## 2. Happy path WITH calc_differences: diff columns present → TRUE -----------
 
 test_that("applicablePreviousTrials returns TRUE when required diff columns exist", {
   quantiles_diff <- analysis_with_diff[[1]]$analysis_parameters$quantiles
@@ -158,7 +51,6 @@ test_that("applicablePreviousTrials returns TRUE when required diff columns exis
   expect_length(res, 1L)
   expect_true(res)
 })
-
 
 ## 3. Negative diff case: missing p_diff_* column → FALSE ---------------------
 
@@ -195,8 +87,7 @@ test_that("applicablePreviousTrials returns FALSE when required diff columns are
   expect_false(res)
 })
 
-
-## 4. Method names differ across scenarios → FALSE ---------------------
+## 4. Method names differ across scenarios → FALSE ----------------------------
 
 test_that("applicablePreviousTrials returns FALSE when method_names differ across scenarios", {
   # Copy scen_next to two scenarios, then break method-name consistency in scenario_2
@@ -221,26 +112,14 @@ test_that("applicablePreviousTrials returns FALSE when method_names differ acros
   expect_false(res)
 })
 
-
 # Tests for performAnalyses ----------------------------------------------------
 
-set.seed(123)
-
-scenario_list_pa <- simulateScenarios(
-  n_subjects_list     = list(c(10, 20, 30)),
-  response_rates_list = list(c(0.3, 0.5, 0.7)),
-  n_trials            = 5
-)
+# Shared scenario_list for performAnalyses tests
+scenario_list_pa <- make_scenario_list_pa()
 
 ## 1. Basic structure of returned analysis_list --------------------------------
 
 test_that("performAnalyses returns a well-formed analysis_list", {
-  # Here we test the overall structure of the result:
-  # - class 'analysis_list'
-  # - one element per scenario
-  # - each scenario element has quantiles_list, scenario_data, analysis_parameters
-  # - scenario_data is preserved from input
-  
   res <- performAnalyses(
     scenario_list       = scenario_list_pa,
     target_rates        = c(0.5, 0.5, 0.5),
@@ -249,28 +128,20 @@ test_that("performAnalyses returns a well-formed analysis_list", {
     verbose             = FALSE
   )
   
-  # Top-level class and length
   expect_s3_class(res, "analysis_list")
   expect_equal(length(res), length(scenario_list_pa))
   expect_identical(names(res), paste0("scenario_", sapply(scenario_list_pa, `[[`, "scenario_number")))
   
-  # One scenario element should have the expected sub-structure
   scen1 <- res[[1]]
   expect_true(is.list(scen1))
   expect_true(all(c("quantiles_list", "scenario_data", "analysis_parameters") %in% names(scen1)))
   
-  # scenario_data should be the original scenario_list element
   expect_identical(scen1$scenario_data, scenario_list_pa[[1]])
 })
-
 
 ## 2. method_names are sorted and stored correctly -----------------------------
 
 test_that("performAnalyses sorts method_names and stores them in analysis_parameters", {
-  # We deliberately pass method_names in a strange order and check that
-  # - analysis_parameters$method_names are sorted
-  # - quantiles_list uses the same sorted order
-  
   res <- performAnalyses(
     scenario_list       = scenario_list_pa,
     target_rates        = c(0.5, 0.5, 0.5),
@@ -281,24 +152,17 @@ test_that("performAnalyses sorts method_names and stores them in analysis_parame
   
   scen1 <- res[[1]]
   
-  # Methods should be sorted alphabetically
   expected_sorted <- sort(c("stratified", "berry", "pooled"))
   expect_identical(scen1$analysis_parameters$method_names, expected_sorted)
   
-  # quantiles_list must have one entry per method in the same order
   expect_true(is.list(scen1$quantiles_list))
   expect_identical(names(scen1$quantiles_list), expected_sorted)
 })
 
-
 ## 3. quantiles include 1 - evidence_levels plus default set -------------------
 
 test_that("performAnalyses constructs quantiles from defaults and evidence_levels", {
-  # The function defines:
-  #   quantiles <- sort(unique(round(1 - c(defaults, evidence_levels), 9)))
-  # We check that all 1 - evidence_levels are contained and that defaults are there.
-  
-  ev_levels <- c(0.1, 0.2, 0.3)  # non-default values to make the test informative
+  ev_levels <- c(0.1, 0.2, 0.3)
   
   res <- performAnalyses(
     scenario_list       = scenario_list_pa,
@@ -311,34 +175,26 @@ test_that("performAnalyses constructs quantiles from defaults and evidence_level
   
   q <- res[[1]]$analysis_parameters$quantiles
   expect_true(is.numeric(q))
-  expect_true(is.unsorted(q) == FALSE)  # should be sorted
+  expect_true(is.unsorted(q) == FALSE)
   
   defaults <- c(0.025, 0.05, 0.5, 0.8, 0.9, 0.95, 0.975)
   expected_q <- sort(unique(round(1 - c(defaults, ev_levels), 9)))
   
-  # All expected quantiles must appear in the stored quantiles
   expect_true(all(expected_q %in% q))
 })
-
 
 ## 4. prior_parameters_list is auto-filled when NULL ---------------------------
 
 test_that("performAnalyses fills prior_parameters_list when not supplied", {
-  # When prior_parameters_list = NULL, the function calls getPriorParameters()
-  # and stores the resulting list in analysis_parameters$prior_parameters_list.
-  # We check that:
-  # - it is non-NULL in the result
-  # - it has entries for all methods used.
-  
   methods <- c("berry", "pooled")
   
   res <- performAnalyses(
-    scenario_list       = scenario_list_pa,
-    target_rates        = c(0.5, 0.5, 0.5),
-    method_names        = methods,
+    scenario_list         = scenario_list_pa,
+    target_rates          = c(0.5, 0.5, 0.5),
+    method_names          = methods,
     prior_parameters_list = NULL,
-    n_mcmc_iterations   = 30,
-    verbose             = FALSE
+    n_mcmc_iterations     = 30,
+    verbose               = FALSE
   )
   
   priors <- res[[1]]$analysis_parameters$prior_parameters_list
@@ -351,9 +207,6 @@ test_that("performAnalyses fills prior_parameters_list when not supplied", {
 ## 6. verbose controls user-facing progress messages ---------------------------
 
 test_that("performAnalyses prints a progress message when verbose = TRUE", {
-  # We don't try to capture every message, just the initial
-  # "Performing Analyses" message to verify that the verbose branch is active.
-  
   expect_message(
     performAnalyses(
       scenario_list       = scenario_list_pa,
@@ -366,33 +219,29 @@ test_that("performAnalyses prints a progress message when verbose = TRUE", {
   )
 })
 
-
 # Tests for performJags --------------------------------------------------------
 
 test_that("performJags runs a simple Bernoulli model and returns a sensible sample matrix", {
   skip_if_not_installed("rjags")
   
-  # --- 1. Define a tiny JAGS model: Bernoulli data with Beta(1,1) prior on theta ---
   model_file <- tempfile(fileext = ".bug")
   writeLines(
     c(
       "model {",
-      "  theta ~ dbeta(1, 1)",          # prior
+      "  theta ~ dbeta(1, 1)",
       "  for (i in 1:N) {",
-      "    y[i] ~ dbern(theta)",         # Bernoulli likelihood
+      "    y[i] ~ dbern(theta)",
       "  }",
       "}"
     ),
     con = model_file
   )
   
-  # --- 2. Small dataset: 20 observations with 14 successes (theta should be ~0.7) ---
   data_list <- list(
     N = 20L,
     y = c(rep(1L, 14), rep(0L, 6))
   )
   
-  # --- 3. Run performJags with modest iterations and burn-in ---
   n_chains <- 2L
   n_iter   <- 100L
   n_burnin <- 40L
@@ -406,14 +255,12 @@ test_that("performJags runs a simple Bernoulli model and returns a sensible samp
     n_burnin           = n_burnin
   )
   
-  # --- 4. Structural checks: matrix, correct dimensions, correct column name ---
   expect_true(is.matrix(samples))
   expect_identical(colnames(samples), "theta")
   
   expected_rows <- n_chains * (n_iter - n_burnin)
   expect_identical(nrow(samples), expected_rows)
   
-  # --- 5. Sanity check on inference: posterior mean should be between 0 and 1 ---
   post_mean <- mean(samples[, "theta"])
   expect_gt(post_mean, 0)
   expect_lt(post_mean, 1)
@@ -426,7 +273,6 @@ test_that("getPosteriors: basic posterior sampling and name cleaning (no exch we
   
   set.seed(123)
   
-  # 1) Build a tiny one-scenario dataset
   scen_list <- simulateScenarios(
     n_subjects_list     = list(c(10, 20)),
     response_rates_list = list(c(0.5, 0.6)),
@@ -434,7 +280,6 @@ test_that("getPosteriors: basic posterior sampling and name cleaning (no exch we
   )
   scen1 <- scen_list$scenario_1
   
-  # 2) Prepare Berry analysis to get a real JAGS model, parameters and j_data skeleton
   target_rates <- c(0.5, 0.5)
   priors       <- getPriorParameters(
     method_names = "berry",
@@ -447,12 +292,10 @@ test_that("getPosteriors: basic posterior sampling and name cleaning (no exch we
     prior_parameters = priors[["berry"]]
   )
   
-  # Fill in r and n as getPostQuantilesOfTrial would do
   j_data <- prep$j_data
   j_data$r <- as.numeric(scen1$n_responders[1, ])
   j_data$n <- as.numeric(scen1$n_subjects[1, ])
   
-  # 3) Call getPosteriors on this real model
   post <- getPosteriors(
     j_parameters      = prep$j_parameters,
     j_model_file      = prep$j_model_file,
@@ -460,30 +303,22 @@ test_that("getPosteriors: basic posterior sampling and name cleaning (no exch we
     n_mcmc_iterations = 200
   )
   
-  # 4) Check: we got a numeric matrix with cleaned names
   expect_true(is.matrix(post))
   expect_gt(nrow(post), 0)
   expect_true(all(is.finite(post)))
   
-  # Column names should no longer contain square brackets
   expect_false(any(grepl("\\[", colnames(post))))
   expect_false(any(grepl("\\]", colnames(post))))
   
-  # And in this Berry case we do NOT expect any w_ weight columns
   expect_false(any(grepl("^w_", colnames(post))))
-  
-  # Also, weights_indices branch should have been skipped:
-  # i.e. no "exch" left in the names either
   expect_false(any(grepl("exch", colnames(post))))
 })
-
 
 test_that("getPosteriors: exNEX exchangeability weights are renamed to w_j and extras dropped", {
   skip_if_not_installed("rjags")
   
   set.seed(456)
   
-  # 1) Simple two-cohort scenario (numbers don't matter much, we just want JAGS to run)
   scen_list <- simulateScenarios(
     n_subjects_list     = list(c(10, 20)),
     response_rates_list = list(c(0.6, 0.7)),
@@ -491,7 +326,6 @@ test_that("getPosteriors: exNEX exchangeability weights are renamed to w_j and e
   )
   scen1 <- scen_list$scenario_1
   
-  # 2) Prepare exNEX analysis, which uses exchangeability weights in the JAGS model
   target_rates <- c(0.5, 0.5)
   priors       <- getPriorParameters(
     method_names = "exnex",
@@ -504,12 +338,10 @@ test_that("getPosteriors: exNEX exchangeability weights are renamed to w_j and e
     prior_parameters = priors[["exnex"]]
   )
   
-  # Like in getPostQuantilesOfTrial, fill in actual data r and n
   j_data <- prep$j_data
   j_data$r <- as.numeric(scen1$n_responders[1, ])
   j_data$n <- as.numeric(scen1$n_subjects[1, ])
   
-  # 3) Call getPosteriors – this should create 'exch[...]' columns inside
   post <- getPosteriors(
     j_parameters      = prep$j_parameters,
     j_model_file      = prep$j_model_file,
@@ -517,20 +349,15 @@ test_that("getPosteriors: exNEX exchangeability weights are renamed to w_j and e
     n_mcmc_iterations = 300
   )
   
-  # Sanity: still a proper numeric matrix
   expect_true(is.matrix(post))
   expect_gt(nrow(post), 0)
   expect_true(all(is.finite(post)))
   
-  # 4) Weight-handling behaviour:
-  # (a) No raw 'exch' strings should survive in the column names
   expect_false(any(grepl("exch", colnames(post))))
   
-  # (b) We should see one w_j column per cohort (length(j_data$n))
   w_cols <- grep("^w_", colnames(post))
   expect_equal(length(w_cols), length(j_data$n))
   
-  # (c) No leftover JAGS-style index ",1" should be present anymore
   expect_false(any(grepl(",1", colnames(post))))
 })
 
@@ -540,11 +367,8 @@ test_that("getPostQuantiles (pooled): uses pooled backend and matches Beta poste
   skip_if_not_installed("foreach")
   skip_if_not_installed("doRNG")
   
-  # Force foreach to run sequentially (no parallel backend needed)
   foreach::registerDoSEQ()
   
-  ## Scenario: single trial, 2 cohorts, provided as *matrices*
-  ## This avoids the vector→matrix magic that gave us 2 analyses before.
   n_subjects_mat   <- matrix(c(10, 20), nrow = 1)
   n_responders_mat <- matrix(c(3, 5),   nrow = 1)
   
@@ -553,10 +377,6 @@ test_that("getPostQuantiles (pooled): uses pooled backend and matches Beta poste
     n_responders = n_responders_mat
   )
   
-  ## Prior for pooled model: Beta(1, 1)
-  ## j_data$a, j_data$b are the only things needed up-front;
-  ## j_data$r and j_data$n are filled inside getPostQuantilesOfTrial()
-  ## from the scenario row.
   j_data <- list(
     a = 1,
     b = 1
@@ -564,35 +384,30 @@ test_that("getPostQuantiles (pooled): uses pooled backend and matches Beta poste
   
   quantiles <- c(0.025, 0.5, 0.975)
   
-  # Call getPostQuantiles for pooled method
   out <- getPostQuantiles(
     method_name       = "pooled",
     quantiles         = quantiles,
     scenario_data     = scenario_data,
     calc_differences  = NULL,
-    j_parameters      = NULL,    # not used for pooled
-    j_model_file      = NULL,    # not used for pooled
+    j_parameters      = NULL,
+    j_model_file      = NULL,
     j_data            = j_data,
     n_mcmc_iterations = 1000,
     save_path         = NULL,
     save_trial        = NULL
   )
   
-  # One trial row -> one element in the list
   expect_type(out, "list")
   expect_length(out, 1)
   
   mat <- out[[1]]
   expect_true(is.matrix(mat))
   
-  # rows = quantiles + Mean + SD
   expect_identical(
     rownames(mat),
     c("2.5%", "50%", "97.5%", "Mean", "SD")
   )
   
-  # cols = one posterior per cohort p_1, p_2 (pooled model still reports
-  # a separate posterior for each cohort, but it's the same distribution)
   expect_identical(colnames(mat), c("p_1", "p_2"))
   
   expect_identical(
@@ -600,8 +415,6 @@ test_that("getPostQuantiles (pooled): uses pooled backend and matches Beta poste
     c(length(quantiles) + 2L, 2L)
   )
   
-  # pooled shape parameters:
-  # shape_1 = a + sum(r), shape_2 = b + sum(n) - sum(r)
   r_tot <- sum(n_responders_mat[1, ])
   n_tot <- sum(n_subjects_mat[1, ])
   
@@ -613,7 +426,6 @@ test_that("getPostQuantiles (pooled): uses pooled backend and matches Beta poste
   expected_sd <- ((shape_1 * shape_2) /
                     ((shape_1 + shape_2)^2 * (shape_1 + shape_2 + 1)))^0.5
   
-  # Every column should equal the same pooled Beta posterior
   expect_equal(
     unname(mat[c("2.5%", "50%", "97.5%"), 1]),
     expected_q,
@@ -635,8 +447,6 @@ test_that("getPostQuantiles (stratified): multiple trials and calc_differences p
   
   foreach::registerDoSEQ()
   
-  ## Scenario: 2 trials, 2 cohorts, provided as matrices so we *skip* the
-  ## vector→matrix conversion branch this time.
   n_subjects_mat <- rbind(
     c(10, 10),
     c(20, 20)
@@ -651,7 +461,6 @@ test_that("getPostQuantiles (stratified): multiple trials and calc_differences p
     n_responders = n_responders_mat
   )
   
-  ## Simple Beta(1,1) priors per cohort for stratified model.
   j_data <- list(
     a_j = c(1, 1),
     b_j = c(1, 1)
@@ -665,21 +474,17 @@ test_that("getPostQuantiles (stratified): multiple trials and calc_differences p
     quantiles         = quantiles,
     scenario_data     = scenario_data,
     calc_differences  = calc_differences,
-    j_parameters      = NULL,          # not used by stratified
-    j_model_file      = NULL,          # not used by stratified
+    j_parameters      = NULL,
+    j_model_file      = NULL,
     j_data            = j_data,
     n_mcmc_iterations = 1000,
     save_path         = NULL,
     save_trial        = NULL
   )
   
-  # We expect a list of length 2 (two unique trial outcomes).
   expect_type(out, "list")
   expect_length(out, 2)
   
-  # Each element should be a matrix with:
-  #   columns: p_1, p_2, p_diff_12
-  #   rows: quantiles + Mean + SD
   for (mat in out) {
     expect_true(is.matrix(mat))
     
@@ -693,10 +498,8 @@ test_that("getPostQuantiles (stratified): multiple trials and calc_differences p
       c(paste0(quantiles * 100, "%"), "Mean", "SD")
     )
     
-    # p_j columns must be numeric and finite
     expect_true(all(is.finite(mat[, c("p_1", "p_2")])))
     
-    # Difference column exists, numeric, and not all zero
     diff_col <- mat[, "p_diff_12"]
     expect_true(is.numeric(diff_col))
     expect_true(any(diff_col != 0))
@@ -705,13 +508,9 @@ test_that("getPostQuantiles (stratified): multiple trials and calc_differences p
 
 # Tests for loadAnalyses -------------------------------------------------------
 
-# we also check for individual errors, but we already do so in other tests, can
-# be removed if repetitive
-
 test_that("loadAnalyses: loads saved analyses and sets class/names correctly", {
   tmpdir <- tempdir()
   
-  # Create two dummy analyses and save them as the package would
   scen_nums <- c(1, 2)
   anal_nums <- c(1, 2)
   
@@ -727,26 +526,21 @@ test_that("loadAnalyses: loads saved analyses and sets class/names correctly", {
     load_path        = tmpdir
   )
   
-  # Structure
   expect_s3_class(loaded, "analysis_list")
   expect_identical(names(loaded), c("scenario_1", "scenario_2"))
   
-  # Contents match what we saved
   expect_identical(loaded[[1]], dummy1)
   expect_identical(loaded[[2]], dummy2)
 })
 
-
 test_that("loadAnalyses: scenario_numbers must be positive integers", {
   tmpdir <- tempdir()
   
-  # Non-numeric
   expect_error(
     loadAnalyses(scenario_numbers = "a", load_path = tmpdir),
     "scenario_numbers"
   )
   
-  # Zero / negative
   expect_error(
     loadAnalyses(scenario_numbers = c(0, 1), load_path = tmpdir),
     "scenario_numbers"
@@ -756,7 +550,6 @@ test_that("loadAnalyses: scenario_numbers must be positive integers", {
 test_that("loadAnalyses: analysis_numbers must be positive integers of same length", {
   tmpdir <- tempdir()
   
-  # Wrong length
   expect_error(
     loadAnalyses(
       scenario_numbers = c(1, 2),
@@ -766,7 +559,6 @@ test_that("loadAnalyses: analysis_numbers must be positive integers of same leng
     "analysis_numbers"
   )
   
-  # Non-integerish / negative
   expect_error(
     loadAnalyses(
       scenario_numbers = c(1, 2),
@@ -789,17 +581,15 @@ test_that("loadAnalyses: load_path must be a single character string", {
 })
 
 # Tests for printAnalyses ------------------------------------------------------
-## 1. Basic structure: header, scenario labels, method label, numeric values ----
 
 test_that("print.analysis_list: prints header, scenario blocks, method label, and numeric estimates", {
   set.seed(123)
   
-  # Two scenarios so print.analysis_list uses the y[[n]][, 1:2] branch
   scen <- simulateScenarios(
     n_subjects_list     = list(c(10, 20),
                                c(10, 20)),
-    response_rates_list = list(c(0.3, 0.6),   # scenario_1
-                               c(0.4, 0.7)),  # scenario_2
+    response_rates_list = list(c(0.3, 0.6),
+                               c(0.4, 0.7)),
     n_trials            = 50
   )
   
@@ -811,75 +601,56 @@ test_that("print.analysis_list: prints header, scenario blocks, method label, an
     verbose            = FALSE
   )
   
-  # Reference estimates used by print.analysis_list
   est_list <- getEstimates(analyses)
   
-  # For multi-scenario: est_list[[1]] is a list of matrices, one per scenario
   expect_true(is.list(est_list[[1]]))
-  est_mat1 <- est_list[[1]][[1]]  # scenario_1, method 'pooled'
+  est_mat1 <- est_list[[1]][[1]]
   
-  # We know print.analysis_list uses y[[n]][, 1:2] → typically Mean & SD
   mean_p1 <- round(est_mat1["p_1", "Mean"], digits = 2)
   sd_p1   <- round(est_mat1["p_1", "SD"],   digits = 2)
   
   out <- capture.output(print(analyses))
   flat_out <- paste(out, collapse = " ")
   
-  # 1) Header: "analysis_list of 2 scenarios with 1 method"
   expect_true(
-    any(grepl("analysis_list of 2 scenarios with 1 method", out)),
-    info = "Header should say we have 2 scenarios and 1 method"
+    any(grepl("analysis_list of 2 scenarios with 1 method", out))
   )
   
-  # 2) Scenario labels: "  - scenario_1" and "  - scenario_2"
   expect_true(
-    any(grepl("^  - scenario_1", out)),
-    info = "First scenario block label should be 'scenario_1'"
+    any(grepl("^  - scenario_1", out))
   )
   expect_true(
-    any(grepl("^  - scenario_2", out)),
-    info = "Second scenario block label should be 'scenario_2'"
+    any(grepl("^  - scenario_2", out))
   )
   
-  # 3) Method label: firstUpper('pooled') = 'Pooled'
   expect_true(
-    any(grepl("Pooled", out)),
-    info = "Method name 'Pooled' must be printed as a row label"
+    any(grepl("Pooled", out))
   )
   
-  # 4) Check that *actual numeric estimates* for scenario_1 (Mean & SD for p_1) appear
   mean_str <- sprintf("%.2f", mean_p1)
   sd_str   <- sprintf("%.2f", sd_p1)
   
   expect_true(
-    grepl(mean_str, flat_out),
-    info = "Rounded Mean for p_1 from scenario_1 must appear in the printed output"
+    grepl(mean_str, flat_out)
   )
   expect_true(
-    grepl(sd_str, flat_out),
-    info = "Rounded SD for p_1 from scenario_1 must appear in the printed output"
+    grepl(sd_str, flat_out)
   )
   
-  # 5) Footer: MCMC iterations + evidence levels
   expect_true(
-    any(grepl("MCMC iterationns per BHM method", out)),
-    info = "Footer line must mention MCMC iterations (typo 'iterationns' kept as in code)"
+    any(grepl("MCMC iterationns per BHM method", out))
   )
   expect_true(
-    any(grepl("Available evidence levels:", out)),
-    info = "Footer must list available evidence levels"
+    any(grepl("Available evidence levels:", out))
   )
 })
-
-
-## 2. Multiple scenarios: scenario-specific estimates differ -------------------
 
 test_that("print.analysis_list: multiple scenarios print distinct scenario-specific estimates", {
   set.seed(456)
   
   n_subj <- c(10, 20)
-  rr1    <- c(0.3, 0.6)  # scenario_1
-  rr2    <- c(0.7, 0.2)  # scenario_2, clearly different pattern
+  rr1    <- c(0.3, 0.6)
+  rr2    <- c(0.7, 0.2)
   
   scen_multi <- simulateScenarios(
     n_subjects_list     = list(n_subj, n_subj),
@@ -897,10 +668,9 @@ test_that("print.analysis_list: multiple scenarios print distinct scenario-speci
   
   est_multi <- getEstimates(analyses_multi)
   
-  # Multi-scenario: est_multi[[1]] is a list of matrices, one per scenario
   expect_true(is.list(est_multi[[1]]))
-  m1 <- est_multi[[1]][[1]]  # scenario_1
-  m2 <- est_multi[[1]][[2]]  # scenario_2
+  m1 <- est_multi[[1]][[1]]
+  m2 <- est_multi[[1]][[2]]
   
   mean1 <- round(m1["p_1", "Mean"], 2)
   mean2 <- round(m2["p_1", "Mean"], 2)
@@ -908,45 +678,31 @@ test_that("print.analysis_list: multiple scenarios print distinct scenario-speci
   out <- capture.output(print(analyses_multi))
   flat_out <- paste(out, collapse = " ")
   
-  # 1) Header: 2 scenarios, 1 method
   expect_true(
-    any(grepl("analysis_list of 2 scenarios with 1 method", out)),
-    info = "Header should reflect 2 scenarios and 1 method"
+    any(grepl("analysis_list of 2 scenarios with 1 method", out))
   )
   
-  # 2) Scenario blocks
-  expect_true(any(grepl("^  - scenario_1", out)),
-              info = "scenario_1 header must be printed")
-  expect_true(any(grepl("^  - scenario_2", out)),
-              info = "scenario_2 header must be printed")
+  expect_true(any(grepl("^  - scenario_1", out)))
+  expect_true(any(grepl("^  - scenario_2", out)))
   
-  # 3) Scenario-specific Means for p_1 must both appear somewhere
   mean1_str <- sprintf("%.2f", mean1)
   mean2_str <- sprintf("%.2f", mean2)
   
   expect_true(
-    grepl(mean1_str, flat_out),
-    info = "Scenario 1 Mean(p_1) should be printed somewhere in the output"
+    grepl(mean1_str, flat_out)
   )
   expect_true(
-    grepl(mean2_str, flat_out),
-    info = "Scenario 2 Mean(p_1) should be printed somewhere in the output"
+    grepl(mean2_str, flat_out)
   )
   
-  # 4) Since response rates differ, these means should differ too
   expect_false(
-    isTRUE(all.equal(mean1, mean2)),
-    info = "Means for p_1 in the two scenarios should differ for different underlying data"
+    isTRUE(all.equal(mean1, mean2))
   )
 })
-
-
-## 3. digits argument: controls rounding of printed numeric values -------------
 
 test_that("print.analysis_list: digits argument controls printed numeric precision", {
   set.seed(789)
   
-  # Again, 2 scenarios to avoid the 1-scenario branch
   scen <- simulateScenarios(
     n_subjects_list     = list(c(10, 20),
                                c(10, 20)),
@@ -965,13 +721,11 @@ test_that("print.analysis_list: digits argument controls printed numeric precisi
   
   est_list <- getEstimates(analyses)
   est_obj  <- est_list[[1]]
-  # Multi-scenario: list of matrices
   expect_true(is.list(est_obj))
-  est_mat1 <- est_obj[[1]]   # scenario_1
+  est_mat1 <- est_obj[[1]]
   
   mean_p1 <- est_mat1["p_1", "Mean"]
   
-  # Capture with low vs. high precision
   out_2 <- capture.output(print(analyses, digits = 2))
   out_4 <- capture.output(print(analyses, digits = 4))
   
@@ -981,28 +735,20 @@ test_that("print.analysis_list: digits argument controls printed numeric precisi
   fmt2 <- sprintf("%.2f", round(mean_p1, 2))
   fmt4 <- sprintf("%.4f", round(mean_p1, 4))
   
-  # With digits = 2, a 2-decimal version should appear
   expect_true(
-    grepl(fmt2, flat_2),
-    info = "digits = 2 should print Mean(p_1) rounded to 2 decimals"
+    grepl(fmt2, flat_2)
   )
   
-  # With digits = 4, a more precise 4-decimal version should appear
   expect_true(
-    grepl(fmt4, flat_4),
-    info = "digits = 4 should print Mean(p_1) rounded to 4 decimals"
+    grepl(fmt4, flat_4)
   )
 })
 
-
 # Tests for saveAnalyses -------------------------------------------------------
-
-## 1. Happy path: saves files and can be reloaded via loadAnalyses -------------
 
 test_that("saveAnalyses: saves analysis_list to disk and loadAnalyses can read it back", {
   set.seed(101)
   
-  # Create a small but real analysis_list with 2 scenarios
   scen <- simulateScenarios(
     n_subjects_list     = list(c(10, 20),
                                c(15, 25)),
@@ -1021,16 +767,13 @@ test_that("saveAnalyses: saves analysis_list to disk and loadAnalyses can read i
   
   tmp_dir <- tempdir()
   
-  # Call function under test
   info <- saveAnalyses(analyses, save_path = tmp_dir)
   
-  # Returned metadata must have the right shape
   expect_true(is.list(info))
   expect_equal(length(info$scenario_numbers), length(analyses))
   expect_equal(length(info$analysis_numbers), length(analyses))
   expect_identical(info$path, tmp_dir)
   
-  # scenario_numbers in info must match those stored inside the analysis_list
   internal_scen <- vapply(
     analyses,
     function(x) x$scenario_data$scenario_number,
@@ -1038,7 +781,6 @@ test_that("saveAnalyses: saves analysis_list to disk and loadAnalyses can read i
   )
   expect_equal(info$scenario_numbers, internal_scen)
   
-  # The corresponding RDS files should exist on disk
   for (i in seq_along(info$scenario_numbers)) {
     f <- file.path(
       tmp_dir,
@@ -1046,11 +788,9 @@ test_that("saveAnalyses: saves analysis_list to disk and loadAnalyses can read i
              info$scenario_numbers[i], "_",
              info$analysis_numbers[i], ".rds")
     )
-    expect_true(file.exists(f),
-                info = paste("Expected file to exist:", f))
+    expect_true(file.exists(f))
   }
   
-  # loadAnalyses should be able to read those back into an analysis_list
   loaded <- loadAnalyses(
     scenario_numbers = info$scenario_numbers,
     analysis_numbers = info$analysis_numbers,
@@ -1062,11 +802,7 @@ test_that("saveAnalyses: saves analysis_list to disk and loadAnalyses can read i
   expect_identical(names(loaded), names(analyses))
 })
 
-
-## 2. Validation: non-analysis_list input is rejected --------------------------
-
 test_that("saveAnalyses: non-analysis_list input triggers a class error", {
-  # We pass a plain list instead of a proper analysis_list → should fail fast
   expect_error(
     saveAnalyses(list(a = 1)),
     "analysis_list",
@@ -1074,13 +810,9 @@ test_that("saveAnalyses: non-analysis_list input triggers a class error", {
   )
 })
 
-
-## 3. Validation: save_path must be a single string ----------------------------
-
 test_that("saveAnalyses: save_path must be a character vector of length 1", {
   set.seed(202)
   
-  # Create a small valid analysis_list to isolate the save_path check
   scen <- simulateScenarios(
     n_subjects_list     = list(c(10, 20)),
     response_rates_list = list(c(0.3, 0.6)),
@@ -1095,7 +827,6 @@ test_that("saveAnalyses: save_path must be a character vector of length 1", {
     verbose            = FALSE
   )
   
-  # Vector of length > 1 should violate assert_character(len = 1)
   expect_error(
     saveAnalyses(analyses, save_path = c("a", "b")),
     "save_path",
@@ -1106,7 +837,6 @@ test_that("saveAnalyses: save_path must be a character vector of length 1", {
 # Tests for calcDiffsMCMC ------------------------------------------------------
 
 test_that("calcDiffsMCMC: adds correctly named difference columns with correct values", {
-  # Posterior samples: 2 rows, 3 p-columns + one non-p column (mu)
   posterior_samples <- cbind(
     p_1 = c(0.1, 0.2),
     p_2 = c(0.5, 0.6),
@@ -1114,7 +844,6 @@ test_that("calcDiffsMCMC: adds correctly named difference columns with correct v
     mu  = c(1.0, 2.0)
   )
   
-  # We want p_diff_12 = p_1 - p_2 and p_diff_31 = p_3 - p_1
   calc_differences <- rbind(
     c(1, 2),
     c(3, 1)
@@ -1125,20 +854,16 @@ test_that("calcDiffsMCMC: adds correctly named difference columns with correct v
     calc_differences  = calc_differences
   )
   
-  # Original columns must still be present
   expect_true(all(c("p_1", "p_2", "p_3", "mu") %in% colnames(out)))
   
-  # New diff columns must be appended
   expect_true(all(c("p_diff_12", "p_diff_31") %in% colnames(out)))
   
-  # Check values
   expected_diff_12 <- posterior_samples[, "p_1"] - posterior_samples[, "p_2"]
   expected_diff_31 <- posterior_samples[, "p_3"] - posterior_samples[, "p_1"]
   
   expect_equal(out[, "p_diff_12"], expected_diff_12)
   expect_equal(out[, "p_diff_31"], expected_diff_31)
 })
-
 
 # Tests for prepareAnalysis ----------------------------------------------------
 
@@ -1148,21 +873,19 @@ test_that("prepareAnalysis: berry branch builds correct j_data and parameters", 
   priors_berry <- priors_list[["berry"]]
   
   prep <- prepareAnalysis(
-    method_name     = "berry",
+    method_name      = "berry",
     prior_parameters = priors_berry,
     target_rates     = target_rates
   )
   
   j_data <- prep$j_data
   
-  # j_data contents
   expect_equal(j_data$mean_mu,      priors_berry$mu_mean)
   expect_equal(j_data$precision_mu, priors_berry$mu_sd^-2)
   expect_equal(j_data$precision_tau, priors_berry$tau_scale^-2)
   expect_equal(j_data$p_t,          target_rates)
   expect_equal(j_data$J,            length(target_rates))
   
-  # JAGS config
   expect_equal(prep$j_parameters, c("p", "mu", "tau"))
   expect_true(is.character(prep$j_model_file))
   expect_true(file.exists(prep$j_model_file))
@@ -1174,18 +897,18 @@ test_that("prepareAnalysis: exnex branch builds mixture priors and pMix", {
   priors_exnex <- priors_list[["exnex"]]
   
   prep <- prepareAnalysis(
-    method_name     = "exnex",
+    method_name      = "exnex",
     prior_parameters = priors_exnex,
     target_rates     = target_rates
   )
   
   j_data <- prep$j_data
   
-  Nexch <- length(priors_exnex$mu_mean)
+  Nexch   <- length(priors_exnex$mu_mean)
   Nstrata <- length(priors_exnex$mu_j)
   
-  expect_equal(j_data$Nexch, Nexch)
-  expect_equal(j_data$Nmix,  Nexch + 1L)
+  expect_equal(j_data$Nexch,   Nexch)
+  expect_equal(j_data$Nmix,    Nexch + 1L)
   expect_equal(j_data$Nstrata, Nstrata)
   
   expect_equal(j_data$mu_mean, priors_exnex$mu_mean)
@@ -1210,14 +933,13 @@ test_that("prepareAnalysis: exnex_adj branch includes p_target and uses exnex_ad
   priors       <- priors_list[["exnex_adj"]]
   
   prep <- prepareAnalysis(
-    method_name     = "exnex_adj",
+    method_name      = "exnex_adj",
     prior_parameters = priors,
     target_rates     = target_rates
   )
   
   j_data <- prep$j_data
   
-  # Same structure as exnex, plus p_target
   expect_equal(j_data$p_target, target_rates)
   expect_equal(prep$j_parameters, c("p", "mu", "tau", "exch"))
   expect_true(grepl("exnex_adj", prep$j_model_file))
@@ -1231,7 +953,6 @@ test_that("prepareAnalysis: stratified and pooled use dummy JAGS info and pass p
     target_rates = target_rates
   )
   
-  # stratified
   prep_strat <- prepareAnalysis(
     method_name      = "stratified",
     prior_parameters = priors_list[["stratified"]],
@@ -1241,7 +962,6 @@ test_that("prepareAnalysis: stratified and pooled use dummy JAGS info and pass p
   expect_equal(prep_strat$j_parameters, "dummy JAGS parameters")
   expect_identical(prep_strat$j_data, priors_list[["stratified"]])
   
-  # pooled
   prep_pooled <- prepareAnalysis(
     method_name      = "pooled",
     prior_parameters = priors_list[["pooled"]],
@@ -1259,7 +979,6 @@ test_that("prepareAnalysis: invalid method_name throws an error", {
   )
 })
 
-
 # Tests for getUniqueRows ------------------------------------------------------
 
 test_that("getUniqueRows: returns unique row combinations with correct columns", {
@@ -1273,14 +992,11 @@ test_that("getUniqueRows: returns unique row combinations with correct columns",
   
   out <- getUniqueRows(mat)
   
-  # Same number of columns
   expect_equal(ncol(out), ncol(mat))
   
-  # All rows in 'out' must be unique
   out_df <- as.data.frame(out)
   expect_equal(nrow(out_df), nrow(unique(out_df)))
   
-  # The set of unique rows should match base::unique(mat)
   exp_df <- as.data.frame(unique(mat))
   
   out_ord <- out_df[do.call(order, out_df), , drop = FALSE]
@@ -1289,11 +1005,9 @@ test_that("getUniqueRows: returns unique row combinations with correct columns",
   expect_equal(unname(out_ord), unname(exp_ord))
 })
 
-
 # Tests for getUniqueTrials ----------------------------------------------------
 
 test_that("getUniqueTrials: combines scenarios and returns unique responder/subject/go rows", {
-  # Construct a simple artificial scenario_list with some duplicate and some distinct rows
   scenario_list <- list(
     scenario_1 = list(
       n_responders = rbind(
@@ -1326,23 +1040,18 @@ test_that("getUniqueTrials: combines scenarios and returns unique responder/subj
   
   out <- getUniqueTrials(scenario_list)
   
-  # Columns: responders (2) + subjects (2) + go_flag (1) = 5 columns
   expect_equal(ncol(out), 5)
   
-  # No duplicate rows in the result
   out_df <- as.data.frame(out)
   expect_equal(nrow(out_df), nrow(unique(out_df)))
   
-  # Build the "raw" combined matrix exactly as getUniqueTrials does
   all_resp <- do.call(rbind, lapply(scenario_list, function(x) x$n_responders))
   all_subj <- do.call(rbind, lapply(scenario_list, function(x) x$n_subjects))
   all_go   <- do.call(rbind, lapply(scenario_list, function(x) x$previous_analyses$go_decisions))[, 1]
   combined <- cbind(all_resp, all_subj, go_flag = all_go)
   
-  # Unique rows from the raw combined matrix
   exp_df <- as.data.frame(unique(combined))
   
-  # Sort both sets of rows in a reproducible way and compare values, ignoring names
   out_ord <- out_df[do.call(order, out_df), , drop = FALSE]
   exp_ord <- exp_df[do.call(order, exp_df), , drop = FALSE]
   
@@ -1357,7 +1066,6 @@ test_that("getUniqueTrials: combines scenarios and returns unique responder/subj
 test_that("mapUniqueTrials: without previous trials, maps unique trial quantiles back per scenario", {
   foreach::registerDoSEQ()
   
-  # One scenario with 2 trial realizations, 2 cohorts
   n_resp <- rbind(
     c(1, 2),
     c(2, 1)
@@ -1372,15 +1080,12 @@ test_that("mapUniqueTrials: without previous trials, maps unique trial quantiles
       scenario_number  = 1,
       n_responders     = n_resp,
       n_subjects       = n_subj
-      # no previous_analyses needed, as applicable_previous_trials = FALSE
     )
   )
   class(scenario_list) <- "scenario_list"
   
-  # Unique trials (here: just all rows of [n_resp | n_subj])
   trials_unique_calc <- cbind(n_resp, n_subj)
   
-  # Fake method quantiles: one matrix per unique trial
   q1 <- matrix(1:4, nrow = 2,
                dimnames = list(c("Mean", "SD"), c("p_1", "p_2")))
   q2 <- matrix(5:8, nrow = 2,
@@ -1390,7 +1095,6 @@ test_that("mapUniqueTrials: without previous trials, maps unique trial quantiles
     pooled = list(q1, q2)
   )
   
-  # Call mapUniqueTrials (no previous analyses used)
   out <- mapUniqueTrials(
     scenario_list              = scenario_list,
     method_quantiles_list      = method_quantiles_list,
@@ -1405,7 +1109,6 @@ test_that("mapUniqueTrials: without previous trials, maps unique trial quantiles
   expect_true(is.list(scen1))
   expect_true("pooled" %in% names(scen1))
   
-  # We expect two elements (one per trial) with quantiles equal to q1, q2
   expect_identical(scen1$pooled[[1]], q1)
   expect_identical(scen1$pooled[[2]], q2)
 })
@@ -1413,11 +1116,9 @@ test_that("mapUniqueTrials: without previous trials, maps unique trial quantiles
 test_that("mapUniqueTrials: with previous trials, only GO trials are updated from hash tables", {
   foreach::registerDoSEQ()
   
-  # 2 trials, 1 cohort for simplicity
   n_resp <- rbind(1, 2)
   n_subj <- rbind(10, 10)
   
-  # previous_analyses with simple go_decisions and existing post_quantiles
   prev_post <- list(
     pooled = list(
       matrix("prev1", nrow = 1, dimnames = list("dummy", "p_1")),
@@ -1431,17 +1132,15 @@ test_that("mapUniqueTrials: with previous trials, only GO trials are updated fro
       n_responders      = n_resp,
       n_subjects        = n_subj,
       previous_analyses = list(
-        go_decisions = cbind(c(1, 0)),  # first trial GO, second trial NoGo
+        go_decisions   = cbind(c(1, 0)),
         post_quantiles = prev_post
       )
     )
   )
   class(scenario_list) <- "scenario_list"
   
-  # Unique trials (both rows)
   trials_unique_calc <- cbind(n_resp, n_subj)
   
-  # New quantiles we want to use for GO trials
   new_q1 <- matrix("new1", nrow = 1, dimnames = list("dummy", "p_1"))
   new_q2 <- matrix("new2", nrow = 1, dimnames = list("dummy", "p_1"))
   
@@ -1460,19 +1159,15 @@ test_that("mapUniqueTrials: with previous trials, only GO trials are updated fro
   expect_true(is.list(scen1))
   expect_true("pooled" %in% names(scen1))
   
-  # For GO trial (row 1), we expect the updated quantiles (new_q1)
   expect_identical(scen1$pooled[[1]], new_q1)
-  # For NoGo trial (row 2), the old quantiles should remain (prev2)
   expect_identical(scen1$pooled[[2]], prev_post$pooled[[2]])
 })
-
 
 # Tests for posteriors2Quantiles ----------------------------------------------
 
 test_that("posteriors2Quantiles: computes quantiles, mean, and sd for each column", {
   set.seed(123)
   
-  # One parameter (theta) with known distribution: Normal(2, 3)
   theta <- rnorm(5000, mean = 2, sd = 3)
   post  <- cbind(theta = theta)
   
@@ -1483,19 +1178,16 @@ test_that("posteriors2Quantiles: computes quantiles, mean, and sd for each colum
     posteriors = post
   )
   
-  # Structure
   expect_true(is.matrix(out))
   expect_identical(colnames(out), "theta")
   expect_identical(rownames(out),
                    c("25%", "50%", "75%", "Mean", "SD"))
   
-  # Check quantiles vs base::quantile
   exp_q <- stats::quantile(theta, probs = quantiles)
   expect_equal(out[c("25%", "50%", "75%"), "theta"],
                exp_q,
-               tolerance = 1e-2)  # small Monte Carlo noise
+               tolerance = 1e-2)
   
-  # Mean & SD vs sample mean & sd
   expect_equal(out["Mean", "theta"], mean(theta), tolerance = 1e-2)
   expect_equal(out["SD",   "theta"], stats::sd(theta), tolerance = 1e-2)
 })
