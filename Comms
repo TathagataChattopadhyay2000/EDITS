@@ -1,68 +1,59 @@
-── Failure: getUniqueTrials: combines scenarios and returns unique responder/subject/go rows ──
-nrow(merged) not equal to nrow(out_df).
-1/1 mismatches
-[1] 0 - 3 == -3
+test_that("getUniqueTrials: combines scenarios and returns unique responder/subject/go rows", {
+  # Construct a simple artificial scenario_list with some duplicate and some distinct rows
+  scenario_list <- list(
+    scenario_1 = list(
+      n_responders = rbind(
+        c(1, 2),
+        c(1, 2)
+      ),
+      n_subjects = rbind(
+        c(10, 10),
+        c(10, 10)
+      ),
+      previous_analyses = list(
+        go_decisions = cbind(c(1, 0))
+      )
+    ),
+    scenario_2 = list(
+      n_responders = rbind(
+        c(1, 2),
+        c(2, 1)
+      ),
+      n_subjects = rbind(
+        c(10, 10),
+        c(10, 10)
+      ),
+      previous_analyses = list(
+        go_decisions = cbind(c(1, 1))
+      )
+    )
+  )
+  class(scenario_list) <- "scenario_list"
 
-Error:
-! Test failed
-Run `rlang::last_trace()` to see where the error occurred.
->   scenario_list <- list(
-+     scenario_1 = list(
-+       n_responders = rbind(
-+         c(1, 2),
-+         c(1, 2)
-+       ),
-+       n_subjects = rbind(
-+         c(10, 10),
-+         c(10, 10)
-+       ),
-+       previous_analyses = list(
-+         go_decisions = cbind(c(1, 0))
-+       )
-+     ),
-+     scenario_2 = list(
-+       n_responders = rbind(
-+         c(1, 2),
-+         c(2, 1)
-+       ),
-+       n_subjects = rbind(
-+         c(10, 10),
-+         c(10, 10)
-+       ),
-+       previous_analyses = list(
-+         go_decisions = cbind(c(1, 1))
-+       )
-+     )
-+   )
->   class(scenario_list) <- "scenario_list"
->   out <- getUniqueTrials(scenario_list)
->   # Columns: responders (2), subjects (2), go_flag (1) => total 5
->   expect_equal(ncol(out), 5)
->   # No duplicate rows
->   out_df <- as.data.frame(out)
->   expect_equal(nrow(out_df), nrow(unique(out_df)))
->   # All returned rows must be present in the combined raw matrix
->   all_resp <- do.call(rbind, lapply(scenario_list, function(x) x$n_responders))
->   all_subj <- do.call(rbind, lapply(scenario_list, function(x) x$n_subjects))
->   all_go   <- do.call(rbind, lapply(scenario_list, function(x) x$previous_analyses$go_decisions))[, 1]
->   combined <- cbind(all_resp, all_subj, go_flag = all_go)
->   comb_df  <- as.data.frame(combined)
-> comb_df
-  V1 V2 V3 V4 go_flag
-1  1  2 10 10       1
-2  1  2 10 10       0
-3  1  2 10 10       1
-4  2  1 10 10       1
->   # Each unique row in 'out' should occur in the original combined matrix
->   merged <- merge(out_df, comb_df)
-> merged
-[1] V2      V3      V4      go_flag V5      V1     
-<0 rows> (or 0-length row.names)
-> out_df
-  V2 V3 V4 V5 go_flag
-1  1  2 10 10       0
-2  2  1 10 10       1
-3  1  2 10 10       1
-> nrow(merged)
-[1] 0
-> 
+  out <- getUniqueTrials(scenario_list)
+
+  # Columns: responders (2) + subjects (2) + go_flag (1) = 5 columns
+  expect_equal(ncol(out), 5)
+
+  # No duplicate rows in the result
+  out_df <- as.data.frame(out)
+  expect_equal(nrow(out_df), nrow(unique(out_df)))
+
+  # Build the "raw" combined matrix exactly as getUniqueTrials does
+  all_resp <- do.call(rbind, lapply(scenario_list, function(x) x$n_responders))
+  all_subj <- do.call(rbind, lapply(scenario_list, function(x) x$n_subjects))
+  all_go   <- do.call(rbind, lapply(scenario_list, function(x) x$previous_analyses$go_decisions))[, 1]
+  combined <- cbind(all_resp, all_subj, go_flag = all_go)
+
+  # Unique rows from the raw combined matrix
+  exp_df <- as.data.frame(unique(combined))
+
+  # Sort both sets of rows in a reproducible way and compare values, ignoring names
+  out_ord <- out_df[do.call(order, out_df), , drop = FALSE]
+  exp_ord <- exp_df[do.call(order, exp_df), , drop = FALSE]
+
+  expect_equal(
+    unname(as.matrix(out_ord)),
+    unname(as.matrix(exp_ord))
+  )
+})
