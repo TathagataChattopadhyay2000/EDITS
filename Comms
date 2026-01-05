@@ -28,3 +28,214 @@ calcDiffsMCMC <- function (
   return (posterior_samples)
   
 }
+
+
+prepareAnalysis <- function (
+
+  method_name,
+
+  prior_parameters = NULL,
+  target_rates     = NULL
+
+) {
+
+  if (method_name == "berry") {
+
+    j_data <- list(mean_mu       = prior_parameters$mu_mean,
+                   precision_mu  = prior_parameters$mu_sd^-2,
+                   precision_tau = prior_parameters$tau_scale^-2,
+                   p_t           = target_rates,
+                   J             = length(target_rates))
+
+    # j_model_file <- writeTempModel(method_name = "berry")
+    j_model_file <- getModelFile(method_name = "berry")
+
+    j_parameters <- c("p", "mu", "tau")
+
+  } else if (method_name == "exnex" | method_name == "exnex_adj") {
+    # Nexch: number of exchangeable mixture components
+    # Nmix:  number of mixture components
+    j_data <- list(Nexch        = length(prior_parameters$mu_mean),
+                   Nmix         = length(prior_parameters$mu_mean) + 1L,
+                   Nstrata      = length(prior_parameters$mu_j),
+                   mu_mean      = prior_parameters$mu_mean,
+                   mu_prec      = prior_parameters$mu_sd^-2,
+                   tau_HN_scale = rep(prior_parameters$tau_scale,
+                                      length(prior_parameters$mu_mean)), # rep(..., Nexch)
+                   nex_mean     = prior_parameters$mu_j,
+                   nex_prec     = prior_parameters$tau_j^-2)
+
+    if (identical(length(prior_parameters$w_j), 1L)) {
+      j_data$pMix <- c(prior_parameters$w_j, 1 - prior_parameters$w_j)
+    } else {
+      j_data$pMix <- prior_parameters$w_j
+    }
+
+    if (method_name == "exnex") {
+
+      j_model_file    <- getModelFile(method_name = "exnex")
+
+    } else {
+
+      j_data$p_target <- target_rates
+      j_model_file    <- getModelFile(method_name = "exnex_adj")
+
+    }
+
+    j_parameters <- c("p", "mu", "tau", "exch")
+
+  } else if (method_name == "stratified" | method_name == "pooled") {
+
+    ## For methods "stratified" and "pooled" no MCMC simulations are necessary,
+    ## as the posterior response rates of the cohorts follow known beta distributions.
+
+    j_model_file <- "dummy path to JAGS model"
+    j_parameters <- "dummy JAGS parameters"
+    j_data       <- prior_parameters
+
+  } else {
+
+    stop ("method_name must be one of berry, exnex, exnex_adj, stratified, pooled")
+
+  }
+
+  return (list(j_parameters = j_parameters,
+               j_model_file = j_model_file,
+               j_data       = j_data))
+}
+
+
+getUniqueRows <- function (
+    
+  matrix
+  
+) {
+  
+  n_rows      <- nrow(matrix)
+  n_cols      <- ncol(matrix)
+  
+  unique_rows <- stats::aggregate(id ~ .,
+                                  data = cbind(id = seq_along(n_rows), matrix),
+                                  FUN  = length)
+  
+  return (unique_rows[, seq_len(n_cols)])
+  
+}
+
+getUniqueTrials <- function (
+    
+  scenario_list
+  
+) {
+  
+  all_scenarios_n_responders <- do.call(rbind, lapply(scenario_list, function (x) x$n_responders))
+  all_scenarios_n_subjects   <- do.call(rbind, lapply(scenario_list, function (x) x$n_subjects))
+  all_scenarios_overall_gos  <- do.call(rbind, lapply(scenario_list, function (x) 
+    x$previous_analyses$go_decisions))[, 1]
+  
+  return (getUniqueRows(cbind(all_scenarios_n_responders,
+                              all_scenarios_n_subjects,
+                              go_flag = all_scenarios_overall_gos)))
+  
+}
+
+
+mapUniqueTrials <- function (
+  
+  scenario_list,
+  method_quantiles_list,
+  trials_unique_calc,
+  applicable_previous_trials
+  
+) {
+  
+  method_names     <- names(method_quantiles_list)
+  scenario_numbers <- sapply(scenario_list, function (x) x$scenario_number)
+  
+  ## Create hash tables for results for easy retrieval
+  
+  hash_keys        <- getHashKeys(trials_unique_calc)
+  hash_tables_list <- vector(mode = "list", length = length(method_quantiles_list))
+  
+  for (n in seq_along(hash_tables_list)) {
+    
+    hash_tables_list[[n]] <- createHashTable(hash_keys, method_quantiles_list[[n]])
+    
+  }
+  
+  ## prepare foreach
+  exported_stuff <- c("convertVector2Matrix")
+  
+  ## run foreach
+  "%do%" <- foreach::"%do%"
+  scenario_method_quantiles_list <- foreach::foreach(k = seq_along(scenario_numbers),
+                                                     .verbose  = FALSE,
+                                                     .export   = exported_stuff
+  ) %do% {
+    
+    ## Find the indices of the trials of a specific scenario for go trials
+    scenario_data_matrix <- cbind(scenario_list[[k]]$n_responders,
+                                  scenario_list[[k]]$n_subjects)
+    
+    ## check whether there where previous analyses
+    if (applicable_previous_trials) {
+      
+      scenario_go_flags         <- scenario_list[[k]]$previous_analyses$go_decisions[, 1] > 0
+      scenario_method_quantiles <- scenario_list[[k]]$previous_analyses$post_quantiles
+      
+    } else {
+      
+      scenario_go_flags         <- rep(TRUE, length = nrow(scenario_data_matrix))
+      scenario_method_quantiles <- vector(mode = "list", length = length(method_names))
+      names(scenario_method_quantiles) <- method_names
+      
+    }
+    
+    ## In case there are trial realizations that need updating
+    ## This should only not be the case if all trial realizations of a scenario have a NoGo decision
+    ## and there are applicable previous trials.
+    if (any(scenario_go_flags)) {
+      
+      ## Get search keys
+      scenario_data_matrix_go <- convertVector2Matrix(scenario_data_matrix[scenario_go_flags, ])
+      search_keys             <- getHashKeys(scenario_data_matrix_go)
+      
+      ## Save scenario specific posterior quantiles for each method
+      for (n in seq_along(method_names)) {
+        
+        scenario_method_quantiles[[method_names[n]]][scenario_go_flags] <-
+          getHashValues(search_keys, hash_tables_list[[n]])
+        
+      }
+      
+    } 
+    
+    return (scenario_method_quantiles)
+    
+  }
+  
+  names(scenario_method_quantiles_list) <- paste0("scenario_", scenario_numbers)
+  
+  return (scenario_method_quantiles_list)
+  
+}
+
+
+posteriors2Quantiles <- function (
+  
+  quantiles,
+  posteriors
+  
+) {
+  
+  posterior_quantiles <- apply(posteriors, 2, function (x) stats::quantile(x, probs = quantiles))
+  
+  posterior_mean      <- apply(posteriors, 2, mean)
+  posterior_sd        <- apply(posteriors, 2, stats::sd)
+  posterior_quantiles <- rbind(posterior_quantiles,
+                               Mean = posterior_mean,
+                               SD   = posterior_sd)
+  
+  return (posterior_quantiles)
+  
+}
