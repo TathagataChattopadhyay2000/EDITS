@@ -1,241 +1,392 @@
-calcDiffsMCMC <- function (
+# Tests for calcDiffsMCMC ------------------------------------------------------
+
+test_that("calcDiffsMCMC: adds correctly named difference columns with correct values", {
+  # Posterior samples: 2 rows, 3 p-columns + one non-p column (mu)
+  posterior_samples <- cbind(
+    p_1 = c(0.1, 0.2),
+    p_2 = c(0.5, 0.6),
+    p_3 = c(0.8, 0.9),
+    mu  = c(1.0, 2.0)
+  )
   
-  posterior_samples,
-  calc_differences
+  # We want p_diff_12 = p_1 - p_2 and p_diff_31 = p_3 - p_1
+  calc_differences <- rbind(
+    c(1, 2),
+    c(3, 1)
+  )
   
-) {
+  out <- calcDiffsMCMC(
+    posterior_samples = posterior_samples,
+    calc_differences  = calc_differences
+  )
   
-  org_names <- colnames(posterior_samples)
+  # Original columns must still be present
+  expect_true(all(c("p_1", "p_2", "p_3", "mu") %in% colnames(out)))
   
-  diffs <- apply(calc_differences, 1, function (x) {
-    
-    matrix(posterior_samples[, grepl(x[1], org_names) & grepl("p", org_names)] -
-             posterior_samples[, grepl(x[2], org_names) & grepl("p", org_names)],
-           ncol = 1)
-    
-  })
+  # New diff columns must be appended
+  expect_true(all(c("p_diff_12", "p_diff_31") %in% colnames(out)))
   
-  diff_names <- apply(calc_differences, 1, function (x) {
-    
-    paste0("p_diff_", paste0(as.character(x), collapse = ""))
-    
-  })
+  # Check values
+  expected_diff_12 <- posterior_samples[, "p_1"] - posterior_samples[, "p_2"]
+  expected_diff_31 <- posterior_samples[, "p_3"] - posterior_samples[, "p_1"]
   
-  colnames(diffs) <- diff_names
-  
-  posterior_samples <- cbind(posterior_samples, diffs)
-  
-  return (posterior_samples)
-  
-}
+  expect_equal(out[, "p_diff_12"], expected_diff_12)
+  expect_equal(out[, "p_diff_31"], expected_diff_31)
+})
 
 
-prepareAnalysis <- function (
+# Tests for prepareAnalysis ----------------------------------------------------
 
-  method_name,
-
-  prior_parameters = NULL,
-  target_rates     = NULL
-
-) {
-
-  if (method_name == "berry") {
-
-    j_data <- list(mean_mu       = prior_parameters$mu_mean,
-                   precision_mu  = prior_parameters$mu_sd^-2,
-                   precision_tau = prior_parameters$tau_scale^-2,
-                   p_t           = target_rates,
-                   J             = length(target_rates))
-
-    # j_model_file <- writeTempModel(method_name = "berry")
-    j_model_file <- getModelFile(method_name = "berry")
-
-    j_parameters <- c("p", "mu", "tau")
-
-  } else if (method_name == "exnex" | method_name == "exnex_adj") {
-    # Nexch: number of exchangeable mixture components
-    # Nmix:  number of mixture components
-    j_data <- list(Nexch        = length(prior_parameters$mu_mean),
-                   Nmix         = length(prior_parameters$mu_mean) + 1L,
-                   Nstrata      = length(prior_parameters$mu_j),
-                   mu_mean      = prior_parameters$mu_mean,
-                   mu_prec      = prior_parameters$mu_sd^-2,
-                   tau_HN_scale = rep(prior_parameters$tau_scale,
-                                      length(prior_parameters$mu_mean)), # rep(..., Nexch)
-                   nex_mean     = prior_parameters$mu_j,
-                   nex_prec     = prior_parameters$tau_j^-2)
-
-    if (identical(length(prior_parameters$w_j), 1L)) {
-      j_data$pMix <- c(prior_parameters$w_j, 1 - prior_parameters$w_j)
-    } else {
-      j_data$pMix <- prior_parameters$w_j
-    }
-
-    if (method_name == "exnex") {
-
-      j_model_file    <- getModelFile(method_name = "exnex")
-
-    } else {
-
-      j_data$p_target <- target_rates
-      j_model_file    <- getModelFile(method_name = "exnex_adj")
-
-    }
-
-    j_parameters <- c("p", "mu", "tau", "exch")
-
-  } else if (method_name == "stratified" | method_name == "pooled") {
-
-    ## For methods "stratified" and "pooled" no MCMC simulations are necessary,
-    ## as the posterior response rates of the cohorts follow known beta distributions.
-
-    j_model_file <- "dummy path to JAGS model"
-    j_parameters <- "dummy JAGS parameters"
-    j_data       <- prior_parameters
-
-  } else {
-
-    stop ("method_name must be one of berry, exnex, exnex_adj, stratified, pooled")
-
-  }
-
-  return (list(j_parameters = j_parameters,
-               j_model_file = j_model_file,
-               j_data       = j_data))
-}
-
-
-getUniqueRows <- function (
-    
-  matrix
+test_that("prepareAnalysis: berry branch builds correct j_data and parameters", {
+  target_rates <- c(0.5, 0.7)
+  priors_list  <- getPriorParameters(method_names = "berry", target_rates = target_rates)
+  priors_berry <- priors_list[["berry"]]
   
-) {
+  prep <- prepareAnalysis(
+    method_name     = "berry",
+    prior_parameters = priors_berry,
+    target_rates     = target_rates
+  )
   
-  n_rows      <- nrow(matrix)
-  n_cols      <- ncol(matrix)
+  j_data <- prep$j_data
   
-  unique_rows <- stats::aggregate(id ~ .,
-                                  data = cbind(id = seq_along(n_rows), matrix),
-                                  FUN  = length)
+  # j_data contents
+  expect_equal(j_data$mean_mu,      priors_berry$mu_mean)
+  expect_equal(j_data$precision_mu, priors_berry$mu_sd^-2)
+  expect_equal(j_data$precision_tau, priors_berry$tau_scale^-2)
+  expect_equal(j_data$p_t,          target_rates)
+  expect_equal(j_data$J,            length(target_rates))
   
-  return (unique_rows[, seq_len(n_cols)])
-  
-}
+  # JAGS config
+  expect_equal(prep$j_parameters, c("p", "mu", "tau"))
+  expect_true(is.character(prep$j_model_file))
+  expect_true(file.exists(prep$j_model_file))
+})
 
-getUniqueTrials <- function (
-    
-  scenario_list
+test_that("prepareAnalysis: exnex branch builds mixture priors and pMix", {
+  target_rates <- c(0.4, 0.6, 0.8)
+  priors_list  <- getPriorParameters(method_names = "exnex", target_rates = target_rates)
+  priors_exnex <- priors_list[["exnex"]]
   
-) {
+  prep <- prepareAnalysis(
+    method_name     = "exnex",
+    prior_parameters = priors_exnex,
+    target_rates     = target_rates
+  )
   
-  all_scenarios_n_responders <- do.call(rbind, lapply(scenario_list, function (x) x$n_responders))
-  all_scenarios_n_subjects   <- do.call(rbind, lapply(scenario_list, function (x) x$n_subjects))
-  all_scenarios_overall_gos  <- do.call(rbind, lapply(scenario_list, function (x) 
-    x$previous_analyses$go_decisions))[, 1]
+  j_data <- prep$j_data
   
-  return (getUniqueRows(cbind(all_scenarios_n_responders,
-                              all_scenarios_n_subjects,
-                              go_flag = all_scenarios_overall_gos)))
+  Nexch <- length(priors_exnex$mu_mean)
+  Nstrata <- length(priors_exnex$mu_j)
   
-}
+  expect_equal(j_data$Nexch, Nexch)
+  expect_equal(j_data$Nmix,  Nexch + 1L)
+  expect_equal(j_data$Nstrata, Nstrata)
+  
+  expect_equal(j_data$mu_mean, priors_exnex$mu_mean)
+  expect_equal(j_data$mu_prec, priors_exnex$mu_sd^-2)
+  
+  expect_equal(j_data$tau_HN_scale,
+               rep(priors_exnex$tau_scale, Nexch))
+  
+  expect_equal(j_data$nex_mean, priors_exnex$mu_j)
+  expect_equal(j_data$nex_prec, priors_exnex$tau_j^-2)
+  
+  expect_length(j_data$pMix, Nexch + 1L)
+  expect_equal(sum(j_data$pMix), 1, tolerance = 1e-8)
+  
+  expect_equal(prep$j_parameters, c("p", "mu", "tau", "exch"))
+  expect_true(file.exists(prep$j_model_file))
+})
+
+test_that("prepareAnalysis: exnex_adj branch includes p_target and uses exnex_adj model", {
+  target_rates <- c(0.5, 0.6)
+  priors_list  <- getPriorParameters(method_names = "exnex_adj", target_rates = target_rates)
+  priors       <- priors_list[["exnex_adj"]]
+  
+  prep <- prepareAnalysis(
+    method_name     = "exnex_adj",
+    prior_parameters = priors,
+    target_rates     = target_rates
+  )
+  
+  j_data <- prep$j_data
+  
+  # Same structure as exnex, plus p_target
+  expect_equal(j_data$p_target, target_rates)
+  expect_equal(prep$j_parameters, c("p", "mu", "tau", "exch"))
+  expect_true(grepl("exnex_adj", prep$j_model_file))
+  expect_true(file.exists(prep$j_model_file))
+})
+
+test_that("prepareAnalysis: stratified and pooled use dummy JAGS info and pass priors through", {
+  target_rates <- c(0.5, 0.5)
+  priors_list  <- getPriorParameters(
+    method_names = c("stratified", "pooled"),
+    target_rates = target_rates
+  )
+  
+  # stratified
+  prep_strat <- prepareAnalysis(
+    method_name      = "stratified",
+    prior_parameters = priors_list[["stratified"]],
+    target_rates     = target_rates
+  )
+  expect_equal(prep_strat$j_model_file, "dummy path to JAGS model")
+  expect_equal(prep_strat$j_parameters, "dummy JAGS parameters")
+  expect_identical(prep_strat$j_data, priors_list[["stratified"]])
+  
+  # pooled
+  prep_pooled <- prepareAnalysis(
+    method_name      = "pooled",
+    prior_parameters = priors_list[["pooled"]],
+    target_rates     = target_rates
+  )
+  expect_equal(prep_pooled$j_model_file, "dummy path to JAGS model")
+  expect_equal(prep_pooled$j_parameters, "dummy JAGS parameters")
+  expect_identical(prep_pooled$j_data, priors_list[["pooled"]])
+})
+
+test_that("prepareAnalysis: invalid method_name throws an error", {
+  expect_error(
+    prepareAnalysis(method_name = "invalid_method"),
+    "method_name must be one of"
+  )
+})
 
 
-mapUniqueTrials <- function (
+# Tests for getUniqueRows ------------------------------------------------------
+
+test_that("getUniqueRows: returns unique row combinations with correct columns", {
+  mat <- rbind(
+    c(1, 2),
+    c(1, 2),
+    c(2, 3),
+    c(2, 3),
+    c(4, 5)
+  )
   
-  scenario_list,
-  method_quantiles_list,
-  trials_unique_calc,
-  applicable_previous_trials
+  out <- getUniqueRows(mat)
   
-) {
+  # Same number of columns
+  expect_equal(ncol(out), ncol(mat))
   
-  method_names     <- names(method_quantiles_list)
-  scenario_numbers <- sapply(scenario_list, function (x) x$scenario_number)
+  # All rows in 'out' must be unique
+  out_df <- as.data.frame(out)
+  expect_equal(nrow(out_df), nrow(unique(out_df)))
   
-  ## Create hash tables for results for easy retrieval
+  # The set of unique rows should match base::unique(mat)
+  exp_df <- as.data.frame(unique(mat))
   
-  hash_keys        <- getHashKeys(trials_unique_calc)
-  hash_tables_list <- vector(mode = "list", length = length(method_quantiles_list))
+  out_ord <- out_df[do.call(order, out_df), , drop = FALSE]
+  exp_ord <- exp_df[do.call(order, exp_df), , drop = FALSE]
   
-  for (n in seq_along(hash_tables_list)) {
-    
-    hash_tables_list[[n]] <- createHashTable(hash_keys, method_quantiles_list[[n]])
-    
-  }
-  
-  ## prepare foreach
-  exported_stuff <- c("convertVector2Matrix")
-  
-  ## run foreach
-  "%do%" <- foreach::"%do%"
-  scenario_method_quantiles_list <- foreach::foreach(k = seq_along(scenario_numbers),
-                                                     .verbose  = FALSE,
-                                                     .export   = exported_stuff
-  ) %do% {
-    
-    ## Find the indices of the trials of a specific scenario for go trials
-    scenario_data_matrix <- cbind(scenario_list[[k]]$n_responders,
-                                  scenario_list[[k]]$n_subjects)
-    
-    ## check whether there where previous analyses
-    if (applicable_previous_trials) {
-      
-      scenario_go_flags         <- scenario_list[[k]]$previous_analyses$go_decisions[, 1] > 0
-      scenario_method_quantiles <- scenario_list[[k]]$previous_analyses$post_quantiles
-      
-    } else {
-      
-      scenario_go_flags         <- rep(TRUE, length = nrow(scenario_data_matrix))
-      scenario_method_quantiles <- vector(mode = "list", length = length(method_names))
-      names(scenario_method_quantiles) <- method_names
-      
-    }
-    
-    ## In case there are trial realizations that need updating
-    ## This should only not be the case if all trial realizations of a scenario have a NoGo decision
-    ## and there are applicable previous trials.
-    if (any(scenario_go_flags)) {
-      
-      ## Get search keys
-      scenario_data_matrix_go <- convertVector2Matrix(scenario_data_matrix[scenario_go_flags, ])
-      search_keys             <- getHashKeys(scenario_data_matrix_go)
-      
-      ## Save scenario specific posterior quantiles for each method
-      for (n in seq_along(method_names)) {
-        
-        scenario_method_quantiles[[method_names[n]]][scenario_go_flags] <-
-          getHashValues(search_keys, hash_tables_list[[n]])
-        
-      }
-      
-    } 
-    
-    return (scenario_method_quantiles)
-    
-  }
-  
-  names(scenario_method_quantiles_list) <- paste0("scenario_", scenario_numbers)
-  
-  return (scenario_method_quantiles_list)
-  
-}
+  expect_equal(out_ord, exp_ord)
+})
 
 
-posteriors2Quantiles <- function (
+# Tests for getUniqueTrials ----------------------------------------------------
+
+test_that("getUniqueTrials: combines scenarios and returns unique responder/subject/go rows", {
+  # Manually define a tiny scenario_list with 2 scenarios and overlapping rows
   
-  quantiles,
-  posteriors
+  scenario_list <- list(
+    scenario_1 = list(
+      n_responders = rbind(
+        c(1, 2),
+        c(1, 2)
+      ),
+      n_subjects = rbind(
+        c(10, 10),
+        c(10, 10)
+      ),
+      previous_analyses = list(
+        go_decisions = cbind(c(1, 0))
+      )
+    ),
+    scenario_2 = list(
+      n_responders = rbind(
+        c(1, 2),
+        c(2, 1)
+      ),
+      n_subjects = rbind(
+        c(10, 10),
+        c(10, 10)
+      ),
+      previous_analyses = list(
+        go_decisions = cbind(c(1, 1))
+      )
+    )
+  )
+  class(scenario_list) <- "scenario_list"
   
-) {
+  out <- getUniqueTrials(scenario_list)
   
-  posterior_quantiles <- apply(posteriors, 2, function (x) stats::quantile(x, probs = quantiles))
+  # Columns: responders (2), subjects (2), go_flag (1) => total 5
+  expect_equal(ncol(out), 5)
   
-  posterior_mean      <- apply(posteriors, 2, mean)
-  posterior_sd        <- apply(posteriors, 2, stats::sd)
-  posterior_quantiles <- rbind(posterior_quantiles,
-                               Mean = posterior_mean,
-                               SD   = posterior_sd)
+  # No duplicate rows
+  out_df <- as.data.frame(out)
+  expect_equal(nrow(out_df), nrow(unique(out_df)))
   
-  return (posterior_quantiles)
+  # All returned rows must be present in the combined raw matrix
+  all_resp <- do.call(rbind, lapply(scenario_list, function(x) x$n_responders))
+  all_subj <- do.call(rbind, lapply(scenario_list, function(x) x$n_subjects))
+  all_go   <- do.call(rbind, lapply(scenario_list, function(x) x$previous_analyses$go_decisions))[, 1]
   
-}
+  combined <- cbind(all_resp, all_subj, go_flag = all_go)
+  comb_df  <- as.data.frame(combined)
+  
+  # Each unique row in 'out' should occur in the original combined matrix
+  merged <- merge(out_df, comb_df)
+  expect_equal(nrow(merged), nrow(out_df))
+})
+
+
+# Tests for mapUniqueTrials ----------------------------------------------------
+
+test_that("mapUniqueTrials: without previous trials, maps unique trial quantiles back per scenario", {
+  foreach::registerDoSEQ()
+  
+  # One scenario with 2 trial realizations, 2 cohorts
+  n_resp <- rbind(
+    c(1, 2),
+    c(2, 1)
+  )
+  n_subj <- rbind(
+    c(10, 10),
+    c(10, 10)
+  )
+  
+  scenario_list <- list(
+    scenario_1 = list(
+      scenario_number  = 1,
+      n_responders     = n_resp,
+      n_subjects       = n_subj
+      # no previous_analyses needed, as applicable_previous_trials = FALSE
+    )
+  )
+  class(scenario_list) <- "scenario_list"
+  
+  # Unique trials (here: just all rows of [n_resp | n_subj])
+  trials_unique_calc <- cbind(n_resp, n_subj)
+  
+  # Fake method quantiles: one matrix per unique trial
+  q1 <- matrix(1:4, nrow = 2,
+               dimnames = list(c("Mean", "SD"), c("p_1", "p_2")))
+  q2 <- matrix(5:8, nrow = 2,
+               dimnames = list(c("Mean", "SD"), c("p_1", "p_2")))
+  
+  method_quantiles_list <- list(
+    pooled = list(q1, q2)
+  )
+  
+  # Call mapUniqueTrials (no previous analyses used)
+  out <- mapUniqueTrials(
+    scenario_list              = scenario_list,
+    method_quantiles_list      = method_quantiles_list,
+    trials_unique_calc         = trials_unique_calc,
+    applicable_previous_trials = FALSE
+  )
+  
+  expect_type(out, "list")
+  expect_identical(names(out), "scenario_1")
+  
+  scen1 <- out[["scenario_1"]]
+  expect_true(is.list(scen1))
+  expect_true("pooled" %in% names(scen1))
+  
+  # We expect two elements (one per trial) with quantiles equal to q1, q2
+  expect_identical(scen1$pooled[[1]], q1)
+  expect_identical(scen1$pooled[[2]], q2)
+})
+
+test_that("mapUniqueTrials: with previous trials, only GO trials are updated from hash tables", {
+  foreach::registerDoSEQ()
+  
+  # 2 trials, 1 cohort for simplicity
+  n_resp <- rbind(1, 2)
+  n_subj <- rbind(10, 10)
+  
+  # previous_analyses with simple go_decisions and existing post_quantiles
+  prev_post <- list(
+    pooled = list(
+      matrix("prev1", nrow = 1, dimnames = list("dummy", "p_1")),
+      matrix("prev2", nrow = 1, dimnames = list("dummy", "p_1"))
+    )
+  )
+  
+  scenario_list <- list(
+    scenario_1 = list(
+      scenario_number   = 1,
+      n_responders      = n_resp,
+      n_subjects        = n_subj,
+      previous_analyses = list(
+        go_decisions = cbind(c(1, 0)),  # first trial GO, second trial NoGo
+        post_quantiles = prev_post
+      )
+    )
+  )
+  class(scenario_list) <- "scenario_list"
+  
+  # Unique trials (both rows)
+  trials_unique_calc <- cbind(n_resp, n_subj)
+  
+  # New quantiles we want to use for GO trials
+  new_q1 <- matrix("new1", nrow = 1, dimnames = list("dummy", "p_1"))
+  new_q2 <- matrix("new2", nrow = 1, dimnames = list("dummy", "p_1"))
+  
+  method_quantiles_list <- list(
+    pooled = list(new_q1, new_q2)
+  )
+  
+  out <- mapUniqueTrials(
+    scenario_list              = scenario_list,
+    method_quantiles_list      = method_quantiles_list,
+    trials_unique_calc         = trials_unique_calc,
+    applicable_previous_trials = TRUE
+  )
+  
+  scen1 <- out[["scenario_1"]]
+  expect_true(is.list(scen1))
+  expect_true("pooled" %in% names(scen1))
+  
+  # For GO trial (row 1), we expect the updated quantiles (new_q1)
+  expect_identical(scen1$pooled[[1]], new_q1)
+  # For NoGo trial (row 2), the old quantiles should remain (prev2)
+  expect_identical(scen1$pooled[[2]], prev_post$pooled[[2]])
+})
+
+
+# Tests for posteriors2Quantiles ----------------------------------------------
+
+test_that("posteriors2Quantiles: computes quantiles, mean, and sd for each column", {
+  set.seed(123)
+  
+  # One parameter (theta) with known distribution: Normal(2, 3)
+  theta <- rnorm(5000, mean = 2, sd = 3)
+  post  <- cbind(theta = theta)
+  
+  quantiles <- c(0.25, 0.5, 0.75)
+  
+  out <- posteriors2Quantiles(
+    quantiles  = quantiles,
+    posteriors = post
+  )
+  
+  # Structure
+  expect_true(is.matrix(out))
+  expect_identical(colnames(out), "theta")
+  expect_identical(rownames(out),
+                   c("25%", "50%", "75%", "Mean", "SD"))
+  
+  # Check quantiles vs base::quantile
+  exp_q <- stats::quantile(theta, probs = quantiles)
+  expect_equal(out[c("25%", "50%", "75%"), "theta"],
+               exp_q,
+               tolerance = 1e-2)  # small Monte Carlo noise
+  
+  # Mean & SD vs sample mean & sd
+  expect_equal(out["Mean", "theta"], mean(theta), tolerance = 1e-2)
+  expect_equal(out["SD",   "theta"], stats::sd(theta), tolerance = 1e-2)
+})
