@@ -3,47 +3,57 @@ test_that("mapUniqueTrials: with previous trials, only GO trials are updated fro
   
   # Use simulateScenarios to get a correctly structured scenario_list
   base_scen <- simulateScenarios(
-    n_subjects_list     = list(c(10)),   # 1 cohort
-    response_rates_list = list(c(0.1)),  # arbitrary
-    n_trials            = 2              # 2 trials
+    n_subjects_list     = list(c(10, 10)),   # 2 cohorts
+    response_rates_list = list(c(0.1, 0.2)), # arbitrary
+    n_trials            = 2                  # 2 trials
   )
   
   scenario_list <- base_scen
   scen1         <- scenario_list$scenario_1
   
   # Overwrite n_responders / n_subjects with a simple, deterministic pattern:
-  # Trial 1: r = 1, n = 10   (GO)
-  # Trial 2: r = 2, n = 10   (NoGo)
-  n_resp <- matrix(c(1, 2), ncol = 1)
-  n_subj <- matrix(c(10, 10), ncol = 1)
+  # Trial 1: r = (1, 2), n = (10, 10)   (GO)
+  # Trial 2: r = (2, 1), n = (10, 10)   (NoGo)
+  n_resp <- rbind(
+    c(1, 2),
+    c(2, 1)
+  )
+  n_subj <- rbind(
+    c(10, 10),
+    c(10, 10)
+  )
   
   scen1$n_responders <- n_resp
   scen1$n_subjects   <- n_subj
   
-  # Previous quantiles for the two trials
+  # Previous quantiles for the two trials (2 cohorts → 2 columns: p_1, p_2)
   prev_post <- list(
     pooled = list(
-      matrix("prev1", nrow = 1, dimnames = list("dummy", "p_1")),
-      matrix("prev2", nrow = 1, dimnames = list("dummy", "p_1"))
+      matrix(c("prev1_11", "prev1_12"), nrow = 1,
+             dimnames = list("dummy", c("p_1", "p_2"))),
+      matrix(c("prev2_11", "prev2_12"), nrow = 1,
+             dimnames = list("dummy", c("p_1", "p_2")))
     )
   )
   
   # GO only for the first trial; second trial is NoGo
   scen1$previous_analyses <- list(
-    go_decisions   = cbind(c(1, 0)),
+    go_decisions   = cbind(c(1, 0)),  # trial 1: GO, trial 2: NoGo
     post_quantiles = prev_post
   )
   
   scenario_list$scenario_1 <- scen1
   class(scenario_list)     <- "scenario_list"
   
-  # trials_unique_calc: same structure as in the main code
-  # (responders + subjects, no go_flag column)
+  # trials_unique_calc: same structure as in main code
+  # responders (2 cols) + subjects (2 cols) = 4 columns
   trials_unique_calc <- cbind(n_resp, n_subj)
   
-  # New quantiles that will be offered via the hash table
-  new_q1 <- matrix("new1", nrow = 1, dimnames = list("dummy", "p_1"))
-  new_q2 <- matrix("new2", nrow = 1, dimnames = list("dummy", "p_1"))
+  # New quantiles that the hash table will return for each unique trial
+  new_q1 <- matrix(c("new1_11", "new1_12"), nrow = 1,
+                   dimnames = list("dummy", c("p_1", "p_2")))
+  new_q2 <- matrix(c("new2_11", "new2_12"), nrow = 1,
+                   dimnames = list("dummy", c("p_1", "p_2")))
   
   method_quantiles_list <- list(
     pooled = list(new_q1, new_q2)
@@ -63,6 +73,7 @@ test_that("mapUniqueTrials: with previous trials, only GO trials are updated fro
   
   # Trial 1 (GO) must be updated to new_q1
   expect_identical(scen1_out$pooled[[1]], new_q1)
+  
   # Trial 2 (NoGo) must stay as the original prev2
   expect_identical(scen1_out$pooled[[2]], prev_post$pooled[[2]])
 })
