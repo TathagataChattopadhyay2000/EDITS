@@ -1,9 +1,26 @@
 test_that("mapUniqueTrials: with previous trials, only GO trials are updated from hash tables", {
   foreach::registerDoSEQ()
   
-  n_resp <- rbind(1, 2)
-  n_subj <- rbind(10, 10)
+  # Use simulateScenarios to get a correctly structured scenario_list
+  base_scen <- simulateScenarios(
+    n_subjects_list     = list(c(10)),   # 1 cohort
+    response_rates_list = list(c(0.1)),  # arbitrary
+    n_trials            = 2              # 2 trials
+  )
   
+  scenario_list <- base_scen
+  scen1         <- scenario_list$scenario_1
+  
+  # Overwrite n_responders / n_subjects with a simple, deterministic pattern:
+  # Trial 1: r = 1, n = 10   (GO)
+  # Trial 2: r = 2, n = 10   (NoGo)
+  n_resp <- matrix(c(1, 2), ncol = 1)
+  n_subj <- matrix(c(10, 10), ncol = 1)
+  
+  scen1$n_responders <- n_resp
+  scen1$n_subjects   <- n_subj
+  
+  # Previous quantiles for the two trials
   prev_post <- list(
     pooled = list(
       matrix("prev1", nrow = 1, dimnames = list("dummy", "p_1")),
@@ -11,21 +28,20 @@ test_that("mapUniqueTrials: with previous trials, only GO trials are updated fro
     )
   )
   
-  scenario_list <- list(
-    scenario_1 = list(
-      scenario_number   = 1,
-      n_responders      = n_resp,
-      n_subjects        = n_subj,
-      previous_analyses = list(
-        go_decisions   = cbind(c(1, 0)),
-        post_quantiles = prev_post
-      )
-    )
+  # GO only for the first trial; second trial is NoGo
+  scen1$previous_analyses <- list(
+    go_decisions   = cbind(c(1, 0)),
+    post_quantiles = prev_post
   )
-  class(scenario_list) <- "scenario_list"
   
+  scenario_list$scenario_1 <- scen1
+  class(scenario_list)     <- "scenario_list"
+  
+  # trials_unique_calc: same structure as in the main code
+  # (responders + subjects, no go_flag column)
   trials_unique_calc <- cbind(n_resp, n_subj)
   
+  # New quantiles that will be offered via the hash table
   new_q1 <- matrix("new1", nrow = 1, dimnames = list("dummy", "p_1"))
   new_q2 <- matrix("new2", nrow = 1, dimnames = list("dummy", "p_1"))
   
@@ -33,6 +49,7 @@ test_that("mapUniqueTrials: with previous trials, only GO trials are updated fro
     pooled = list(new_q1, new_q2)
   )
   
+  # Call function under test
   out <- mapUniqueTrials(
     scenario_list              = scenario_list,
     method_quantiles_list      = method_quantiles_list,
@@ -40,10 +57,12 @@ test_that("mapUniqueTrials: with previous trials, only GO trials are updated fro
     applicable_previous_trials = TRUE
   )
   
-  scen1 <- out[["scenario_1"]]
-  expect_true(is.list(scen1))
-  expect_true("pooled" %in% names(scen1))
+  scen1_out <- out[["scenario_1"]]
+  expect_true(is.list(scen1_out))
+  expect_true("pooled" %in% names(scen1_out))
   
-  expect_identical(scen1$pooled[[1]], new_q1)
-  expect_identical(scen1$pooled[[2]], prev_post$pooled[[2]])
+  # Trial 1 (GO) must be updated to new_q1
+  expect_identical(scen1_out$pooled[[1]], new_q1)
+  # Trial 2 (NoGo) must stay as the original prev2
+  expect_identical(scen1_out$pooled[[2]], prev_post$pooled[[2]])
 })
