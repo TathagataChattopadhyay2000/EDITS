@@ -1,34 +1,120 @@
->   scene <- getScenario(
-+     n_subjects     = c(10, 10),   
-+     response_rates = c(0.1, 0.2), 
-+     n_trials            = 2                  
-+   )
-> scene
-$n_subjects
-     n_1 n_2
-[1,]  10  10
-[2,]  10  10
+# Tests for getUniqueTrials ----------------------------------------------------
 
-$n_responders
-     r_1 r_2
-[1,]   1   2
-[2,]   3   3
+test_that("getUniqueTrials: combines scenarios and returns unique responder/subject/go rows", {
+  set.seed(123)
+  
+  # Two realistic scenarios, each with 2 cohorts and 2 trials
+  scen1 <- getScenario(
+    n_subjects     = c(10, 10),
+    response_rates = c(0.1, 0.2),
+    n_trials       = 2
+  )
+  
+  scen2 <- getScenario(
+    n_subjects     = c(10, 10),
+    response_rates = c(0.3, 0.4),
+    n_trials       = 2
+  )
+  
+  scenario_list <- list(
+    scenario_1 = scen1,
+    scenario_2 = scen2
+  )
+  class(scenario_list) <- "scenario_list"
+  
+  out <- getUniqueTrials(scenario_list)
+  
+  # responders (2) + subjects (2) + go_flag (1) = 5 columns
+  expect_equal(ncol(out), 5)
+  
+  out_df <- as.data.frame(out)
+  # no duplicate rows
+  expect_equal(nrow(out_df), nrow(unique(out_df)))
+  
+  # Build the same "combined" matrix as getUniqueTrials internally
+  all_resp <- do.call(rbind, lapply(scenario_list, function(x) x$n_responders))
+  all_subj <- do.call(rbind, lapply(scenario_list, function(x) x$n_subjects))
+  all_go   <- do.call(
+    rbind,
+    lapply(scenario_list, function(x) x$previous_analyses$go_decisions)
+  )[, 1]
+  
+  combined <- cbind(all_resp, all_subj, go_flag = all_go)
+  exp_df   <- as.data.frame(unique(combined))
+  
+  # Compare sorted versions, ignoring names
+  out_ord <- out_df[do.call(order, out_df), , drop = FALSE]
+  exp_ord <- exp_df[do.call(order, exp_df), , drop = FALSE]
+  
+  expect_equal(
+    unname(as.matrix(out_ord)),
+    unname(as.matrix(exp_ord))
+  )
+})
 
-$response_rates
-     rr_1 rr_2
-[1,]  0.1  0.2
-
-$previous_analyses
-$previous_analyses$go_decisions
-     overall decision_1 decision_2
-[1,]    TRUE       TRUE       TRUE
-[2,]    TRUE       TRUE       TRUE
-
-$previous_analyses$post_quantiles
-NULL
 
 
-$n_trials
-[1] 2
+# Tests for mapUniqueTrials ----------------------------------------------------
 
-we can use the getscenario to directly get the previous analyses. Can we reduce the redundant steps.
+test_that("mapUniqueTrials: without previous trials, maps unique trial quantiles back per scenario", {
+  foreach::registerDoSEQ()
+  set.seed(123)
+  
+  # One scenario, 2 cohorts, 2 trials
+  scen <- getScenario(
+    n_subjects     = c(10, 10),
+    response_rates = c(0.1, 0.2),
+    n_trials       = 2
+  )
+  
+  # Drop previous_analyses to represent "no applicable previous trials"
+  scen$previous_analyses <- NULL
+  
+  scenario_list <- list(scenario_1 = scen)
+  class(scenario_list) <- "scenario_list"
+  
+  # trials_unique_calc: use all (r, n) rows, same structure as in the function
+  trials_unique_calc <- cbind(scen$n_responders, scen$n_subjects)
+  
+  quantiles <- c(0.025, 0.5, 0.975)
+  j_data    <- list(a = 1, b = 1)  # Beta(1,1) prior for pooled
+  
+  # Quantiles per trial, as getPostQuantiles would compute for each (r, n) row
+  method_quantiles_list <- list(
+    pooled = getPostQuantiles(
+      method_name       = "pooled",
+      quantiles         = quantiles,
+      scenario_data     = list(
+        n_subjects   = scen$n_subjects,
+        n_responders = scen$n_responders
+      ),
+      calc_differences  = NULL,
+      j_parameters      = NULL,
+      j_model_file      = NULL,
+      j_data            = j_data,
+      n_mcmc_iterations = 1000,
+      save_path         = NULL,
+      save_trial        = NULL
+    )
+  )
+  
+  out <- mapUniqueTrials(
+    scenario_list              = scenario_list,
+    method_quantiles_list      = method_quantiles_list,
+    trials_unique_calc         = trials_unique_calc,
+    applicable_previous_trials = FALSE
+  )
+  
+  expect_type(out, "list")
+  expect_identical(names(out), "scenario_1")
+  
+  scen1 <- out[["scenario_1"]]
+  expect_true(is.list(scen1))
+  expect_true("pooled" %in% names(scen1))
+  
+  # For this setup: all trials are "new" (no previous), so each trial’s
+  # quantile matrix should be exactly what we precomputed in method_quantiles_list
+  for (i in seq_along(method_quantiles_list$pooled)) {
+    expect_identical(scen1$pooled[[i]], method_quantiles_list$pooled[[i]])
+  }
+})
