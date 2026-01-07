@@ -1,86 +1,36 @@
-test_that("mapUniqueTrials: without previous trials, maps unique trial quantiles back per scenario", {
-  foreach::registerDoSEQ()
-  
-  # Two trials, 2 cohorts
-  n_resp <- rbind(
-    c(1, 2),
-    c(2, 1)
-  )
-  n_subj <- rbind(
-    c(10, 10),
-    c(10, 10)
-  )
-  
-  # Build a realistic scenario_list using simulateScenarios, then overwrite counts
-  resp_rates <- n_resp / n_subj
-  
-  scenario_list <- simulateScenarios(
-    n_subjects_list     = list(n_subj[1, ]),     # c(10, 10)
-    response_rates_list = list(resp_rates[1, ]), # c(0.1, 0.2)
-    n_trials            = nrow(n_resp)           # 2 trials
-  )
-  
-  # Overwrite with our exact responder/subject counts
-  scenario_list[[1]]$n_responders <- n_resp
-  scenario_list[[1]]$n_subjects   <- n_subj
-  class(scenario_list) <- "scenario_list"
-  
-  # ----- Build trials_unique_calc exactly as mapUniqueTrials expects -----
-  # MapUniqueTrials works on cbind(n_responders, n_subjects) and
-  # uses getHashKeys() on those rows, so we must derive the unique
-  # matrix the same way here.
-  scenario_matrix      <- cbind(n_resp, n_subj)
-  trials_unique_calc   <- getUniqueRows(scenario_matrix)
-  n_cohorts            <- ncol(n_resp)
-  
-  n_responders_u <- trials_unique_calc[, seq_len(n_cohorts),              drop = FALSE]
-  n_subjects_u   <- trials_unique_calc[, seq_len(n_cohorts) + n_cohorts,  drop = FALSE]
-  
-  # Sanity: the keys from the unique matrix must match keys from all rows
-  expect_setequal(
-    getHashKeys(trials_unique_calc),
-    getHashKeys(cbind(n_resp, n_subj))
-  )
-  
-  # ----- Compute quantiles for the unique trials (pooled Beta model) -----
-  quantiles <- c(0.025, 0.5, 0.975)
-  j_data    <- list(a = 1, b = 1)  # Beta(1,1) prior
-  
-  method_quantiles_list <- list(
-    pooled = getPostQuantiles(
-      method_name       = "pooled",
-      quantiles         = quantiles,
-      scenario_data     = list(
-        n_subjects   = n_subjects_u,
-        n_responders = n_responders_u
-      ),
-      calc_differences  = NULL,
-      j_parameters      = NULL,
-      j_model_file      = NULL,
-      j_data            = j_data,
-      n_mcmc_iterations = 1000,
-      save_path         = NULL,
-      save_trial        = NULL
-    )
-  )
-  
-  # ----- Call mapUniqueTrials -----
-  out <- mapUniqueTrials(
-    scenario_list              = scenario_list,
-    method_quantiles_list      = method_quantiles_list,
-    trials_unique_calc         = trials_unique_calc,
-    applicable_previous_trials = FALSE
-  )
-  
-  expect_type(out, "list")
-  expect_identical(names(out), "scenario_1")
-  
-  scen1 <- out[["scenario_1"]]
-  expect_true(is.list(scen1))
-  expect_true("pooled" %in% names(scen1))
-  
-  # Per-trial matrices returned by mapUniqueTrials should match
-  # exactly the ones produced by getPostQuantiles for the unique trials
-  expect_identical(scen1$pooled[[1]], method_quantiles_list$pooled[[1]])
-  expect_identical(scen1$pooled[[2]], method_quantiles_list$pooled[[2]])
-})
+── Failure: mapUniqueTrials: without previous trials, maps unique trial quantiles back per scenario ──────────────────────────────────────────────
+getHashKeys(trials_unique_calc) (`actual`) and getHashKeys(cbind(n_resp, n_subj)) (`expected`) don't have the same values.
+* Only in `actual`: "V2:2|V3:1|V4:10|V5:10", "V2:1|V3:2|V4:10|V5:10"
+* Only in `expected`: "x1:1|x2:2|x3:10|x4:10", "x1:2|x2:1|x3:10|x4:10"
+
+
+── Error: mapUniqueTrials: without previous trials, maps unique trial quantiles back per scenario ────────────────────────────────────────────────
+Error in `{
+    scenario_data_matrix <- cbind(scenario_list[[k]]$n_responders, 
+        scenario_list[[k]]$n_subjects)
+    if (applicable_previous_trials) {
+        scenario_go_flags <- scenario_list[[k]]$previous_analyses$go_decisions[, 
+            1] > 0
+        scenario_method_quantiles <- scenario_list[[k]]$previous_analyses$post_quantiles
+    }
+    else {
+        scenario_go_flags <- rep(TRUE, length = nrow(scenario_data_matrix))
+        scenario_method_quantiles <- vector(mode = "list", length = length(method_names))
+        names(scenario_method_quantiles) <- method_names
+    }
+    if (any(scenario_go_flags)) {
+        scenario_data_matrix_go <- convertVector2Matrix(scenario_data_matrix[scenario_go_flags, 
+            ])
+        search_keys <- getHashKeys(scenario_data_matrix_go)
+        for (n in seq_along(method_names)) {
+            scenario_method_quantiles[[method_names[n]]][scenario_go_flags] <- getHashValues(search_keys, 
+                hash_tables_list[[n]])
+        }
+    }
+    return(scenario_method_quantiles)
+}`: task 1 failed - "value for ‘x1:1|x2:2|x3:10|x4:10’ not found"
+Backtrace:
+    ▆
+ 1. └─bhmbasket:::mapUniqueTrials(...)
+ 2.   └─... %do% ... at bhmbasket/R/AnalysisFunctions.R:577:3
+ 3.     └─e$fun(obj, substitute(ex), parent.frame(), e$data)
