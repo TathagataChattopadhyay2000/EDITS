@@ -1,15 +1,48 @@
-model{
-    mu    ~ dnorm(mean_mu, precision_mu)
-    tau   ~ dt(0, precision_tau, 1) T(0,)
-    sigma ~ dt(0, precision_sigma, 1) T(0,)
+model {
+  # --- Likelihood (Equation 2.1) ---
+  for (k in 1:K) { # K = number of baskets
+    
+    # Control Arm: Normal distribution centered on covariate effects
+    for (i in 1:n_control[k]) {
+      y_control[k, i] ~ dnorm(mu_control[k, i], prec_sigma)
+      # mu = X * beta (includes intercept beta_k0)
+      mu_control[k, i] <- inprod(X_control[k, i, ], beta[k, ])
+    }
 
-    prec_tau   <- 1 / pow(tau, 2)
-    prec_sigma <- 1 / pow(sigma, 2)
-
-    for (j in 1:J){
-      theta[j] ~ dnorm(mu, prec_tau)
-      for (i in 1:n[j]){
-        y[i,j] ~ dnorm(theta[j], prec_sigma)
-      }
+    # Treatment Arm: Adds treatment effect (tau) to covariate effects
+    for (i in 1:n_treatment[k]) {
+      y_treatment[k, i] ~ dnorm(mu_treatment[k, i], prec_sigma)
+      mu_treatment[k, i] <- inprod(X_treatment[k, i, ], beta[k, ]) + tau[k]
     }
   }
+
+  # --- Hierarchical Structure for Treatment Effects (Equation 3.10) ---
+  for (k in 1:K) {
+    # Individual treatment effects are exchangeable
+    tau[k] ~ dnorm(mu_tau, prec_tau_shrink)
+    
+    # Covariate coefficients (beta) for each basket
+    for (r in 1:num_predictors) {
+      beta[k, r] ~ dnorm(0, prec_beta[k]) 
+    }
+    # Precision for beta corresponds to sigma^2 * Lambda^-1 in the paper
+    prec_beta[k] <- prec_sigma * lambda_inv 
+  }
+
+  # --- Conjugate Priors (Section 3.2 & 3.3) ---
+  
+  # Population mean for treatment effects
+  mu_tau ~ dnorm(0, 0.0001) 
+
+  # Shrinkage parameter (sigma^2_tau) - Inverse Gamma prior
+  # In JAGS, Gamma(a, b) on precision = Inverse Gamma(a, b) on variance
+  prec_tau_shrink ~ dgamma(a_prime0, b_prime0) 
+  sigma2_tau <- 1 / prec_tau_shrink
+
+  # Population variance (sigma^2) - Inverse Gamma prior
+  prec_sigma ~ dgamma(a0, b0)
+  sigma2 <- 1 / prec_sigma
+
+  # Hyper-parameters for non-informative priors (Section 4.3)
+  # e.g., a0 = 0.5, b0 = 0.05
+}
