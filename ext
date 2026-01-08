@@ -1,176 +1,233 @@
-performAnalysesNormal <- function (
-    
+performAnalysesNormal <- function(
   scenario_list,
   evidence_levels    = c(0.025, 0.05, 0.5, 0.8, 0.9, 0.95, 0.975),
   n_mcmc_iterations  = 1e4,
-  seed               = 1
-  
+  seed               = 1,
+  # hyperparameters for the IG priors and beta precision
+  a0                 = 0.5,
+  b0                 = 0.05,
+  a_prime0           = 0.5,
+  b_prime0           = 0.05,
+  lambda_inv         = 1
 ) {
-  
+
   error_scenario_list <- simpleError(
     "Please provide an object of class 'scenario_list_normal' for the argument 'scenario_list'")
   error_evidence_levels <- simpleError(
     "Please provide a vector of numerics in (0, 1) for the argument 'evidence_levels'")
   error_n_mcmc_iterations <- simpleError(
     "Please provide a single positive integer for the argument 'n_mcmc_iterations'")
-  
-  if (missing(scenario_list)) stop (error_scenario_list)
-  if (!inherits(scenario_list, "scenario_list_normal")) stop (error_scenario_list)
-  
+
+  if (missing(scenario_list)) stop(error_scenario_list)
+  if (!inherits(scenario_list, "scenario_list_normal")) stop(error_scenario_list)
+
   if (missing(evidence_levels) ||
-      !is.numeric.in.zero.one(evidence_levels)) stop (error_evidence_levels)
-  
+      !is.numeric.in.zero.one(evidence_levels)) stop(error_evidence_levels)
+
   if (missing(n_mcmc_iterations) ||
-      !is.single.positive.wholenumber(n_mcmc_iterations)) stop (error_n_mcmc_iterations)
-  
+      !is.single.positive.wholenumber(n_mcmc_iterations)) stop(error_n_mcmc_iterations)
+
   set.seed(seed)
-  
+
   n_scenarios   <- length(scenario_list)
   analyses_list <- vector("list", n_scenarios)
-  
-  ## this matches what performAnalyses stores
-  quantiles <- 1 - evidence_levels
-  
-  ## JAGS model file for the hierarchical normal endpoint
+
+  ## match performAnalyses convention: store posterior quantiles
+  quantiles <- sort(unique(round(1 - c(0.025, 0.05, 0.5, 0.8, 0.9, 0.95, 0.975,
+                                       evidence_levels), 9)))
+
+  ## JAGS model file (your new model)
   jags_model_string <- "
   model {
-  
-  # --- Likelihood (Equation 2.1) ---
-  for (k in 1:K) { # K = number of baskets
-    
-    # Control Arm: Normal distribution centered on covariate effects
-    
-    for (i in 1:n_control[k]) {
-    
-      y_control[k, i] ~ dnorm(mu_control[k, i], prec_sigma)
-      
-      # mu = X * beta (includes intercept beta_k0)
-      mu_control[k, i] <- inprod(X_control[k, i, ], beta[k, ])
-      
+
+    # --- Likelihood ---
+    for (k in 1:K) {
+
+      # Control arm
+      for (i in 1:n_control[k]) {
+        y_control[k, i] ~ dnorm(mu_control[k, i], prec_sigma)
+        mu_control[k, i] <- inprod(X_control[k, i, ], beta[k, ])
+      }
+
+      # Treatment arm
+      for (i in 1:n_treatment[k]) {
+        y_treatment[k, i] ~ dnorm(mu_treatment[k, i], prec_sigma)
+        mu_treatment[k, i] <- inprod(X_treatment[k, i, ], beta[k, ]) + tau[k]
+      }
     }
 
-    # Treatment Arm: Adds treatment effect (tau) to covariate effects
-    
-    for (i in 1:n_treatment[k]) {
-    
-      y_treatment[k, i] ~ dnorm(mu_treatment[k, i], prec_sigma)
-      
-      mu_treatment[k, i] <- inprod(X_treatment[k, i, ], beta[k, ]) + tau[k]
-      
+    # --- Hierarchical structure for treatment effects ---
+    for (k in 1:K) {
+      tau[k] ~ dnorm(mu_tau, prec_tau_shrink)
+
+      for (r in 1:num_predictors) {
+        beta[k, r] ~ dnorm(0, prec_beta[k])
+      }
+      prec_beta[k] <- prec_sigma * lambda_inv
     }
+
+    # Population mean for treatment effects
+    mu_tau ~ dnorm(0, 0.0001)
+
+    # Shrinkage for tau (Inverse-Gamma on sigma2_tau via gamma on precision)
+    prec_tau_shrink ~ dgamma(a_prime0, b_prime0)
+    sigma2_tau <- 1 / prec_tau_shrink
+
+    # Residual variance (Inverse-Gamma prior)
+    prec_sigma ~ dgamma(a0, b0)
+    sigma2 <- 1 / prec_sigma
   }
-
-  # --- Hierarchical Structure for Treatment Effects (Equation 3.10) ---
-  
-  for (k in 1:K) {
-  
-    # Individual treatment effects are exchangeable
-    tau[k] ~ dnorm(mu_tau, prec_tau_shrink)
-    
-    # Covariate coefficients (beta) for each basket
-    
-    for (r in 1:num_predictors) {
-      beta[k, r] ~ dnorm(0, prec_beta[k]) 
-    }
-    
-    # Precision for beta corresponds to sigma^2 * Lambda^-1 in the paper
-    prec_beta[k] <- prec_sigma * lambda_inv 
-  }
-
-  # --- Conjugate Priors (Section 3.2 & 3.3) ---
-  
-  # Population mean for treatment effects
-  mu_tau ~ dnorm(0, 0.0001) 
-
-  # Shrinkage parameter (sigma^2_tau) - Inverse Gamma prior
-  # In JAGS, Gamma(a, b) on precision = Inverse Gamma(a, b) on variance
-  
-  prec_tau_shrink ~ dgamma(a_prime0, b_prime0) 
-  
-  sigma2_tau <- 1 / prec_tau_shrink
-
-  # Population variance (sigma^2) - Inverse Gamma prior
-  
-  prec_sigma ~ dgamma(a0, b0)
-  
-  sigma2 <- 1 / prec_sigma
-
-  # Hyper-parameters for non-informative priors (Section 4.3)
-  # e.g., a0 = 0.5, b0 = 0.05
-}
   "
-  
-  j_model_file <- tempfile(pattern = "bhm_normal_", fileext = ".bug")
+
+  j_model_file <- tempfile(pattern = \"bhm_normal_\", fileext = \".bug\")
   writeLines(jags_model_string, con = j_model_file)
-  
+
   for (s in seq_along(scenario_list)) {
-    
+
     scen      <- scenario_list[[s]]
     trials    <- scen$trials
     n_trials  <- length(trials)
-    J         <- length(trials[[1]]$n_subjects)
-    
+
+    ## Determine K and num_predictors from first trial
+    first_tr  <- trials[[1]]
+
+    # y_control and y_treatment are lists of length K
+    K <- length(first_tr$y_control)
+
+    n_control   <- first_tr$n_control
+    n_treatment <- first_tr$n_treatment
+
+    if (length(n_control) != K || length(n_treatment) != K) {
+      stop(\"Inconsistent lengths of n_control / n_treatment vs y_control / y_treatment.\")
+    }
+
+    # determine number of predictors from first basket's X_control (or X_treatment)
+    if (!is.null(first_tr$X_control) && length(first_tr$X_control) > 0) {
+      num_predictors <- ncol(first_tr$X_control[[1]])
+    } else if (!is.null(first_tr$X_treatment) && length(first_tr$X_treatment) > 0) {
+      num_predictors <- ncol(first_tr$X_treatment[[1]])
+    } else {
+      stop(\"X_control or X_treatment must be provided with at least one predictor (e.g., intercept).\" )
+    }
+
     quantiles_list <- list()
-    quantiles_list[["bhm_normal"]] <- vector("list", n_trials)
-    
+    quantiles_list[[\"bhm_normal\"]] <- vector(\"list\", n_trials)
+
     for (t in seq_len(n_trials)) {
-      
-      tr   <- trials[[t]]
-      y    <- tr$y              # matrix [max_n x J]
-      nvec <- tr$n_subjects     # length J
-      
+
+      tr <- trials[[t]]
+
+      # Each of these should be lists of length K:
+      y_ctrl_list <- tr$y_control
+      y_trt_list  <- tr$y_treatment
+      X_ctrl_list <- tr$X_control
+      X_trt_list  <- tr$X_treatment
+      n_control   <- tr$n_control
+      n_treatment <- tr$n_treatment
+
+      if (length(y_ctrl_list) != K || length(y_trt_list) != K) {
+        stop(\"y_control and y_treatment must be lists of length K for each trial.\")
+      }
+
+      # Max sample sizes per arm across baskets (for array dimensions)
+      max_n_ctrl <- max(n_control)
+      max_n_trt  <- max(n_treatment)
+
+      # Allocate matrices/arrays
+      y_control_mat   <- matrix(NA_real_, nrow = K, ncol = max_n_ctrl)
+      y_treatment_mat <- matrix(NA_real_, nrow = K, ncol = max_n_trt)
+
+      X_control_arr   <- array(0, dim = c(K, max_n_ctrl, num_predictors))
+      X_treatment_arr <- array(0, dim = c(K, max_n_trt,  num_predictors))
+
+      # Fill them
+      for (k in seq_len(K)) {
+
+        # control
+        if (n_control[k] > 0) {
+          y_control_mat[k, seq_len(n_control[k])] <- y_ctrl_list[[k]]
+          if (!is.null(X_ctrl_list[[k]])) {
+            X_control_arr[k, seq_len(n_control[k]), ] <- X_ctrl_list[[k]]
+          } else {
+            # default to intercept-only: 1
+            X_control_arr[k, seq_len(n_control[k]), ] <- 1
+          }
+        }
+
+        # treatment
+        if (n_treatment[k] > 0) {
+          y_treatment_mat[k, seq_len(n_treatment[k])] <- y_trt_list[[k]]
+          if (!is.null(X_trt_list[[k]])) {
+            X_treatment_arr[k, seq_len(n_treatment[k]), ] <- X_trt_list[[k]]
+          } else {
+            # default to intercept-only: 1
+            X_treatment_arr[k, seq_len(n_treatment[k]), ] <- 1
+          }
+        }
+      }
+
       j_data <- list(
-        J               = J,
-        n               = nvec,
-        y               = y,
-        mean_mu         = 0.0,
-        precision_mu    = 1 / 10^2,  # N(0, 10^2) prior on mu
-        precision_tau   = 1 / 1^2,   # prior scale for between-basket SD
-        precision_sigma = 1 / 1^2    # prior scale for residual SD
+        K             = K,
+        n_control     = n_control,
+        n_treatment   = n_treatment,
+        y_control     = y_control_mat,
+        y_treatment   = y_treatment_mat,
+        X_control     = X_control_arr,
+        X_treatment   = X_treatment_arr,
+        num_predictors = num_predictors,
+        lambda_inv    = lambda_inv,
+        a0            = a0,
+        b0            = b0,
+        a_prime0      = a_prime0,
+        b_prime0      = b_prime0
       )
-      
+
       posterior_samples <- performJags(
         data               = j_data,
-        parameters_to_save = c("theta", "mu", "tau", "sigma"),
+        parameters_to_save = c(\"tau\", \"mu_tau\", \"prec_tau_shrink\", \"prec_sigma\"),
         model_file         = j_model_file,
         n_chains           = 2,
         n_iter             = n_mcmc_iterations,
         n_burnin           = floor(n_mcmc_iterations / 3)
       )
-      
-      ## keep only theta columns for cohort-level effects
-      theta_cols <- grepl("^theta\\[", colnames(posterior_samples))
-      theta_post <- posterior_samples[, theta_cols, drop = FALSE]
-      
+
+      ## Extract tau[k] posterior samples (treatment effects)
+      tau_cols <- grepl(\"^tau\\\\[\", colnames(posterior_samples))
+      tau_post <- posterior_samples[, tau_cols, drop = FALSE]
+
       posterior_quantiles <- posteriors2Quantiles(
         quantiles  = quantiles,
-        posteriors = theta_post)
-      
-      ## Shape and naming consistent with existing methods:
-      ## rows = quantiles + Mean + SD, cols = cohorts
-      colnames(posterior_quantiles) <- paste0("p_", seq_len(J))
-      
-      quantiles_list[["bhm_normal"]][[t]] <- posterior_quantiles
+        posteriors = tau_post
+      )
+
+      colnames(posterior_quantiles) <- paste0(\"p_\", seq_len(K))
+
+      quantiles_list[[\"bhm_normal\"]][[t]] <- posterior_quantiles
     }
-    
+
     scenario_name <- names(scenario_list)[s]
-    
+
     scenario_data <- list(
       scenario_number = scen$scenario_number,
-      n_subjects      = lapply(scen$trials, `[[`, "n_subjects"),
-      true_means      = scen$true_means,
+      # you can keep these if you simulate them:
+      true_means      = scen$true_means,    # interpret as TRUE tau[k] here
       sd              = scen$sd,
       n_trials        = scen$n_trials,
-      endpoint        = "normal"
+      endpoint        = \"normal\"
     )
-    
+
     analysis_parameters <- list(
       quantiles          = quantiles,
-      method_names       = "bhm_normal",
+      method_names       = \"bhm_normal\",
       n_mcmc_iterations  = n_mcmc_iterations,
-      seed               = seed
+      seed               = seed,
+      a0                 = a0,
+      b0                 = b0,
+      a_prime0           = a_prime0,
+      b_prime0           = b_prime0,
+      lambda_inv         = lambda_inv
     )
-    
+
     analyses_list[[s]] <- list(
       quantiles_list      = quantiles_list,
       scenario_data       = scenario_data,
@@ -178,8 +235,7 @@ performAnalysesNormal <- function (
     )
     names(analyses_list)[s] <- scenario_name
   }
-  
-  class(analyses_list) <- "analysis_list"
-  return (analyses_list)
-  
+
+  class(analyses_list) <- \"analysis_list\"
+  return(analyses_list)
 }
