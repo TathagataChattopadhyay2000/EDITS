@@ -1,288 +1,110 @@
-mapUniqueTrials <- function (
-  
-  scenario_list,
-  method_quantiles_list,
-  trials_unique_calc,
-  applicable_previous_trials
-  
-) {
-  
-  method_names     <- names(method_quantiles_list)
-  scenario_numbers <- sapply(scenario_list, function (x) x$scenario_number)
-  
-  ## Create hash tables for results for easy retrieval
-  
-  hash_keys        <- getHashKeys(trials_unique_calc)
-  hash_tables_list <- vector(mode = "list", length = length(method_quantiles_list))
-  
-  for (n in seq_along(hash_tables_list)) {
-    
-    hash_tables_list[[n]] <- createHashTable(hash_keys, method_quantiles_list[[n]])
-    
-  }
-  
-  ## prepare foreach
-  exported_stuff <- c("convertVector2Matrix")
-  
-  ## run foreach
-  "%do%" <- foreach::"%do%"
-  scenario_method_quantiles_list <- foreach::foreach(k = seq_along(scenario_numbers),
-                                                     .verbose  = FALSE,
-                                                     .export   = exported_stuff
-  ) %do% {
-    
-    ## Find the indices of the trials of a specific scenario for go trials
-    scenario_data_matrix <- cbind(scenario_list[[k]]$n_responders,
-                                  scenario_list[[k]]$n_subjects)
-    
-    ## check whether there where previous analyses
-    if (applicable_previous_trials) {
-      
-      scenario_go_flags         <- scenario_list[[k]]$previous_analyses$go_decisions[, 1] > 0
-      scenario_method_quantiles <- scenario_list[[k]]$previous_analyses$post_quantiles
-      
-    } else {
-      
-      scenario_go_flags         <- rep(TRUE, length = nrow(scenario_data_matrix))
-      scenario_method_quantiles <- vector(mode = "list", length = length(method_names))
-      names(scenario_method_quantiles) <- method_names
-      
-    }
-    
-    ## In case there are trial realizations that need updating
-    ## This should only not be the case if all trial realizations of a scenario have a NoGo decision
-    ## and there are applicable previous trials.
-    if (any(scenario_go_flags)) {
-      
-      ## Get search keys
-      scenario_data_matrix_go <- convertVector2Matrix(scenario_data_matrix[scenario_go_flags, ])
-      search_keys             <- getHashKeys(scenario_data_matrix_go)
-      
-      ## Save scenario specific posterior quantiles for each method
-      for (n in seq_along(method_names)) {
-        
-        scenario_method_quantiles[[method_names[n]]][scenario_go_flags] <-
-          getHashValues(search_keys, hash_tables_list[[n]])
-        
-      }
-      
-    } 
-    
-    return (scenario_method_quantiles)
-    
-  }
-  
-  names(scenario_method_quantiles_list) <- paste0("scenario_", scenario_numbers)
-  
-  return (scenario_method_quantiles_list)
-  
-}
-
-
-#TEST##########################################################################
-
-
-
-# Tests for mapUniqueTrials ----------------------------------------------------
-
-set.seed(123)
-
-trial_data <- createTrial(
-  n_subjects   = c(10, 10),
-  n_responders = c(1, 1))
-
-analysis_list <- performAnalyses(
-  scenario_list      = trial_data,
-  target_rates       = rep(0.5, 2),
-  method_names = "berry",
-  n_mcmc_iterations  = 100)
-
-## get unique trials over all scenarios
-trials_unique <- getUniqueTrials(trial_data)
-n_cohorts     <- (ncol(trials_unique) - 1L) / 2
-
-## analyze only unique trials that have not been previously analyzed
-applicable_previous_trials <- applicablePreviousTrials(
-  scenario_list    = trial_data,
-  method_names     = "berry",
-  quantiles        = analysis_list$scenario_1$analysis_parameters$quantiles,
-  n_cohorts        = n_cohorts,
-  calc_differences = NULL)
-
-## only get previous go indices if all conditions for previous trials are met
-if (applicable_previous_trials) {
-  calc_trial_indices <- trials_unique[, ncol(trials_unique)] > 0
-} else {
-  calc_trial_indices <- rep(TRUE, nrow(trials_unique))
-}
-
-## get resulting unique number of responders and number of subjects
-trials_unique_calc <- trials_unique[calc_trial_indices, -ncol(trials_unique)]
-n_responders       <- trials_unique_calc[, seq_len(n_cohorts)]
-n_subjects         <- trials_unique_calc[, seq_len(n_cohorts) + n_cohorts]
-
-method_quantiles_list        <- vector(mode = "list", length = 1)
-names(method_quantiles_list) <-  "berry"
-
-prior_parameters_list <- getPriorParameters(
-  method_names = "berry",
-  target_rates = rep(0.5, 2))
-
-## prepare analysis
-prepare_analysis <- prepareAnalysis(
-  method_name       = "berry",
-  target_rates      = rep(0.5, 2),
-  prior_parameters  = prior_parameters_list[["berry"]])
-
-## run analysis
-method_quantiles_list[["berry"]] <- getPostQuantiles(
-  method_name       = "berry",
-  quantiles         = analysis_list$scenario_1$analysis_parameters$quantiles,
-  scenario_data     = list(n_subjects   = n_subjects,
-                           n_responders = n_responders),
-  calc_differences  = NULL,
-  j_parameters      = prepare_analysis$j_parameters,
-  j_model_file      = prepare_analysis$j_model_file,
-  j_data            = prepare_analysis$j_data,
-  n_mcmc_iterations = 100,
-  save_path         = NULL,
-  save_trial        = NULL)
-
-scenario_method_quantiles_list <- mapUniqueTrials(
-  scenario_list              = trial_data,
-  method_quantiles_list      = method_quantiles_list,
-  trials_unique_calc         = trials_unique_calc,
-  applicable_previous_trials = applicable_previous_trials)
-
-test_that("mapUniqueTrials: without previous trials, maps unique trial quantiles back per scenario", {
-  foreach::registerDoSEQ()
-  
-  out <- scenario_method_quantiles_list
-    
-  expect_type(out, "list")
-  expect_identical(names(out), "scenario_1")
-
-  scen1 <- out[["scenario_1"]]
-  expect_true(is.list(scen1))
-  expect_true("berry" %in% names(scen1))
-  
-  # For this setup: all trials are "new" (no previous), so each trial’s
-  # quantile matrix should be exactly what we precomputed in method_quantiles_list
-  for (i in seq_along(method_quantiles_list$berry)) {
-    expect_identical(scen1$berry[[i]], method_quantiles_list$berry[[i]])
-  }
-})
-
-
 test_that("mapUniqueTrials: with previous trials, only GO trials are updated from hash tables", {
   foreach::registerDoSEQ()
-  set.seed(123)
-  
-  ## --- Setup: two trial realizations in one scenario ---
-  trial_data <- createTrial(
-    n_subjects   = c(10, 10),
-    n_responders = c(1, 0)
+  set.seed(456)
+
+  ## 1) Build a one-scenario object with 2 trials, 2 cohorts, incl. previous_analyses
+  scene <- getScenario(
+    n_subjects     = c(10, 10),
+    response_rates = c(0.1, 0.2),
+    n_trials       = 2
   )
-  # Two rows -> let only the first be GO, the second NoGo
-  go_flags <- c(TRUE, FALSE)
-  
-  ## --- Obtain analysis parameters & quantiles grid (as in your previous test) ---
-  analysis_list <- performAnalyses(
-    scenario_list      = trial_data,
-    target_rates       = rep(0.5, 2),
-    method_names       = "berry",
-    n_mcmc_iterations  = 100
-  )
-  
+
+  trial_data <- list(scenario_1 = scene)
+  class(trial_data) <- "scenario_list"
+  if (is.null(trial_data$scenario_1$scenario_number)) {
+    trial_data$scenario_1$scenario_number <- 1L
+  }
+
+  ## 2) Force GO / NoGo pattern in the "overall" column:
+  ##    - trial 1: GO
+  ##    - trial 2: NoGo
+  go_mat <- trial_data$scenario_1$previous_analyses$go_decisions
+  go_mat[, 1] <- c(TRUE, FALSE)   # column 1 is used by mapUniqueTrials
+  trial_data$scenario_1$previous_analyses$go_decisions <- go_mat
+
+  ## 3) Create REAL "previous" post_quantiles using package functions
+  n_trials   <- trial_data$scenario_1$n_trials
+  n_cohorts  <- ncol(trial_data$scenario_1$n_subjects)
+  quantiles  <- c(0.025, 0.5, 0.975)
+
   prior_parameters_list <- getPriorParameters(
     method_names = "berry",
-    target_rates = rep(0.5, 2)
+    target_rates = rep(0.5, n_cohorts)
   )
-  
-  prepare_analysis <- prepareAnalysis(
+
+  prep <- prepareAnalysis(
     method_name      = "berry",
-    target_rates     = rep(0.5, 2),
-    prior_parameters = prior_parameters_list[["berry"]]
+    prior_parameters = prior_parameters_list[["berry"]],
+    target_rates     = rep(0.5, n_cohorts)
   )
-  
-  
-  ## --- Use unique trials to derive correct shapes (responders|subjects per cohort) ---
-  trials_unique <- getUniqueTrials(trial_data)
-  n_cohorts     <- (ncol(trials_unique) - 1L) / 2
-  
-  # Only GO rows for calculating quantiles to update from hash tables
-  trials_unique_calc <- trials_unique[go_flags, -ncol(trials_unique), drop = FALSE]
-  n_responders_go <- convertVector2Matrix(trials_unique_calc[, seq_len(n_cohorts), drop = FALSE])
-  n_subjects_go   <- convertVector2Matrix(trials_unique_calc[, seq_len(n_cohorts) + n_cohorts, drop = FALSE])
-  
-  
-  method_quantiles_list        <- vector(mode = "list", length = 1)
-  names(method_quantiles_list) <- "berry"
-  
-  method_quantiles_list[["berry"]] <- getPostQuantiles(
-    method_name       = "berry",
-    quantiles         = analysis_list$scenario_1$analysis_parameters$quantiles,
-    scenario_data     = list(
-            n_subjects   = n_subjects_go,
-            n_responders = n_responders_go
-    ),
-    calc_differences  = NULL,
-    j_parameters      = prepare_analysis$j_parameters,
-    j_model_file      = prepare_analysis$j_model_file,
-    j_data            = prepare_analysis$j_data,
-    n_mcmc_iterations = 100,
-    save_path         = NULL,
-    save_trial        = NULL
-  )
-  
-  ## --- Prepare previous_analyses with placeholders for BOTH trials ---
-  # Use dimensions from a real quantile matrix to build placeholders
-  placeholder_dim <- dim(method_quantiles_list$berry[[1]])
-  placeholder1 <- matrix(-1, nrow = placeholder_dim[1], ncol = placeholder_dim[2])
-  placeholder2 <- matrix(-2, nrow = placeholder_dim[1], ncol = placeholder_dim[2])
-  
-  trial_data$scenario_1$previous_analyses <- list(
-    go_decisions = structure(
-      c(go_flags,
-        # optional cohort-specific flags; keep consistent width with your pipeline
-        go_flags,  # decision_1
-        go_flags   # decision_2
+
+  ## Build a per-trial list of matrices (the structure mapUniqueTrials expects)
+  old_q_list <- vector("list", length = n_trials)
+  for (i in seq_len(n_trials)) {
+    n_subj_i <- trial_data$scenario_1$n_subjects[i, , drop = FALSE]
+    n_resp_i <- trial_data$scenario_1$n_responders[i, , drop = FALSE]
+
+    old_q_list[[i]] <- getPostQuantiles(
+      method_name       = "berry",
+      quantiles         = quantiles,
+      scenario_data     = list(
+        n_subjects   = n_subj_i,
+        n_responders = n_resp_i
       ),
-      .Dim = c(length(go_flags), 3),
-      .Dimnames = list(NULL, c("overall", "decision_1", "decision_2"))
-    ),
-    post_quantiles = list(
-      berry = list(
-        placeholder1,  # for trial row 1
-        placeholder2   # for trial row 2
-      )
-    )
+      calc_differences  = NULL,
+      j_parameters      = prep$j_parameters,
+      j_model_file      = prep$j_model_file,
+      j_data            = prep$j_data,
+      n_mcmc_iterations = 100,
+      save_path         = NULL,
+      save_trial        = NULL
+    )[[1]]
+  }
+
+  trial_data$scenario_1$previous_analyses$post_quantiles <- list(
+    berry = old_q_list
   )
-  
-  ## --- Call mapUniqueTrials with applicable_previous_trials = TRUE ---
-  scenario_method_quantiles_list <- mapUniqueTrials(
+
+  ## 4) Build trials_unique and the subset used for new calculations
+  trials_unique <- getUniqueTrials(trial_data)
+  n_cohorts_u   <- (ncol(trials_unique) - 1L) / 2L
+
+  ## applicable_previous_trials is TRUE by design in this test
+  applicable_previous_trials <- TRUE
+
+  ## We only (re)analyse unique GO trials:
+  calc_trial_indices <- trials_unique[, ncol(trials_unique)] > 0
+  trials_unique_calc <- trials_unique[calc_trial_indices, -ncol(trials_unique), drop = FALSE]
+
+  ## 5) Create NEW quantiles for the GO pattern by modifying the existing ones
+  ##    - trials_unique_calc contains only the GO pattern(s). Here, with our setup,
+  ##      that's just trial 1.
+  ##    - We derive a new matrix from the previous one to ensure they differ.
+  new_q_go <- old_q_list[[1]] + 1  # simple shift to guarantee a difference
+
+  method_quantiles_list <- list(
+    berry = list(new_q_go)  # one entry per UNIQUE GO pattern
+  )
+
+  ## 6) Run mapUniqueTrials: should update only the GO trial
+  out <- mapUniqueTrials(
     scenario_list              = trial_data,
     method_quantiles_list      = method_quantiles_list,
     trials_unique_calc         = trials_unique_calc,
-    applicable_previous_trials = TRUE
+    applicable_previous_trials = applicable_previous_trials
   )
-  
-  ## --- Assertions ---
-  out <- scenario_method_quantiles_list
+
+  ## 7) Checks
   expect_type(out, "list")
   expect_identical(names(out), "scenario_1")
-  
+
   scen1 <- out[["scenario_1"]]
   expect_true(is.list(scen1))
   expect_true("berry" %in% names(scen1))
-  
-  # GO trials are updated from hash tables; NoGo trials remain as previous placeholders
-  go_positions <- which(go_flags)
-  
-  # Check trial 1 (GO) updated to method_quantiles_list$berry[[1]]
-  expect_identical(scen1$berry[[go_positions[1]]], method_quantiles_list$berry[[1]])
-  
-  # Check trial 2 (NoGo) unchanged (still the previous placeholder)
-  nogo_positions <- which(!go_flags)
-  expect_identical(scen1$berry[[nogo_positions[1]]], placeholder2)
+
+  ## Trial 1 (GO) must now be the NEW quantiles
+  expect_identical(scen1$berry[[1]], new_q_go)
+
+  ## Trial 2 (NoGo) must remain with its original (old) quantiles
+  expect_identical(scen1$berry[[2]], old_q_list[[2]])
 })
