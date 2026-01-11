@@ -1,76 +1,40 @@
-getScenarioNormal <- function(
-  n_subjects,
-  true_means,
-  cohort_names = seq_along(n_subjects),
-  sd,
-  n_trials = 1e4
-) {
-  if (missing(n_subjects))
-    stop("Please provide a vector of positive integers for 'n_subjects'")
-  if (missing(true_means))
-    stop("Please provide a numeric vector for 'true_means'")
-  if (missing(sd))
-    stop("Please provide a single positive numeric for 'sd'")
-
-  if (length(n_subjects) != length(true_means))
-    stop("n_subjects and true_means must have same length")
-
-  if (any(!is.positive.wholenumber(n_subjects)))
-    stop("All entries in 'n_subjects' must be positive integers")
-  if (!is.single.numeric(sd) || sd <= 0)
-    stop("sd must be a single positive numeric")
-  if (!is.single.positive.wholenumber(n_trials))
-    stop("n_trials must be a single positive integer")
-
-  J     <- length(n_subjects)
-  max_n <- max(n_subjects)
-
-  trials <- vector("list", n_trials)
-
-  for (t in seq_len(n_trials)) {
-    y_mat <- matrix(NA_real_, nrow = max_n, ncol = J)
-
-    for (j in seq_len(J)) {
-      y_mat[seq_len(n_subjects[j]), j] <-
-        stats::rnorm(n_subjects[j], mean = true_means[j], sd = sd)
+model {
+  # --- 1. Likelihood (Equation 2.1) ---
+  for (k in 1:K) { # Loop through K baskets
+    
+    # Control Arm: Y_cki ~ N(x_cki' * beta_k, sigma^2)
+    for (i in 1:nck[k]) {
+      yck[k, i] ~ dnorm(mu_ck[k, i], prec_sigma)
+      mu_ck[k, i] <- inprod(Xck[k, i, ], beta[k, ]) 
     }
 
-    colnames(y_mat) <- paste0("y_", cohort_names)
+    # Treatment Arm: Y_tki ~ N(x_tki' * beta_k + tau_k, sigma^2)
+    for (i in 1:ntk[k]) {
+      ytk[k, i] ~ dnorm(mu_tk[k, i], prec_sigma)
+      mu_tk[k, i] <- inprod(Xtk[k, i, ], beta[k, ]) + tau[k]
+    }
 
-    trials[[t]] <- list(
-      y          = y_mat,
-      n_subjects = n_subjects
-    )
+    # --- 2. Multivariate Normal Prior for Coefficients (Section 3.2) ---
+    # beta_k | sigma^2 ~ MVN(0, sigma^2 * Lambda_k^-1)
+    beta[k, 1:num_cov] ~ dmnorm(mu_beta_vec[], prec_beta_mat[k, , ])
   }
 
-  n_subjects_mat <- matrix(
-    n_subjects,
-    nrow = n_trials,
-    ncol = J,
-    byrow = TRUE
-  )
-  colnames(n_subjects_mat) <- paste0("n_", cohort_names)
+  # --- 3. Hierarchical Structure for Treatment Effects (Equation 3.10) ---
+  for (k in 1:K) {
+    # tau_k ~ N(mu_tau, sigma_tau^2)
+    tau[k] ~ dnorm(mu_tau, prec_tau_shrink)
+  }
 
-  previous_gos <- matrix(
-    TRUE,
-    nrow = n_trials,
-    ncol = J + 1L,
-    byrow = TRUE
-  )
-  colnames(previous_gos) <- c("overall", paste0("decision_", cohort_names))
+  # --- 4. Priors and Hyper-parameters (Sections 3.3 & 4.3) ---
+  
+  # Population mean for treatment effects
+  mu_tau ~ dnorm(0, 0.0001)
 
-  scenario_data <- list(
-    n_subjects        = n_subjects_mat,
-    true_means        = true_means,
-    sd                = sd,
-    trials            = trials,
-    previous_analyses = list(
-      go_decisions   = previous_gos,
-      post_quantiles = NULL
-    ),
-    n_trials          = n_trials,
-    endpoint          = "normal"
-  )
+  # Shrinkage Variance (sigma_tau^2) ~ IG(0.5, 0.05)
+  prec_tau_shrink ~ dgamma(0.5, 0.05) 
+  sigma2_tau <- 1 / prec_tau_shrink
 
-  return(scenario_data)
+  # Population Variance (sigma^2) ~ IG(0.5, 0.05)
+  prec_sigma ~ dgamma(0.5, 0.05)
+  sigma2 <- 1 / prec_sigma
 }
