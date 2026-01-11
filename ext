@@ -1,49 +1,167 @@
-createTrialNormal <- function(
-  n_control,
-  n_treatment,
-  mean_control,
-  mean_treatment,
-  sd
+continueRecruitment <- function (
+  
+  n_subjects_add_list,
+  decisions_list,
+  
+  method_name = NULL
+  
 ) {
-  error_n_control <- simpleError(
-    "Please provide a vector of non-negative integers for the argument 'n_control'")
-  error_n_treatment <- simpleError(
-    "Please provide a vector of non-negative integers for the argument 'n_treatment'")
-  error_means <- simpleError(
-    "Please provide numeric vectors for 'mean_control' and 'mean_treatment'")
-  error_sd <- simpleError(
-    "Please provide a single positive numeric for the argument 'sd'")
-
-  if (missing(n_control))      stop(error_n_control)
-  if (missing(n_treatment))    stop(error_n_treatment)
-  if (missing(mean_control) ||
-      missing(mean_treatment)) stop(error_means)
-  if (missing(sd))             stop(error_sd)
-
-  if (any(!is.wholenumber(n_control))   || any(n_control   < 0)) stop(error_n_control)
-  if (any(!is.wholenumber(n_treatment)) || any(n_treatment < 0)) stop(error_n_treatment)
-
-  if (!is.numeric(mean_control)   || !is.numeric(mean_treatment))
-    stop(error_means)
-
-  if (length(n_control)      != length(n_treatment) ||
-      length(n_control)      != length(mean_control) ||
-      length(n_control)      != length(mean_treatment)) {
-    stop("n_control, n_treatment, mean_control, mean_treatment must have same length")
+  
+  error_n_subjects_add_list <- simpleError(
+    "Please provide a list of vectors of positive integers for the argument 'n_subjects_add_list'")
+  error_decisions_list <- simpleError(
+    "Please provide an object of class decision_list for the argument 'decisions_list'")
+  error_method_name <- simpleError(paste(
+    "Please provide a string naming an analysis method for the argument 'method_name'",
+    "Must be one of 'berry', 'exnex', 'exnex_adj', 'pooled', 'stratified', 'custom"))
+  
+  if (missing(n_subjects_add_list))            stop (error_n_subjects_add_list)
+  if (missing(decisions_list))                 stop (error_decisions_list)
+  
+  if (!is.decision_list(decisions_list))       stop (error_decisions_list)
+  
+  if (is.null(method_name)) {
+    
+    n_methods <- length(decisions_list$scenario_1$decisions_list)
+    
+    if (n_methods > 1) {
+      
+                                               stop (error_method_name)
+      
+    } else {
+      
+      method_name <- names(decisions_list$scenario_1$decisions_list)
+      
+    }
+    
+  } else {
+    
+    method_name <- tryCatch({
+      
+      match.arg(
+        method_name,
+        choices    = c('berry', 'exnex', 'exnex_adj', 'pooled', 'stratified', 'custom'),
+        several.ok = FALSE)
+      
+    }, error = function (e) e)
+    
+    if (inherits(method_name, "error"))          stop (error_method_name)
+    
   }
-
-  if (!is.single.numeric(sd) || sd <= 0) stop(error_sd)
-
-  utils::capture.output({
-    trial <- simulateScenariosNormal(
-      n_control_list      = list(n_control),
-      n_treatment_list    = list(n_treatment),
-      mean_control_list   = list(mean_control),
-      mean_treatment_list = list(mean_treatment),
-      sd                  = sd,
-      n_trials            = 1
-    )
-  })
-
-  return(trial)
+  
+  if (!is.list(n_subjects_add_list)) {
+    n_subjects_add_list <- rep(list(n_subjects_add_list), length(decisions_list))
+  }
+  
+  if (!is.list(n_subjects_add_list) ||
+      any(!sapply(n_subjects_add_list, is.non.negative.wholenumber)))
+    stop (error_n_subjects_add_list)
+  
+  ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
+  ## Note: also some checks hereafter
+  
+  ## get scenario numbers
+  scenario_numbers <- as.numeric(sub("scenario_", "", names(decisions_list)))
+  
+  if (length(n_subjects_add_list) != length(decisions_list)) {
+    stop (simpleError("The lengths of 'n_subjects_add_list' and 'decisions_list' must be equal"))
+  }
+  
+  scenario_list <- vector(mode = "list", length = length(decisions_list))
+  names(scenario_list) <- paste0("scenario_", scenario_numbers)
+  for (s in seq_along(scenario_list)) {
+    
+    if (!(method_name %in%
+          decisions_list[[s]]$analysis_data$analysis_parameters$method_names)) {
+      
+      stop (simpleError("Selected method_name not analyzed"))
+      
+    }
+    
+    ## get new data, i.e. get new responders and new number of subjects per trial
+    
+    n_subjects_add <- n_subjects_add_list[[s]]
+    response_rates <- decisions_list[[s]]$scenario_data$response_rates
+    cohort_names   <- sub("rr_", "", colnames(response_rates))
+    
+    if (any(response_rates > 0 & response_rates < 1)) {
+      
+      index_new <- which(response_rates > 0 & response_rates < 1)
+      
+    } else {
+      
+      stop (simpleError(paste0(
+        "Only historical cohorts in scenario ",
+        decisions_list[[s]]$scenario_data$scenario_number)))
+      
+    }
+    
+    response_rates_new <- response_rates[, index_new]
+    cohort_names_new   <- cohort_names[index_new]
+    
+    if (!identical(length(n_subjects_add), length(response_rates_new))) {
+      stop (simpleError(paste0(
+        "The length of n_subjects_add must be equal ",
+        "to the length of the response rates that are in (0, 1)")))
+    }
+    
+    n_trials <- decisions_list[[s]]$scenario_data$n_trials
+    
+    add_scenario <- getScenario(
+      n_subjects     = n_subjects_add,
+      response_rates = response_rates_new,
+      cohort_names   = cohort_names_new,
+      n_trials       = n_trials)
+    
+    ## Combine with existing data
+    
+    ## get previous decisions
+    go_decisions <- decisions_list[[s]]$decisions_list[[method_name]]
+    previous_gos <- go_decisions
+    
+    if ("overall" %in% colnames(go_decisions)) {
+      overall_gos  <- go_decisions[, which(colnames(go_decisions) == "overall")]
+      go_decisions <- go_decisions[, -which(colnames(go_decisions) == "overall")]
+    } else {
+      overall_gos <- rep(TRUE, nrow(go_decisions))
+    }
+    if (!all(index_new %in% as.numeric(sub("decision_", "", colnames(go_decisions))))) {
+      stop (simpleError(
+        "There must be a decision for each recruiting cohort in the 'decisions_list'"))
+    }
+    
+    ## pick only cohorts that need updating
+    go_decisions <- go_decisions[overall_gos, index_new]
+    
+    ## additional subjects and responders, only those that have overall go
+    n_responders_add <- add_scenario$n_responders[overall_gos, ] * go_decisions
+    n_subjects_add   <- add_scenario$n_subjects[overall_gos, ] * go_decisions
+    
+    ## existing cohorts that need updating
+    n_responders <- decisions_list[[s]]$scenario_data$n_responders
+    n_subjects   <- decisions_list[[s]]$scenario_data$n_subjects
+    
+    ## combine, only for cohorts that have overall go and need updating
+    n_responders[overall_gos, index_new] <- n_responders[overall_gos, index_new] + n_responders_add
+    n_subjects[overall_gos, index_new]   <- n_subjects[overall_gos, index_new] + n_subjects_add
+    
+    ## Saving Scenario
+    
+    scenario_list[[s]] <- list(
+      n_subjects        = n_subjects,
+      n_responders      = n_responders,
+      response_rates    = response_rates,
+      previous_analyses = list(go_decisions   = previous_gos,
+                               post_quantiles = decisions_list[[s]]$analysis_data$quantiles_list),
+      n_trials          = n_trials)
+    
+    scenario_list[[s]]$scenario_number <-
+      decisions_list[[s]]$scenario_data$scenario_number
+    
+  }
+  
+  class(scenario_list) <- "scenario_list"
+  
+  return (scenario_list)
+  
 }
