@@ -1,162 +1,49 @@
-
-#' @title createTrial
-#' @description This function creates an object of class `scenario_list`
-#' for a single trial outcome, which can subsequently be analyzed with other functions of
-#' `bhmbasket`, e.g. \code{\link[bhmbasket]{performAnalyses}}
-#' @param n_subjects A vector of integers for the number of subjects in the trial outcome
-#' @param n_responders A vector of integers for the number of responders in the trial outcome
-#' @return An object of class `scenario_list` with the scenario data for a single trial outcome.
-#' @details This function is a wrapper for \code{\link[bhmbasket]{simulateScenarios}} with
-#' ```
-#' simulateScenarios(
-#'  n_subjects_list     = list(n_subjects),
-#'  response_rates_list = list(n_responders),
-#'  n_trials            = 1)
-#' ```
-#' @seealso
-#'  \code{\link[bhmbasket]{simulateScenarios}}
-#'  \code{\link[bhmbasket]{performAnalyses}}
-#' @author Stephan Wojciekowski
-#' @rdname createTrial
-#' @examples
-#'  trial_outcome <- createTrial(n_subjects   = c(10, 20, 30, 40),
-#'                               n_responders = c( 1,  2,  3,  4))
-#' @export
-#' @md
-createTrial <- function (
-
-  n_subjects,
-  n_responders
-
+createTrialNormal <- function(
+  n_control,
+  n_treatment,
+  mean_control,
+  mean_treatment,
+  sd
 ) {
+  error_n_control <- simpleError(
+    "Please provide a vector of non-negative integers for the argument 'n_control'")
+  error_n_treatment <- simpleError(
+    "Please provide a vector of non-negative integers for the argument 'n_treatment'")
+  error_means <- simpleError(
+    "Please provide numeric vectors for 'mean_control' and 'mean_treatment'")
+  error_sd <- simpleError(
+    "Please provide a single positive numeric for the argument 'sd'")
 
-  error_n_subjects <- simpleError(
-    "Please provide a vector of integers for the argument 'error_n_subjects'")
-  error_n_responders <- simpleError(
-    "Please provide a vector of integers for the argument 'n_responders'")
+  if (missing(n_control))      stop(error_n_control)
+  if (missing(n_treatment))    stop(error_n_treatment)
+  if (missing(mean_control) ||
+      missing(mean_treatment)) stop(error_means)
+  if (missing(sd))             stop(error_sd)
 
-  if (missing(n_subjects))                stop (error_n_subjects)
-  if (missing(n_responders))              stop (error_n_responders)
+  if (any(!is.wholenumber(n_control))   || any(n_control   < 0)) stop(error_n_control)
+  if (any(!is.wholenumber(n_treatment)) || any(n_treatment < 0)) stop(error_n_treatment)
 
-  if (any(!is.wholenumber(n_subjects)))   stop (error_n_subjects)
-  if (any(!is.wholenumber(n_responders))) stop (error_n_responders)
+  if (!is.numeric(mean_control)   || !is.numeric(mean_treatment))
+    stop(error_means)
+
+  if (length(n_control)      != length(n_treatment) ||
+      length(n_control)      != length(mean_control) ||
+      length(n_control)      != length(mean_treatment)) {
+    stop("n_control, n_treatment, mean_control, mean_treatment must have same length")
+  }
+
+  if (!is.single.numeric(sd) || sd <= 0) stop(error_sd)
 
   utils::capture.output({
-
-    trial <- simulateScenarios(
-      n_subjects_list     = list(n_subjects),
-      response_rates_list = list(n_responders),
-      n_trials            = 1)
-
+    trial <- simulateScenariosNormal(
+      n_control_list      = list(n_control),
+      n_treatment_list    = list(n_treatment),
+      mean_control_list   = list(mean_control),
+      mean_treatment_list = list(mean_treatment),
+      sd                  = sd,
+      n_trials            = 1
+    )
   })
 
-  return (trial)
-
-}
-
-getNSubjects <- function (
-  
-  recruitment_per_month,
-  start_date,
-  analysis_dates,
-  
-  date_format = "%m/%d/%Y"
-  
-) {
-  
-  recruitment_per_day <- recruitment_per_month * (12 / 365)
-  
-  start_date     <- as.Date(start_date, format = date_format)
-  analysis_dates <- as.Date(analysis_dates, format = date_format)
-  
-  n_subjects_matrix <- floor((analysis_dates - start_date) %o% recruitment_per_day)
-  rownames(n_subjects_matrix) <- as.character(analysis_dates, format = date_format)
-  colnames(n_subjects_matrix) <- paste0("cohort_", seq_len(ncol(n_subjects_matrix)))
-  
-  return (n_subjects_matrix)
-  
-}
-
-getRecruitment <- function (
-  
-  n_subjects_required,
-  recruitment_per_month,
-  start_date,
-  
-  date_format = "%m/%d/%Y"
-  
-) {
-  
-  if (missing(n_subjects_required))
-    stop ("Please provide a matrix of non-negative integers for the argument 'n_subjects_required'")
-  if (missing(recruitment_per_month))
-    stop ("Please provide a vector of non-negative numerics for the argument 'recruitment_per_month'")
-  if (missing(start_date))
-    stop ("Please provide a string in the format 'date_format' of for the argument 'start_date'")
-  
-  if (!is.numeric(n_subjects_required) || #!is.matrix(n_subjects_required) ||
-      any(!is.wholenumber(n_subjects_required)) || any(n_subjects_required < 0))
-    stop ("Please provide a matrix of non-negative integers for the argument 'n_subjects_required'")
-  if (!is.numeric(recruitment_per_month) || any(recruitment_per_month < 0))
-    stop ("Please provide a vector of non-negative numerics for the argument 'recruitment_per_month'")
-  
-  ## Get indices of historical cohorts
-  hist_index <- recruitment_per_month == 0
-  
-  recruitment_per_day <- recruitment_per_month[!hist_index] * (12 / 365)
-  
-  start_date <- as.Date(start_date, format = date_format)
-  
-  n_subjects_required <- convertVector2Matrix(n_subjects_required)
-  
-  if (!identical(length(recruitment_per_month), ncol(n_subjects_required)))
-    stop (paste0("The number of columns of 'n_subjects_required' ",
-                 "and the length of 'recruitment_per_month' must be equal"))
-  
-  days_required <- apply(convertVector2Matrix(n_subjects_required[, !hist_index]),
-                         1, function (n_subj) {
-                           max(ceiling(n_subj * recruitment_per_day^-1))
-                         })
-  
-  n_subjects_matrix_0 <- getNSubjects(
-    recruitment_per_month = recruitment_per_month[!hist_index],
-    start_date            = start_date,
-    analysis_dates        = start_date + days_required,
-    date_format           = date_format)
-  
-  n_subjects_matrix <- matrix(NA,
-                              ncol = ncol(n_subjects_required),
-                              nrow = nrow(n_subjects_required))
-  
-  n_subjects_matrix[, !hist_index] <- n_subjects_matrix_0
-  n_subjects_matrix[, hist_index]  <- n_subjects_required[, hist_index]
-  
-  rownames(n_subjects_matrix) <- rownames(n_subjects_matrix_0)
-  colnames(n_subjects_matrix) <- paste0("cohort_", seq_len(ncol(n_subjects_required)))
-  
-  return (n_subjects_matrix)
-  
-}
-
-getResponders <- function (
-  
-  response_rates,
-  n_subjects,
-  
-  n_trials
-  
-) {
-  
-  n_responders <- t(replicate(n = n_trials, {
-    
-    stats::rbinom(n    = length(n_subjects), # n_cohorts
-                  size = n_subjects,
-                  prob = response_rates)
-    
-    
-    
-  }))
-  
-  return (n_responders)
-  
+  return(trial)
 }
