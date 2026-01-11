@@ -1,91 +1,107 @@
-simulateScenariosNormal <- function(
-  n_control_list,
-  n_treatment_list,
-  mean_control_list,
-  mean_treatment_list,
+getScenarioNormal <- function(
+  n_control,
+  n_treatment,
+  mean_control,
+  mean_treatment,
+  cohort_names = seq_along(n_control),
   sd,
-  scenario_numbers = seq_along(mean_control_list),
-  n_trials         = 1e4
+  n_trials = 1e4
 ) {
-  error_n_control_list  <- simpleError(
-    "Please provide a list of vectors of positive integers for 'n_control_list'")
-  error_n_treatment_list  <- simpleError(
-    "Please provide a list of vectors of positive integers for 'n_treatment_list'")
-  error_mean_list <- simpleError(
-    "Please provide lists of numeric vectors for 'mean_control_list' and 'mean_treatment_list'")
-  error_sd <- simpleError(
-    "Please provide a single positive numeric value for 'sd'")
-  error_n_trials <- simpleError(
-    "Please provide a positive integer for 'n_trials'")
-  error_scenario_numbers <- simpleError(
-    "Please provide a vector of positive integers for 'scenario_numbers'")
+  if (missing(n_control) || missing(n_treatment))
+    stop("Please provide 'n_control' and 'n_treatment' (vectors of positive integers).")
+  if (missing(mean_control) || missing(mean_treatment))
+    stop("Please provide 'mean_control' and 'mean_treatment' (numeric vectors).")
+  if (missing(sd))
+    stop("Please provide a single positive numeric for 'sd'.")
 
-  if (missing(n_control_list))    stop(error_n_control_list)
-  if (missing(n_treatment_list))  stop(error_n_treatment_list)
-  if (missing(mean_control_list) || missing(mean_treatment_list)) stop(error_mean_list)
-  if (missing(sd))                stop(error_sd)
+  if (length(n_control) != length(n_treatment) ||
+      length(n_control) != length(mean_control) ||
+      length(n_control) != length(mean_treatment))
+    stop("n_control, n_treatment, mean_control, mean_treatment must have same length.")
 
-  if (!is.list(n_control_list) ||
-      any(!sapply(n_control_list, is.positive.wholenumber)))
-    stop(error_n_control_list)
-  if (!is.list(n_treatment_list) ||
-      any(!sapply(n_treatment_list, is.positive.wholenumber)))
-    stop(error_n_treatment_list)
+  if (any(!is.positive.wholenumber(n_control)) ||
+      any(!is.positive.wholenumber(n_treatment)))
+    stop("All entries in 'n_control' and 'n_treatment' must be positive integers.")
+  if (!is.single.numeric(sd) || sd <= 0)
+    stop("sd must be a single positive numeric.")
+  if (!is.single.positive.wholenumber(n_trials))
+    stop("n_trials must be a single positive integer.")
 
-  if (!is.list(mean_control_list) ||
-      any(!sapply(mean_control_list, is.numeric)) ||
-      !is.list(mean_treatment_list) ||
-      any(!sapply(mean_treatment_list, is.numeric)))
-    stop(error_mean_list)
+  K <- length(n_control)
+  num_cov <- 1L  # intercept-only by default
 
-  if (!identical(length(n_control_list), length(n_treatment_list)) ||
-      !identical(length(n_control_list), length(mean_control_list)) ||
-      !identical(length(n_control_list), length(mean_treatment_list)))
-    stop(simpleError(
-      "'n_control_list', 'n_treatment_list', 'mean_control_list', 'mean_treatment_list' must have same length"
-    ))
+  trials <- vector("list", n_trials)
 
-  # within each scenario: same number of cohorts and consistent lengths
-  if (any(!sapply(seq_along(n_control_list), function(s) {
-    length(n_control_list[[s]])      == length(n_treatment_list[[s]]) &&
-    length(n_control_list[[s]])      == length(mean_control_list[[s]]) &&
-    length(n_control_list[[s]])      == length(mean_treatment_list[[s]])
-  })))
-    stop(simpleError(
-      "Within each scenario, vectors in n_control_list, n_treatment_list, mean_control_list, mean_treatment_list must all have the same length"
-    ))
+  for (t in seq_len(n_trials)) {
 
-  if (!is.single.numeric(sd) || sd <= 0) stop(error_sd)
+    yck_list <- vector("list", K)
+    ytk_list <- vector("list", K)
+    Xck_list <- vector("list", K)
+    Xtk_list <- vector("list", K)
 
-  if ("n_trials" %in% ls(envir = .GlobalEnv) & missing(n_trials)) {
-    n_trials <- get("n_trials", envir = .GlobalEnv)
-  }
-  if (!is.single.positive.wholenumber(n_trials)) stop(error_n_trials)
+    for (k in seq_len(K)) {
 
-  if (!is.positive.wholenumber(scenario_numbers)) stop(error_scenario_numbers)
-  if (!identical(length(scenario_numbers), length(n_control_list))) stop(simpleError(
-    "'scenario_numbers' and 'n_control_list' must have same length"
-  ))
+      # control outcomes
+      if (n_control[k] > 0) {
+        yck_list[[k]] <- stats::rnorm(n_control[k], mean = mean_control[k], sd = sd)
+        Xck_list[[k]] <- matrix(1, nrow = n_control[k], ncol = num_cov)  # intercept
+      } else {
+        yck_list[[k]] <- numeric(0L)
+        Xck_list[[k]] <- matrix(numeric(0L), nrow = 0L, ncol = num_cov)
+      }
 
-  scenario_list <- vector("list", length(scenario_numbers))
+      # treatment outcomes
+      if (n_treatment[k] > 0) {
+        ytk_list[[k]] <- stats::rnorm(n_treatment[k], mean = mean_treatment[k], sd = sd)
+        Xtk_list[[k]] <- matrix(1, nrow = n_treatment[k], ncol = num_cov) # intercept
+      } else {
+        ytk_list[[k]] <- numeric(0L)
+        Xtk_list[[k]] <- matrix(numeric(0L), nrow = 0L, ncol = num_cov)
+      }
+    }
 
-  for (s in seq_along(scenario_numbers)) {
-    scenario_list[[s]] <- getScenarioNormal(
-      n_control      = n_control_list[[s]],
-      n_treatment    = n_treatment_list[[s]],
-      mean_control   = mean_control_list[[s]],
-      mean_treatment = mean_treatment_list[[s]],
-      cohort_names   = seq_along(n_control_list[[s]]),
-      sd             = sd,
-      n_trials       = n_trials
+    trials[[t]] <- list(
+      yck = yck_list,
+      ytk = ytk_list,
+      Xck = Xck_list,
+      Xtk = Xtk_list,
+      nck = n_control,
+      ntk = n_treatment
     )
-    scenario_list[[s]]$scenario_number <- scenario_numbers[s]
   }
 
-  names(scenario_list) <- paste0("scenario_", scenario_numbers)
-  class(scenario_list) <- "scenario_list_normal"
+  # optional convenience: total n per cohort (control + treatment) per trial
+  n_subjects_mat <- matrix(
+    n_control + n_treatment,
+    nrow = n_trials,
+    ncol = K,
+    byrow = TRUE
+  )
+  colnames(n_subjects_mat) <- paste0("n_", cohort_names)
 
-  return(scenario_list)
+  previous_gos <- matrix(
+    TRUE,
+    nrow = n_trials,
+    ncol = K + 1L,
+    byrow = TRUE
+  )
+  colnames(previous_gos) <- c("overall", paste0("decision_", cohort_names))
+
+  scenario_data <- list(
+    n_subjects        = n_subjects_mat,
+    true_means_control  = mean_control,
+    true_means_treatment = mean_treatment,
+    sd                = sd,
+    trials            = trials,
+    previous_analyses = list(
+      go_decisions   = previous_gos,
+      post_quantiles = NULL
+    ),
+    n_trials          = n_trials,
+    endpoint          = "normal"
+  )
+
+  return(scenario_data)
 }
 
 
