@@ -1,4 +1,46 @@
-> print.scenario_list_normal(trial_norm)
-Error: Please provide an object of class scenario_list for the argument 'scenario_list'
-> trial_norm
-Error: Please provide an object of class scenario_list for the argument 'scenario_list'
+print.scenario_list_normal <- function(x, ...) {
+
+  n_scenarios    <- length(x)
+  scenario_names <- names(x)
+
+  first_scen <- x[[1]]
+  K          <- length(first_scen$true_means_control)
+  cohort_names <- paste0("c_", seq_len(K))
+
+  ## average n per cohort and scenario (over trials)
+  avg_n_subjects <- lapply(x, function(scen) {
+    n_trials <- scen$n_trials
+    K        <- length(scen$true_means_control)
+    ns_mat   <- matrix(NA_real_, nrow = n_trials, ncol = K)
+
+    for (t in seq_len(n_trials)) {
+      tr <- scen$trials[[t]]
+      ns_mat[t, ] <- tr$nck + tr$ntk   # total per cohort = control + treatment
+    }
+    colMeans(ns_mat)
+  })
+
+  cat("scenario_list_normal of ", n_scenarios, " scenario",
+      ifelse(n_scenarios == 1, "", "s"),
+      " with ", K, " cohort", ifelse(K == 1, "", "s"), "\n\n", sep = "")
+
+  for (i in seq_len(n_scenarios)) {
+
+    mu_c <- x[[i]]$true_means_control
+    mu_t <- x[[i]]$true_means_treatment
+    nbar <- avg_n_subjects[[i]]
+
+    df_out <- rbind(
+      "    - true control means:"         = mu_c,
+      "    - true treatment means:"       = mu_t,
+      "    - average number of subjects:" = nbar
+    )
+    colnames(df_out) <- cohort_names
+
+    cat("  -", scenario_names[i], "\n")
+    print(df_out)
+    cat("\n")
+  }
+
+  cat("  -", x[[1]]$n_trials, "trial realizations per scenario\n")
+}
