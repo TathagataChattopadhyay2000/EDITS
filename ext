@@ -1,158 +1,118 @@
-continueRecruitmentNormal <- function(
-  n_subjects_add_list,
-  decisions_list,
-  method_name = NULL
-) {
-  error_n_subjects_add_list <- simpleError(
-    "Please provide a list of vectors of non-negative integers for 'n_subjects_add_list'")
-  error_decisions_list <- simpleError(
-    "Please provide an object of class 'decision_list' for 'decisions_list'")
-  error_method_name <- simpleError(
-    "Please provide a valid 'method_name' present in decisions_list$scenario_1$decisions_list")
+library(bhmbasket)   # for performJags
+# or source("PriorFunctions.R"); source("AnalysisFunctions.R") etc.
 
-  if (missing(n_subjects_add_list)) stop(error_n_subjects_add_list)
-  if (missing(decisions_list))      stop(error_decisions_list)
-
-  if (!is.decision_list(decisions_list)) stop(error_decisions_list)
-
-  ## choose method_name
-  if (is.null(method_name)) {
-    n_methods <- length(decisions_list$scenario_1$decisions_list)
-    if (n_methods > 1) {
-      stop(error_method_name)
-    } else {
-      method_name <- names(decisions_list$scenario_1$decisions_list)
+## 1) JAGS model string (your updated bhm_normal)
+jags_model_string <- "
+model {
+  # --- 1. Likelihood ---
+  for (k in 1:K) {
+    # control
+    for (i in 1:nck[k]) {
+      yck[k, i] ~ dnorm(mu_ck[k, i], prec_sigma)
+      mu_ck[k, i] <- inprod(Xck[k, i, ], beta[k, ])
     }
-  } else {
-    if (!method_name %in% names(decisions_list$scenario_1$decisions_list))
-      stop(error_method_name)
+    # treatment
+    for (i in 1:ntk[k]) {
+      ytk[k, i] ~ dnorm(mu_tk[k, i], prec_sigma)
+      mu_tk[k, i] <- inprod(Xtk[k, i, ], beta[k, ]) + tau[k]
+    }
+    # beta_k | sigma^2 ~ MVN
+    beta[k, 1:num_cov] ~ dmnorm(mu_beta_vec[], prec_beta_mat[k, , ])
   }
 
-  ## recycle n_subjects_add_list if a single vector given
-  if (!is.list(n_subjects_add_list)) {
-    n_subjects_add_list <- rep(list(n_subjects_add_list), length(decisions_list))
+  # --- 3. Hierarchical tau ---
+  for (k in 1:K) {
+    tau[k] ~ dnorm(mu_tau, prec_tau_shrink)
   }
 
-  if (!is.list(n_subjects_add_list) ||
-      any(!sapply(n_subjects_add_list, is.non.negative.wholenumber)))
-    stop(error_n_subjects_add_list)
+  # --- 4. Priors ---
+  mu_tau ~ dnorm(0, 0.0001)
 
-  scenario_numbers <- as.numeric(sub("scenario_", "", names(decisions_list)))
+  prec_tau_shrink ~ dgamma(0.5, 0.05)
+  sigma2_tau <- 1 / prec_tau_shrink
 
-  if (length(n_subjects_add_list) != length(decisions_list)) {
-    stop(simpleError(
-      "The lengths of 'n_subjects_add_list' and 'decisions_list' must be equal"))
-  }
-
-  scenario_list <- vector("list", length(decisions_list))
-  names(scenario_list) <- paste0("scenario_", scenario_numbers)
-
-  for (s in seq_along(scenario_list)) {
-
-    scen_data <- decisions_list[[s]]$scenario_data
-    if (is.null(scen_data$endpoint) || scen_data$endpoint != "normal") {
-      stop("continueRecruitmentNormal: scenario_data$endpoint must be 'normal'")
-    }
-
-    ## method must be in this scenario
-    if (!(method_name %in%
-          decisions_list[[s]]$analysis_data$analysis_parameters$method_names)) {
-      stop(simpleError("Selected method_name not analyzed in this scenario"))
-    }
-
-    n_subjects_add <- n_subjects_add_list[[s]]
-
-    n_subjects <- scen_data$n_subjects        # matrix [n_trials x K]
-    trials     <- scen_data$trials            # list of length n_trials
-    n_trials   <- scen_data$n_trials
-    sd         <- scen_data$sd
-    mu_c       <- scen_data$true_means_control
-    mu_t       <- scen_data$true_means_treatment
-
-    K <- ncol(n_subjects)
-
-    if (length(n_subjects_add) != K) {
-      stop("For normal endpoint, length of n_subjects_add must equal number of cohorts.")
-    }
-    if (nrow(n_subjects) != n_trials || length(trials) != n_trials) {
-      stop("Inconsistent n_trials, n_subjects, or trials in scenario_data.")
-    }
-
-    ## decisions for this method
-    go_decisions_all <- decisions_list[[s]]$decisions_list[[method_name]]
-    previous_gos     <- go_decisions_all
-
-    if ("overall" %in% colnames(go_decisions_all)) {
-      overall_gos  <- go_decisions_all[, "overall"]
-      go_decisions <- go_decisions_all[, colnames(go_decisions_all) != "overall", drop = FALSE]
-    } else {
-      overall_gos  <- rep(TRUE, nrow(go_decisions_all))
-      go_decisions <- go_decisions_all
-    }
-
-    if (!identical(dim(go_decisions), dim(n_subjects))) {
-      stop("go_decisions and n_subjects must have same dimension [n_trials x K] for normal endpoint.")
-    }
-
-    ## loop over trials and cohorts, add subjects where Go AND overall Go
-    for (t in seq_len(n_trials)) {
-      if (!overall_gos[t]) next
-
-      tr_t <- trials[[t]]
-
-      for (k in seq_len(K)) {
-        if (!go_decisions[t, k]) next
-
-        add_total <- n_subjects_add[k]
-        if (add_total <= 0) next
-
-        ## simple split: half control, half treatment
-        add_n_control   <- floor(add_total / 2)
-        add_n_treatment <- add_total - add_n_control
-
-        ## control arm
-        if (add_n_control > 0) {
-          yc_new <- stats::rnorm(add_n_control, mean = mu_c[k], sd = sd)
-          Xc_new <- matrix(1, nrow = add_n_control, ncol = ncol(tr_t$Xck[[k]]))
-          tr_t$yck[[k]] <- c(tr_t$yck[[k]], yc_new)
-          tr_t$Xck[[k]] <- rbind(tr_t$Xck[[k]], Xc_new)
-          tr_t$nck[k]   <- tr_t$nck[k] + add_n_control
-        }
-
-        ## treatment arm
-        if (add_n_treatment > 0) {
-          yt_new <- stats::rnorm(add_n_treatment, mean = mu_t[k], sd = sd)
-          Xt_new <- matrix(1, nrow = add_n_treatment, ncol = ncol(tr_t$Xtk[[k]]))
-          tr_t$ytk[[k]] <- c(tr_t$ytk[[k]], yt_new)
-          tr_t$Xtk[[k]] <- rbind(tr_t$Xtk[[k]], Xt_new)
-          tr_t$ntk[k]   <- tr_t$ntk[k] + add_n_treatment
-        }
-
-        ## update total n for this trial & cohort
-        n_subjects[t, k] <- tr_t$nck[k] + tr_t$ntk[k]
-      }
-
-      trials[[t]] <- tr_t
-    }
-
-    ## save updated scenario
-    scenario_list[[s]] <- list(
-      n_subjects           = n_subjects,
-      true_means_control   = mu_c,
-      true_means_treatment = mu_t,
-      sd                   = sd,
-      trials               = trials,
-      previous_analyses    = list(
-        go_decisions   = previous_gos,
-        post_quantiles = decisions_list[[s]]$analysis_data$quantiles_list
-      ),
-      n_trials             = n_trials,
-      endpoint             = "normal"
-    )
-
-    scenario_list[[s]]$scenario_number <- scen_data$scenario_number
-  }
-
-  class(scenario_list) <- "scenario_list_normal"
-  return(scenario_list)
+  prec_sigma ~ dgamma(0.5, 0.05)
+  sigma2 <- 1 / prec_sigma
 }
+"
+
+mod_file <- tempfile(fileext = ".bug")
+writeLines(jags_model_string, mod_file)
+
+## 2) Tiny synthetic dataset ---------------------------------------------
+
+set.seed(123)
+
+K        <- 3
+num_cov  <- 1L         # intercept-only
+sd_true  <- 1
+tau_true <- c(0.0, 0.5, 1.0)      # true treatment effects
+mu_c     <- rep(0, K)            # true control means
+
+nck <- c(20, 20, 20)   # control per basket
+ntk <- c(20, 20, 20)   # treatment per basket
+
+# allocate arrays
+max_nck <- max(nck)
+max_ntk <- max(ntk)
+
+yck <- matrix(NA_real_, nrow = K, ncol = max_nck)
+ytk <- matrix(NA_real_, nrow = K, ncol = max_ntk)
+
+Xck <- array(0, dim = c(K, max_nck, num_cov))
+Xtk <- array(0, dim = c(K, max_ntk, num_cov))
+
+for (k in seq_len(K)) {
+  # control data
+  yck[k, 1:nck[k]] <- rnorm(nck[k], mean = mu_c[k], sd = sd_true)
+  Xck[k, 1:nck[k], ] <- 1  # intercept
+
+  # treatment data
+  ytk[k, 1:ntk[k]] <- rnorm(ntk[k], mean = mu_c[k] + tau_true[k], sd = sd_true)
+  Xtk[k, 1:ntk[k], ] <- 1  # intercept
+}
+
+## 3) Priors for beta and hyperparameters --------------------------------
+
+mu_beta_vec   <- rep(0, num_cov)
+# simple diagonal precision for beta: N(0, 10^2) -> precision = 1/10^2
+prec_beta_mat <- array(0, dim = c(K, num_cov, num_cov))
+for (k in seq_len(K)) {
+  prec_beta_mat[k, , ] <- diag(1 / 10^2, nrow = num_cov)
+}
+
+j_data <- list(
+  K          = K,
+  num_cov    = num_cov,
+  nck        = nck,
+  ntk        = ntk,
+  yck        = yck,
+  ytk        = ytk,
+  Xck        = Xck,
+  Xtk        = Xtk,
+  mu_beta_vec   = mu_beta_vec,
+  prec_beta_mat = prec_beta_mat
+)
+
+## 4) Run JAGS via performJags -------------------------------------------
+
+post <- performJags(
+  data               = j_data,
+  parameters_to_save = c("tau", "mu_tau", "prec_sigma", "prec_tau_shrink"),
+  model_file         = mod_file,
+  n_chains           = 2,
+  n_iter             = 5000,
+  n_burnin           = 2000
+)
+
+## 5) Check recovery of tau ----------------------------------------------
+
+tau_cols <- grepl("^tau\\[", colnames(post))
+tau_post <- post[, tau_cols, drop = FALSE]
+
+tau_est <- colMeans(tau_post)
+tau_ci  <- apply(tau_post, 2, quantile, c(0.025, 0.975))
+
+tau_true
+tau_est
+tau_ci
