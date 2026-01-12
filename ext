@@ -1,30 +1,8 @@
-n_sim  <- 1000       # number of simulated trials
-delta  <- 0.3        # clinically relevant effect
-gamma  <- 0.9        # posterior probability threshold
-go_mat <- matrix(NA, nrow = n_sim, ncol = K)
+> tau_ci
+         tau[1]    tau[2]    tau[3]
+2.5%  -0.589231 0.1338646 0.2382637
+97.5%  1.072399 1.1902652 1.4182618
 
-for (s in 1:n_sim) {
 
-  ## ---- your existing data generation + JAGS call here ----
-  ## (re-generate yck/ytk/Xck/Xtk, rebuild j_data, call performJags, etc.)
-
-  tau_cols <- grepl("^tau\\[", colnames(post))
-  tau_post <- post[, tau_cols, drop = FALSE]
-
-  # posterior Pr(tau_k > delta | data)
-  post_prob <- colMeans(tau_post > delta)
-
-  # Go decision for each basket k
-  go_mat[s, ] <- post_prob > gamma
-}
-
-power <- sapply(seq_len(K), function(k) {
-  if (tau_true[k] >= delta) mean(go_mat[, k]) else NA_real_
-})
-
-type1 <- sapply(seq_len(K), function(k) {
-  if (tau_true[k] == 0) mean(go_mat[, k]) else NA_real_
-})
-
-power
-type1
+nck <- rep(20, K)
+ntk <- c(5,20,20)
