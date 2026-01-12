@@ -13,7 +13,7 @@ continueRecruitment <- function (
     "Please provide an object of class decision_list for the argument 'decisions_list'")
   error_method_name <- simpleError(paste(
     "Please provide a string naming an analysis method for the argument 'method_name'",
-    "Must be one of 'berry', 'exnex', 'exnex_adj', 'pooled', 'stratified', 'custom"))
+    "Must be one of 'berry', 'exnex', 'exnex_adj', 'pooled', 'stratified', 'custom', 'bhm_normal'"))
   
   if (missing(n_subjects_add_list))            stop (error_n_subjects_add_list)
   if (missing(decisions_list))                 stop (error_decisions_list)
@@ -26,7 +26,7 @@ continueRecruitment <- function (
     
     if (n_methods > 1) {
       
-                                               stop (error_method_name)
+      stop (error_method_name)
       
     } else {
       
@@ -40,7 +40,7 @@ continueRecruitment <- function (
       
       match.arg(
         method_name,
-        choices    = c('berry', 'exnex', 'exnex_adj', 'pooled', 'stratified', 'custom'),
+        choices    = c("berry", "exnex", "exnex_adj", "pooled", "stratified", "custom", "bhm_normal"),
         several.ok = FALSE)
       
     }, error = function (e) e)
@@ -57,9 +57,6 @@ continueRecruitment <- function (
       any(!sapply(n_subjects_add_list, is.non.negative.wholenumber)))
     stop (error_n_subjects_add_list)
   
-  ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
-  ## Note: also some checks hereafter
-  
   ## get scenario numbers
   scenario_numbers <- as.numeric(sub("scenario_", "", names(decisions_list)))
   
@@ -69,6 +66,7 @@ continueRecruitment <- function (
   
   scenario_list <- vector(mode = "list", length = length(decisions_list))
   names(scenario_list) <- paste0("scenario_", scenario_numbers)
+  
   for (s in seq_along(scenario_list)) {
     
     if (!(method_name %in%
@@ -78,8 +76,112 @@ continueRecruitment <- function (
       
     }
     
-    ## get new data, i.e. get new responders and new number of subjects per trial
+    scen_data <- decisions_list[[s]]$scenario_data
+    endpoint  <- if (!is.null(scen_data$endpoint)) scen_data$endpoint else "binary"
     
+    ## decisions matrix for this scenario / method
+    go_decisions_all <- decisions_list[[s]]$decisions_list[[method_name]]
+    previous_gos     <- go_decisions_all
+    
+    if ("overall" %in% colnames(go_decisions_all)) {
+      overall_gos  <- go_decisions_all[, "overall"]
+      go_decisions <- go_decisions_all[, colnames(go_decisions_all) != "overall", drop = FALSE]
+    } else {
+      overall_gos  <- rep(TRUE, nrow(go_decisions_all))
+      go_decisions <- go_decisions_all
+    }
+    
+    ## ======================= NORMAL ENDPOINT BRANCH =======================
+    if (identical(endpoint, "normal")) {
+      
+      n_subjects_add <- n_subjects_add_list[[s]]
+      
+      if (is.null(scen_data$n_subjects))
+        stop("For endpoint = 'normal', scenario_data must contain an 'n_subjects' matrix.")
+      if (is.null(scen_data$trials))
+        stop("For endpoint = 'normal', scenario_data must contain a 'trials' list.")
+      if (is.null(scen_data$true_means_control) ||
+          is.null(scen_data$true_means_treatment) ||
+          is.null(scen_data$sd))
+        stop("For endpoint = 'normal', scenario_data must contain true_means_control, true_means_treatment, and sd.")
+      
+      n_subjects <- scen_data$n_subjects
+      trials     <- scen_data$trials
+      n_trials   <- scen_data$n_trials
+      K          <- ncol(n_subjects)
+      sd         <- scen_data$sd
+      
+      if (length(n_subjects_add) != K)
+        stop("For endpoint = 'normal', length of n_subjects_add must equal number of cohorts.")
+      if (nrow(n_subjects) != n_trials || length(trials) != n_trials)
+        stop("Inconsistent dimensions of n_subjects / trials / n_trials for normal endpoint.")
+      if (ncol(go_decisions) != K || nrow(go_decisions) != n_trials)
+        stop("go_decisions must be n_trials x K for normal endpoint.")
+      
+      true_mu_c <- scen_data$true_means_control
+      true_mu_t <- scen_data$true_means_treatment
+      
+      ## loop over trials
+      for (t in seq_len(n_trials)) {
+        if (!overall_gos[t]) next
+        
+        for (k in seq_len(K)) {
+          if (!go_decisions[t, k]) next
+          
+          add_total <- n_subjects_add[k]
+          if (add_total <= 0) next
+          
+          add_n_control   <- floor(add_total / 2)
+          add_n_treatment <- add_total - add_n_control
+          
+          tr_t <- trials[[t]]
+          
+          ## control arm
+          if (add_n_control > 0) {
+            yc_new <- stats::rnorm(add_n_control, mean = true_mu_c[k], sd = sd)
+            Xc_new <- matrix(1, nrow = add_n_control, ncol = ncol(tr_t$Xck[[k]]))
+            tr_t$yck[[k]] <- c(tr_t$yck[[k]], yc_new)
+            tr_t$Xck[[k]] <- rbind(tr_t$Xck[[k]], Xc_new)
+            tr_t$nck[k]   <- tr_t$nck[k] + add_n_control
+          }
+          
+          ## treatment arm
+          if (add_n_treatment > 0) {
+            yt_new <- stats::rnorm(add_n_treatment, mean = true_mu_t[k], sd = sd)
+            Xt_new <- matrix(1, nrow = add_n_treatment, ncol = ncol(tr_t$Xtk[[k]]))
+            tr_t$ytk[[k]] <- c(tr_t$ytk[[k]], yt_new)
+            tr_t$Xtk[[k]] <- rbind(tr_t$Xtk[[k]], Xt_new)
+            tr_t$ntk[k]   <- tr_t$ntk[k] + add_n_treatment
+          }
+          
+          ## update total n_subjects for this trial and cohort
+          n_subjects[t, k] <- tr_t$nck[k] + tr_t$ntk[k]
+          
+          trials[[t]] <- tr_t
+        }
+      }
+      
+      scenario_list[[s]] <- list(
+        n_subjects        = n_subjects,
+        true_means_control   = true_mu_c,
+        true_means_treatment = true_mu_t,
+        sd                = sd,
+        trials            = trials,
+        previous_analyses = list(
+          go_decisions   = previous_gos,
+          post_quantiles = decisions_list[[s]]$analysis_data$quantiles_list
+        ),
+        n_trials         = n_trials,
+        endpoint         = "normal"
+      )
+      
+      scenario_list[[s]]$scenario_number <- scen_data$scenario_number
+      
+      next
+    }
+    ## ======================= BINARY ENDPOINT BRANCH =======================
+    
+    ## get new data, i.e. get new responders and new number of subjects per trial
     n_subjects_add <- n_subjects_add_list[[s]]
     response_rates <- decisions_list[[s]]$scenario_data$response_rates
     cohort_names   <- sub("rr_", "", colnames(response_rates))
@@ -113,29 +215,17 @@ continueRecruitment <- function (
       cohort_names   = cohort_names_new,
       n_trials       = n_trials)
     
-    ## Combine with existing data
-    
-    ## get previous decisions
-    go_decisions <- decisions_list[[s]]$decisions_list[[method_name]]
-    previous_gos <- go_decisions
-    
-    if ("overall" %in% colnames(go_decisions)) {
-      overall_gos  <- go_decisions[, which(colnames(go_decisions) == "overall")]
-      go_decisions <- go_decisions[, -which(colnames(go_decisions) == "overall")]
-    } else {
-      overall_gos <- rep(TRUE, nrow(go_decisions))
-    }
     if (!all(index_new %in% as.numeric(sub("decision_", "", colnames(go_decisions))))) {
       stop (simpleError(
         "There must be a decision for each recruiting cohort in the 'decisions_list'"))
     }
     
     ## pick only cohorts that need updating
-    go_decisions <- go_decisions[overall_gos, index_new]
+    go_decisions_sub <- go_decisions[overall_gos, index_new, drop = FALSE]
     
     ## additional subjects and responders, only those that have overall go
-    n_responders_add <- add_scenario$n_responders[overall_gos, ] * go_decisions
-    n_subjects_add   <- add_scenario$n_subjects[overall_gos, ] * go_decisions
+    n_responders_add <- add_scenario$n_responders[overall_gos, ] * go_decisions_sub
+    n_subjects_add   <- add_scenario$n_subjects[overall_gos, ]   * go_decisions_sub
     
     ## existing cohorts that need updating
     n_responders <- decisions_list[[s]]$scenario_data$n_responders
@@ -143,10 +233,9 @@ continueRecruitment <- function (
     
     ## combine, only for cohorts that have overall go and need updating
     n_responders[overall_gos, index_new] <- n_responders[overall_gos, index_new] + n_responders_add
-    n_subjects[overall_gos, index_new]   <- n_subjects[overall_gos, index_new] + n_subjects_add
+    n_subjects[overall_gos, index_new]   <- n_subjects[overall_gos, index_new]   + n_subjects_add
     
-    ## Saving Scenario
-    
+    ## Saving Scenario (binary)
     scenario_list[[s]] <- list(
       n_subjects        = n_subjects,
       n_responders      = n_responders,
@@ -160,7 +249,15 @@ continueRecruitment <- function (
     
   }
   
-  class(scenario_list) <- "scenario_list"
+  ## class depends on endpoint
+  first_endpoint <- if (!is.null(decisions_list[[1]]$scenario_data$endpoint))
+    decisions_list[[1]]$scenario_data$endpoint else "binary"
+  
+  if (identical(first_endpoint, "normal")) {
+    class(scenario_list) <- "scenario_list_normal"
+  } else {
+    class(scenario_list) <- "scenario_list"
+  }
   
   return (scenario_list)
   
