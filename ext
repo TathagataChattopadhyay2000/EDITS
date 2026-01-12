@@ -1,118 +1,125 @@
-library(bhmbasket)   # for performJags
-# or source("PriorFunctions.R"); source("AnalysisFunctions.R") etc.
+loadScenarios <- function (
 
-## 1) JAGS model string (your updated bhm_normal)
-jags_model_string <- "
-model {
-  # --- 1. Likelihood ---
-  for (k in 1:K) {
-    # control
-    for (i in 1:nck[k]) {
-      yck[k, i] ~ dnorm(mu_ck[k, i], prec_sigma)
-      mu_ck[k, i] <- inprod(Xck[k, i, ], beta[k, ])
-    }
-    # treatment
-    for (i in 1:ntk[k]) {
-      ytk[k, i] ~ dnorm(mu_tk[k, i], prec_sigma)
-      mu_tk[k, i] <- inprod(Xtk[k, i, ], beta[k, ]) + tau[k]
-    }
-    # beta_k | sigma^2 ~ MVN
-    beta[k, 1:num_cov] ~ dmnorm(mu_beta_vec[], prec_beta_mat[k, , ])
+  scenario_numbers,
+  load_path = tempdir()
+
+) {
+
+  if (missing(scenario_numbers))
+    stop ("Please provide a vector of positive integers for the argument 'scenario_numbers'")
+
+  if (!is.numeric(scenario_numbers) || !is.wholenumber(scenario_numbers) || scenario_numbers <= 0)
+    stop ("Please provide a positive integer for the argument 'scenario_numbers'")
+  if (!is.character(load_path) || length(load_path) > 1)
+    stop ("Please provide a string for the argument 'load_path'")
+
+  scenario_list <- vector(mode = "list", length = length(scenario_numbers))
+
+  for (s in seq_along(scenario_numbers)) {
+
+    paste0("scenario_data_", scenario_numbers[s], ".rds")
+
+    scenario_list[[s]] <- readRDS(
+      file.path(load_path, paste0("scenario_data_", scenario_numbers[s], ".rds")))
+
+    names(scenario_list) <- paste0("scenario_", scenario_numbers)
+
   }
 
-  # --- 3. Hierarchical tau ---
-  for (k in 1:K) {
-    tau[k] ~ dnorm(mu_tau, prec_tau_shrink)
+  class(scenario_list) <- "scenario_list"
+
+  return (scenario_list)
+
+}
+
+#' @export
+print.scenario_list <- function(x, ...) {
+  
+  n_scenarios    <- length(x)
+  scenario_names <- names(x)
+  
+  n_cohorts      <- length(x[[1]]$response_rates)
+  cohort_names   <- paste0("c_", seq_len(n_cohorts))
+  
+  response_rates <- lapply(x, function (x) x$response_rates)
+  n_subjects     <- getAverageNSubjects(x)
+  
+  n_trial_realizations  <- x[[1]]$n_trials
+  n_unique_realizations <- nrow(getUniqueTrials(x))
+  
+  cat("scenario_list of ", n_scenarios, " scenario", ifelse(n_scenarios == 1, "", "s"),
+      " with ", n_cohorts, " cohort", ifelse(n_cohorts == 1, "", "s"),"\n\n", sep = "")
+  for (n in seq_along(scenario_names)) {
+    
+    df_out <- t(data.frame(c(response_rates[[n]]),
+                             n_subjects[[n]]))
+    rownames(df_out) <- c("    - true response rates:",
+                          "    - average number of subjects:")
+    colnames(df_out) <- cohort_names
+    
+    cat("  -", scenario_names[n], "\n")
+    print(df_out)
+    
+    cat("\n")
+    
   }
-
-  # --- 4. Priors ---
-  mu_tau ~ dnorm(0, 0.0001)
-
-  prec_tau_shrink ~ dgamma(0.5, 0.05)
-  sigma2_tau <- 1 / prec_tau_shrink
-
-  prec_sigma ~ dgamma(0.5, 0.05)
-  sigma2 <- 1 / prec_sigma
-}
-"
-
-mod_file <- tempfile(fileext = ".bug")
-writeLines(jags_model_string, mod_file)
-
-## 2) Tiny synthetic dataset ---------------------------------------------
-
-set.seed(123)
-
-K        <- 3
-num_cov  <- 1L         # intercept-only
-sd_true  <- 1
-tau_true <- c(0.0, 0.5, 1.0)      # true treatment effects
-mu_c     <- rep(0, K)            # true control means
-
-nck <- c(20, 20, 20)   # control per basket
-ntk <- c(20, 20, 20)   # treatment per basket
-
-# allocate arrays
-max_nck <- max(nck)
-max_ntk <- max(ntk)
-
-yck <- matrix(NA_real_, nrow = K, ncol = max_nck)
-ytk <- matrix(NA_real_, nrow = K, ncol = max_ntk)
-
-Xck <- array(0, dim = c(K, max_nck, num_cov))
-Xtk <- array(0, dim = c(K, max_ntk, num_cov))
-
-for (k in seq_len(K)) {
-  # control data
-  yck[k, 1:nck[k]] <- rnorm(nck[k], mean = mu_c[k], sd = sd_true)
-  Xck[k, 1:nck[k], ] <- 1  # intercept
-
-  # treatment data
-  ytk[k, 1:ntk[k]] <- rnorm(ntk[k], mean = mu_c[k] + tau_true[k], sd = sd_true)
-  Xtk[k, 1:ntk[k], ] <- 1  # intercept
+  
+  cat("  -", n_trial_realizations, "trial realizations per scenario\n")
+  cat("  -", n_unique_realizations, "unique trial realizations overall\n")
+  
 }
 
-## 3) Priors for beta and hyperparameters --------------------------------
-
-mu_beta_vec   <- rep(0, num_cov)
-# simple diagonal precision for beta: N(0, 10^2) -> precision = 1/10^2
-prec_beta_mat <- array(0, dim = c(K, num_cov, num_cov))
-for (k in seq_len(K)) {
-  prec_beta_mat[k, , ] <- diag(1 / 10^2, nrow = num_cov)
+#' @title saveScenarios
+#' @md
+#' @description Saves the scenario data in a newly created or existing directory
+#' @param scenario_list An object of class `scenario_list`, e.g. created with `simulateScenarios()`
+#' @param save_path A string providing the path for the directory in which the directory of the
+#' scenario should be created, Default: \code{\link[base]{tempfile}}
+#' @return A named list of length 2 with the scenario numbers and the `save_path`
+#' @author Stephan Wojciekowski
+#' @seealso
+#'  \code{\link[bhmbasket]{simulateScenarios}}
+#'  \code{\link[bhmbasket]{loadScenarios}}
+#'  \code{\link[base]{tempfile}}
+#' @examples
+#'   scenarios_list <- simulateScenarios(
+#'     n_subjects_list     = list(c(10, 20, 30)),
+#'     response_rates_list = list(rep(0.9, 3)),
+#'     n_trials            = 10)
+#'
+#'   save_info      <- saveScenarios(scenarios_list)
+#'   scenarios_list <- loadScenarios(scenario_numbers = save_info$scenario_numbers,
+#'                                   load_path        = save_info$path)
+#' @rdname saveScenarios
+#' @export
+saveScenarios <- function (
+  
+  scenario_list,
+  save_path = tempdir()
+  
+) {
+  
+  if (missing(scenario_list))
+    stop ("Please provide an object of class scenario_list for the argument 'scenario_list'")
+  
+  if (!is.scenario_list(scenario_list))
+    stop ("Please provide an object of class scenario_list for the argument 'scenario_list'")
+  if (!is.character(save_path) || length(save_path) > 1)
+    stop ("Please provide a string for the argument 'save_path'")
+  
+  if (!dir.exists(save_path)) {
+    dir.create(save_path)
+  }
+  
+  scenario_numbers <- sapply(scenario_list, function (x) x$scenario_number)
+  
+  for (s in seq_along(scenario_list)) {
+    
+    saveRDS(scenario_list[[s]],
+            file = paste0(save_path, "/scenario_data_", scenario_numbers[s], ".rds"))
+    
+  }
+  
+  return (list(scenario_numbers = scenario_numbers, path = save_path))
+  
 }
-
-j_data <- list(
-  K          = K,
-  num_cov    = num_cov,
-  nck        = nck,
-  ntk        = ntk,
-  yck        = yck,
-  ytk        = ytk,
-  Xck        = Xck,
-  Xtk        = Xtk,
-  mu_beta_vec   = mu_beta_vec,
-  prec_beta_mat = prec_beta_mat
-)
-
-## 4) Run JAGS via performJags -------------------------------------------
-
-post <- performJags(
-  data               = j_data,
-  parameters_to_save = c("tau", "mu_tau", "prec_sigma", "prec_tau_shrink"),
-  model_file         = mod_file,
-  n_chains           = 2,
-  n_iter             = 5000,
-  n_burnin           = 2000
-)
-
-## 5) Check recovery of tau ----------------------------------------------
-
-tau_cols <- grepl("^tau\\[", colnames(post))
-tau_post <- post[, tau_cols, drop = FALSE]
-
-tau_est <- colMeans(tau_post)
-tau_ci  <- apply(tau_post, 2, quantile, c(0.025, 0.975))
-
-tau_true
-tau_est
-tau_ci
