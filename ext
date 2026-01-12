@@ -1,50 +1,23 @@
-set.seed(123)
-K       <- 3
-num_cov <- 3   # 1 (Intercept) + 1 (Continuous) + 1 (Binary)
-sd_true <- 1
-tau_true <- c(0.0, 0.5, 1.0) 
+> mu_beta_vec
+[1] 0 0 0
+> prec_beta_mat
+, , 1
 
-# Define true coefficients for each basket (Intercept, Cont_Cov, Bin_Cov)
-# Matches theory: coefficients differ among baskets [2, 5]
-beta_true <- matrix(c(
-  0.0, 0.2, 0.4,  # Basket 1
-  0.0, 0.4, 0.3,  # Basket 2
-  0.0, 0.6, 0.2   # Basket 3
-), nrow = K, byrow = TRUE)
+     [,1] [,2] [,3]
+[1,] 0.01    0    0
+[2,] 0.01    0    0
+[3,] 0.01    0    0
 
-nck <- rep(20, K)
-ntk <- rep(20, K)
+, , 2
 
-yck <- matrix(NA_real_, nrow = K, ncol = max(nck))
-ytk <- matrix(NA_real_, nrow = K, ncol = max(ntk))
-Xck <- array(0, dim = c(K, max(nck), num_cov))
-Xtk <- array(0, dim = c(K, max(ntk), num_cov))
+     [,1] [,2] [,3]
+[1,]    0 0.01    0
+[2,]    0 0.01    0
+[3,]    0 0.01    0
 
-for (k in seq_len(K)) {
-  # 1. Generate Covariates for Control Arm [5]
-  Xck[k, 1:nck[k], 1] <- 1                             # Intercept
-  Xck[k, 1:nck[k], 2] <- rlnorm(nck[k], 0, 0.92)       # Continuous (e.g., Age)
-  Xck[k, 1:nck[k], 3] <- rbinom(nck[k], 1, 0.4)        # Binary (e.g., Gender)
+, , 3
 
-  # 2. Generate Covariates for Treatment Arm [5]
-  Xtk[k, 1:ntk[k], 1] <- 1                             # Intercept
-  Xtk[k, 1:ntk[k], 2] <- rnorm(ntk[k], 1.5, 2.8)       # Continuous
-  Xtk[k, 1:ntk[k], 3] <- rbinom(ntk[k], 1, 0.6)        # Binary
-
-  # 3. Generate Outcomes based on Equation 2.1 [6]
-  # mu = X %*% beta
-  mu_c_val <- Xck[k, 1:nck[k], ] %*% beta_true[k, ]
-  yck[k, 1:nck[k]] <- rnorm(nck[k], mean = mu_c_val, sd = sd_true)
-
-  # mu = X %*% beta + tau
-  mu_t_val <- (Xtk[k, 1:ntk[k], ] %*% beta_true[k, ]) + tau_true[k]
-  ytk[k, 1:ntk[k]] <- rnorm(ntk[k], mean = mu_t_val, sd = sd_true)
-}
-
-# Update JAGS priors to match the new dimension (num_cov = 3) [7, 8]
-mu_beta_vec   <- rep(0, num_cov)
-prec_beta_mat <- array(0, dim = c(K, num_cov, num_cov))
-for (k in seq_len(K)) {
-  # Setting non-informative prior: diagonal matrix 1/10000 [7, 8]
-  prec_beta_mat[k, , ] <- diag(1 / 10000, nrow = num_cov)
-}
+     [,1] [,2] [,3]
+[1,]    0    0 0.01
+[2,]    0    0 0.01
+[3,]    0    0 0.01
