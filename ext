@@ -1,34 +1,86 @@
-> tau_ci
-         tau[1]    tau[2]    tau[3]
-2.5%  -0.589231 0.1338646 0.2382637
-97.5%  1.072399 1.1902652 1.4182618
+library(R2jags)
 
+multi_treat_model <- "
+model {
+  # Likelihood
+  for (k in 1:K) {          # baskets
+    for (a in 1:A) {        # treatments
+      for (i in 1:n[k,a]) { # patients in basket k, treatment a
+        y[k,a,i] ~ dnorm(mu[k,a], prec_sigma)
+      }
+      # basket-specific mean for treatment a
+      mu[k,a] ~ dnorm(mu_pop[a], prec_tau[a])
+    }
+  }
 
-nck <- rep(20, K)
-ntk <- c(5,20,20)
+  # Hierarchy across baskets for each treatment
+  for (a in 1:A) {
+    mu_pop[a]   ~ dnorm(0, 0.0001)      # population mean for treatment a
+    prec_tau[a] ~ dgamma(0.5, 0.05)     # between-basket precision
+    # sigma2_tau[a] <- 1 / prec_tau[a]  # optional
+  }
 
-> Xtk
-, , 1
+  # Residual variance
+  prec_sigma ~ dgamma(0.5, 0.05)
+  # sigma2 <- 1 / prec_sigma           # optional
+}
+"
 
-     [,1] [,2] [,3] [,4] [,5] [,6] [,7] [,8] [,9] [,10] [,11] [,12] [,13] [,14] [,15] [,16] [,17] [,18] [,19] [,20]
-[1,]    1    1    1    1    1    0    0    0    0     0     0     0     0     0     0     0     0     0     0     0
-[2,]    1    1    1    1    1    1    1    1    1     1     1     1     1     1     1     1     1     1     1     1
-[3,]    1    1    1    1    1    1    1    1    1     1     1     1     1     1     1     1     1     1     1     1
+set.seed(123)
 
-, , 2
+K <- 3         # baskets
+A <- 3         # treatments
+sigma_true <- 1
 
-          [,1]      [,2]     [,3]      [,4]      [,5]      [,6]     [,7]       [,8]      [,9]    [,10]       [,11]    [,12]     [,13]
-[1,]  4.895663  3.116110 7.885200 -1.311508 1.7966551 0.0000000 0.000000  0.0000000 0.0000000 0.000000  0.00000000 0.000000  0.000000
-[2,]  1.420494 -4.797343 1.588273  2.075571 1.0650330 3.0912081 4.329898  0.0496492 0.6765331 2.613958 -0.04062648 1.755549 -3.992781
-[3,] -3.237884  2.532478 4.210006  5.074420 0.8701084 0.5987008 5.665946 -3.1701985 0.2768761 2.780894 -3.02976654 2.282958  6.758019
-         [,14]      [,15]      [,16]      [,17]    [,18]    [,19]      [,20]
-[1,]  0.000000  0.0000000  0.0000000  0.0000000 0.000000 0.000000  0.0000000
-[2,] -1.635719 -2.2177153 -0.8901464 -0.4412527 2.570454 4.249916 -0.5366739
-[3,]  1.488630  0.7203287  2.8297528  0.7185979 3.777521 4.032419  1.5075367
+# True basket × treatment means (mu_true[k, a])
+mu_true <- matrix(
+  c( 0.0,  0.5,  1.0,   # basket 1
+     0.2,  0.7,  1.2,   # basket 2
+     0.1,  0.6,  1.1),  # basket 3
+  nrow = K, byrow = TRUE
+)
 
-, , 3
+# Sample sizes per basket × treatment
+n <- matrix(
+  c(20, 20, 20,
+    20, 20, 20,
+    20, 20, 20),
+  nrow = K, byrow = TRUE
+)
 
-     [,1] [,2] [,3] [,4] [,5] [,6] [,7] [,8] [,9] [,10] [,11] [,12] [,13] [,14] [,15] [,16] [,17] [,18] [,19] [,20]
-[1,]    0    1    1    1    0    0    0    0    0     0     0     0     0     0     0     0     0     0     0     0
-[2,]    1    1    1    1    1    1    1    0    0     0     1     0     1     0     1     1     0     1     0     1
-[3,]    1    0    1    0    1    1    0    1    1     0     1     1     1     1     0     1     1     1     0     0
+max_n <- max(n)
+
+# allocate y[k,a,i]
+y <- array(NA_real_, dim = c(K, A, max_n))
+
+for (k in 1:K) {
+  for (a in 1:A) {
+    y[k, a, 1:n[k,a]] <- rnorm(n[k,a], mean = mu_true[k,a], sd = sigma_true)
+  }
+}
+
+j_data <- list(
+  K = K,
+  A = A,
+  n = n,
+  y = y
+)
+
+params <- c("mu", "mu_pop", "prec_sigma", "prec_tau")
+
+jags_fit <- jags(
+  data      = j_data,
+  parameters= params,
+  model.file = textConnection(multi_treat_model),
+  n.chains  = 2,
+  n.iter    = 4000,
+  n.burnin  = 2000
+)
+
+print(jags_fit, digits = 3)
+
+post <- jags_fit$BUGSoutput$summary
+post_mu <- post[grep("^mu\\[", rownames(post)), c("mean","2.5%","97.5%")]
+post_mu
+mu_true
+
