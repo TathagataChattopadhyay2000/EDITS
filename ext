@@ -1,121 +1,172 @@
-model {
-
-  for (k in 1:K) {
-    for (i in 1:n[k]) {
-      y[k,i] ~ dnorm(mu[k], prec_sigma)
-    }
-    mu[k] ~ dnorm(mu_pop, prec_tau)
+performAnalysesNormal <- function(
+  scenario_list,
+  quantiles               = c(0.025, 0.05, 0.5, 0.95, 0.975),
+  calc_differences        = NULL,
+  n_mcmc_iterations       = 1e4,
+  prior_parameters_normal = NULL,
+  verbose                 = TRUE
+) {
+  if (!is.scenario_list_normal(scenario_list)) {
+    stop("Please provide an object of class 'scenario_list_normal' for 'scenario_list'.")
+  }
+  if (!is.numeric(quantiles) || any(quantiles <= 0) || any(quantiles >= 1)) {
+    stop("Please provide a numeric vector of quantiles in (0, 1) for 'quantiles'.")
+  }
+  if (!is.null(calc_differences)) {
+    calc_differences <- convertVector2Matrix(calc_differences)
+  }
+  if (!is.single.positive.wholenumber(n_mcmc_iterations)) {
+    stop("Please provide a positive integer for 'n_mcmc_iterations'.")
+  }
+  if (!is.logical(verbose) || length(verbose) != 1L) {
+    stop("Please provide a single logical for 'verbose'.")
   }
 
-  mu_pop     ~ dnorm(mu_pop_mean, prec_mu_pop)
-  prec_tau   ~ dgamma(tau_shape,   tau_rate)
-  prec_sigma ~ dgamma(sigma_shape, sigma_rate)
-}
+  ## ----- PRIOR HANDLING + PREPARE ANALYSIS  --------------------------
+  ## This is where your snippet belongs (with 'prep', not 'rep')
 
+  if (is.null(prior_parameters_normal)) {
+    prior_parameters_normal <- getPriorParametersNormal()
+  }
 
-# Simple default prior factory for the normal model
-getPriorParametersNormal <- function(
-  mu_pop_mean = 0,
-  mu_pop_sd   = 100,   # very vague: prec_mu_pop = 1 / 100^2 = 1e-4
-  tau_shape   = 0.5,
-  tau_rate    = 0.05,
-  sigma_shape = 0.5,
-  sigma_rate  = 0.05
-) {
-  if (!is.single.numeric(mu_pop_mean))
-    stop("mu_pop_mean must be a single numeric.")
-  if (!is.single.positive.numeric(mu_pop_sd))
-    stop("mu_pop_sd must be a single positive numeric.")
-  if (!is.single.positive.numeric(tau_shape))
-    stop("tau_shape must be a single positive numeric.")
-  if (!is.single.positive.numeric(tau_rate))
-    stop("tau_rate must be a single positive numeric.")
-  if (!is.single.positive.numeric(sigma_shape))
-    stop("sigma_shape must be a single positive numeric.")
-  if (!is.single.positive.numeric(sigma_rate))
-    stop("sigma_rate must be a single positive numeric.")
+  prep <- prepareAnalysisNormal(prior_parameters = prior_parameters_normal)
+  j_parameters <- prep$j_parameters
+  j_model_file <- prep$j_model_file
+  j_data_fixed <- prep$j_data   # trial-independent hyperparameters
 
-  prior_parameters <- list(
-    mu_pop_mean = mu_pop_mean,
-    mu_pop_sd   = mu_pop_sd,
-    tau_shape   = tau_shape,
-    tau_rate    = tau_rate,
-    sigma_shape = sigma_shape,
-    sigma_rate  = sigma_rate
+  ## ----- BASIC INFO FROM SCENARIOS -----------------------------------
+
+  scenario_numbers <- sapply(scenario_list, function(x) x$scenario_number)
+
+  # extract all n_subjects across scenarios to build unique-trial structure
+  all_scenarios_n_subjects <- do.call(
+    rbind,
+    lapply(scenario_list, function(x) x$n_subjects)
   )
 
-  class(prior_parameters) <- "prior_parameters_normal"
-  prior_parameters
-}
+  # go flags across scenarios: we use previous_analyses$go_decisions if present,
+  # otherwise treat all as Go (TRUE)
+  all_scenarios_overall_gos <- do.call(
+    rbind,
+    lapply(scenario_list, function(x) {
+      if (!is.null(x$previous_analyses$post_quantiles)) {
+        x$previous_analyses$go_decisions
+      } else {
+        matrix(TRUE, nrow = nrow(x$n_subjects), ncol = 1)
+      }
+    })
+  )[, 1]
 
-# Manual override version – same arguments, no defaults
-setPriorParametersNormal <- function(
-  mu_pop_mean,
-  mu_pop_sd,
-  tau_shape,
-  tau_rate,
-  sigma_shape,
-  sigma_rate
-) {
-  if (missing(mu_pop_mean)) stop("Please provide 'mu_pop_mean'.")
-  if (missing(mu_pop_sd))   stop("Please provide 'mu_pop_sd'.")
-  if (missing(tau_shape))   stop("Please provide 'tau_shape'.")
-  if (missing(tau_rate))    stop("Please provide 'tau_rate'.")
-  if (missing(sigma_shape)) stop("Please provide 'sigma_shape'.")
-  if (missing(sigma_rate))  stop("Please provide 'sigma_rate'.")
-
-  getPriorParametersNormal(
-    mu_pop_mean = mu_pop_mean,
-    mu_pop_sd   = mu_pop_sd,
-    tau_shape   = tau_shape,
-    tau_rate    = tau_rate,
-    sigma_shape = sigma_shape,
-    sigma_rate  = sigma_rate
+  # unique rows: same n-subjects pattern + go flag
+  trials_unique <- getUniqueTrialsNormal(
+    n_subjects_matrix = all_scenarios_n_subjects,
+    go_flag           = all_scenarios_overall_gos
   )
-}
 
+  n_cohorts <- ncol(trials_unique) - 1L
 
-prepareAnalysisNormal <- function(prior_parameters = NULL) {
+  ## ----- CHECK WHETHER PREVIOUS ANALYSES ARE REUSABLE ----------------
 
-  if (is.null(prior_parameters)) {
-    prior_parameters <- getPriorParametersNormal()
+  applicable_previous_trials <- applicablePreviousTrialsNormal(
+    scenario_list    = scenario_list,
+    quantiles        = sort(quantiles),
+    n_cohorts        = n_cohorts,
+    calc_differences = calc_differences
+  )
+
+  if (applicable_previous_trials) {
+    calc_trial_indices <- trials_unique[, ncol(trials_unique)] > 0
   } else {
-    if (!inherits(prior_parameters, "prior_parameters_normal")) {
-      stop("prior_parameters must have class 'prior_parameters_normal'")
-    }
+    calc_trial_indices <- rep(TRUE, nrow(trials_unique))
   }
 
-  j_data <- list(
-    mu_pop_mean = prior_parameters$mu_pop_mean,
-    prec_mu_pop = 1 / prior_parameters$mu_pop_sd^2,
-    tau_shape   = prior_parameters$tau_shape,
-    tau_rate    = prior_parameters$tau_rate,
-    sigma_shape = prior_parameters$sigma_shape,
-    sigma_rate  = prior_parameters$sigma_rate
+  trials_unique_calc <- trials_unique[calc_trial_indices, , drop = FALSE]
+  n_subjects_unique  <- trials_unique_calc[, seq_len(n_cohorts), drop = FALSE]
+
+  ## ----- MESSAGE TO USER ---------------------------------------------
+
+  if (verbose) {
+    message(
+      format(Sys.time(), "%d-%b-%Y"),
+      " Performing Analyses (normal endpoint)"
+    )
+    message(
+      "   Analyzing ",
+      length(scenario_numbers), " scenario",
+      ifelse(length(scenario_numbers) == 1, "", "s"),
+      " (", nrow(n_subjects_unique), " unique trial realization",
+      ifelse(nrow(n_subjects_unique) == 1, "", "s"), ")"
+    )
+  }
+
+  ## ----- RUN JAGS FOR EACH UNIQUE TRIAL REALIZATION ------------------
+  ## Here we call getPostQuantilesNormal with the *fixed* prior j_data
+  ## and let that function loop over all scenarios/trials.
+
+  if (verbose) {
+    start_time <- Sys.time()
+    message("   Running bhm_normal model ...")
+  }
+
+  method_quantiles_list <- getPostQuantilesNormal(
+    quantiles         = sort(unique(quantiles)),
+    scenario_list     = scenario_list,
+    n_subjects_unique = n_subjects_unique,
+    calc_differences  = calc_differences,
+    j_parameters      = j_parameters,
+    j_model_file      = j_model_file,
+    j_data_fixed      = j_data_fixed,
+    n_mcmc_iterations = n_mcmc_iterations
   )
 
-  j_model_file <- system.file(
-    package   = "bhmbasket",
-    "jags_models",
-    "bhm_normal.txt",
-    mustWork  = TRUE
+  if (verbose) {
+    message(
+      "       finished after ",
+      round(Sys.time() - start_time, 1), " ",
+      units(Sys.time() - start_time), "."
+    )
+  }
+
+  ## ----- MAP RESULTS BACK TO SCENARIOS -------------------------------
+
+  if (verbose) {
+    start_time <- Sys.time()
+    message("   Processing scenarios ...")
+  }
+
+  scenario_method_quantiles_list <- mapUniqueTrialsNormal(
+    scenario_list              = scenario_list,
+    method_quantiles_list      = method_quantiles_list,
+    trials_unique_calc         = trials_unique_calc,
+    applicable_previous_trials = applicable_previous_trials
   )
 
-  j_parameters <- c("mu", "mu_pop", "prec_tau", "prec_sigma")
+  if (verbose) {
+    message(
+      "       finished after ",
+      round(Sys.time() - start_time, 1), " ",
+      units(Sys.time() - start_time), "."
+    )
+  }
 
-  list(
-    j_parameters = j_parameters,
-    j_model_file = j_model_file,
-    j_data       = j_data
-  )
+  ## ----- BUILD OUTPUT OBJECT -----------------------------------------
+
+  analyses_list        <- vector("list", length(scenario_numbers))
+  names(analyses_list) <- paste0("scenario_", scenario_numbers)
+
+  for (s in seq_along(scenario_numbers)) {
+    analyses_list[[s]] <- list(
+      quantiles_list      = list(normal = scenario_method_quantiles_list[[s]]),
+      scenario_data       = scenario_list[[s]],
+      analysis_parameters = list(
+        quantiles               = sort(unique(quantiles)),
+        method_names            = "normal",
+        prior_parameters_normal = prior_parameters_normal,
+        n_mcmc_iterations       = n_mcmc_iterations
+      )
+    )
+  }
+
+  class(analyses_list) <- "analysis_list_normal"
+  analyses_list
 }
-
-
-prep <- prepareAnalysisNormal(prior_parameters = prior_parameters_normal)
-posterior_samples <- getPosteriorsNormal(
-  j_parameters = prep$j_parameters,
-  j_model_file = prep$j_model_file,
-  j_data       = prep$j_data,
-  n_mcmc_iterations = n_mcmc_iterations
-)
-
