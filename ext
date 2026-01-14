@@ -1,51 +1,57 @@
 performAnalysesNormal <- function(
   scenario_list,
-  quantiles               = c(0.025, 0.05, 0.5, 0.95, 0.975),
-  calc_differences        = NULL,
-  n_mcmc_iterations       = 1e4,
-  prior_parameters_normal = NULL,
-  verbose                 = TRUE
+  evidence_levels        = c(0.025, 0.05, 0.5, 0.8, 0.9, 0.95, 0.975),
+  calc_differences       = NULL,
+  n_mcmc_iterations      = 1e4,
+  prior_parameters_normal= NULL,
+  verbose                = TRUE
 ) {
-  if (!is.scenario_list_normal(scenario_list)) {
-    stop("Please provide an object of class 'scenario_list_normal' for 'scenario_list'.")
-  }
-  if (!is.numeric(quantiles) || any(quantiles <= 0) || any(quantiles >= 1)) {
-    stop("Please provide a numeric vector of quantiles in (0, 1) for 'quantiles'.")
-  }
+  error_scenario_list <- simpleError(
+    "Please provide an object of class 'scenario_list_normal' for 'scenario_list'")
+  error_evidence_levels <- simpleError(
+    "Please provide a vector of numerics in (0, 1) for the argument 'evidence_levels'")
+  error_n_mcmc_iterations <- simpleError(
+    "Please provide a positive integer for the argument 'n_mcmc_iterations'")
+  error_verbose <- simpleError(
+    "Please provide a logical for the argument 'verbose'")
+
+  if (missing(scenario_list)) stop(error_scenario_list)
+  if (!is.scenario_list_normal(scenario_list)) stop(error_scenario_list)
+
+  if (!is.numeric.in.zero.one(evidence_levels)) stop(error_evidence_levels)
+  if (!is.single.positive.wholenumber(n_mcmc_iterations)) stop(error_n_mcmc_iterations)
+  if (!is.logical(verbose) || length(verbose) != 1L) stop(error_verbose)
+
   if (!is.null(calc_differences)) {
     calc_differences <- convertVector2Matrix(calc_differences)
   }
-  if (!is.single.positive.wholenumber(n_mcmc_iterations)) {
-    stop("Please provide a positive integer for 'n_mcmc_iterations'.")
-  }
-  if (!is.logical(verbose) || length(verbose) != 1L) {
-    stop("Please provide a single logical for 'verbose'.")
-  }
 
-  ## ----- PRIOR HANDLING + PREPARE ANALYSIS  --------------------------
-  ## This is where your snippet belongs (with 'prep', not 'rep')
+  ## build quantiles in the same style as binary performAnalyses
+  quantiles <- sort(unique(round(
+    1 - c(0.025, 0.05, 0.5, 0.8, 0.9, 0.95, 0.975, evidence_levels),
+    9
+  )))
 
+  ## prior + JAGS model prep
   if (is.null(prior_parameters_normal)) {
     prior_parameters_normal <- getPriorParametersNormal()
   }
 
-  prep <- prepareAnalysisNormal(prior_parameters = prior_parameters_normal)
+  prep         <- prepareAnalysisNormal(prior_parameters = prior_parameters_normal)
   j_parameters <- prep$j_parameters
   j_model_file <- prep$j_model_file
-  j_data_fixed <- prep$j_data   # trial-independent hyperparameters
+  j_data_fixed <- prep$j_data
 
-  ## ----- BASIC INFO FROM SCENARIOS -----------------------------------
-
+  ## get scenario numbers
   scenario_numbers <- sapply(scenario_list, function(x) x$scenario_number)
 
-  # extract all n_subjects across scenarios to build unique-trial structure
+  ## collect n_subjects across scenarios
   all_scenarios_n_subjects <- do.call(
     rbind,
     lapply(scenario_list, function(x) x$n_subjects)
   )
 
-  # go flags across scenarios: we use previous_analyses$go_decisions if present,
-  # otherwise treat all as Go (TRUE)
+  ## overall go flags from previous analyses, or TRUE if no previous analyses
   all_scenarios_overall_gos <- do.call(
     rbind,
     lapply(scenario_list, function(x) {
@@ -57,7 +63,7 @@ performAnalysesNormal <- function(
     })
   )[, 1]
 
-  # unique rows: same n-subjects pattern + go flag
+  ## unique trials (n_subjects + go flag)
   trials_unique <- getUniqueTrialsNormal(
     n_subjects_matrix = all_scenarios_n_subjects,
     go_flag           = all_scenarios_overall_gos
@@ -65,11 +71,10 @@ performAnalysesNormal <- function(
 
   n_cohorts <- ncol(trials_unique) - 1L
 
-  ## ----- CHECK WHETHER PREVIOUS ANALYSES ARE REUSABLE ----------------
-
+  ## can we reuse previous analyses?
   applicable_previous_trials <- applicablePreviousTrialsNormal(
     scenario_list    = scenario_list,
-    quantiles        = sort(quantiles),
+    quantiles        = quantiles,
     n_cohorts        = n_cohorts,
     calc_differences = calc_differences
   )
@@ -82,8 +87,6 @@ performAnalysesNormal <- function(
 
   trials_unique_calc <- trials_unique[calc_trial_indices, , drop = FALSE]
   n_subjects_unique  <- trials_unique_calc[, seq_len(n_cohorts), drop = FALSE]
-
-  ## ----- MESSAGE TO USER ---------------------------------------------
 
   if (verbose) {
     message(
@@ -99,17 +102,14 @@ performAnalysesNormal <- function(
     )
   }
 
-  ## ----- RUN JAGS FOR EACH UNIQUE TRIAL REALIZATION ------------------
-  ## Here we call getPostQuantilesNormal with the *fixed* prior j_data
-  ## and let that function loop over all scenarios/trials.
-
+  ## run JAGS for each unique trial via helper
   if (verbose) {
     start_time <- Sys.time()
     message("   Running bhm_normal model ...")
   }
 
   method_quantiles_list <- getPostQuantilesNormal(
-    quantiles         = sort(unique(quantiles)),
+    quantiles         = quantiles,
     scenario_list     = scenario_list,
     n_subjects_unique = n_subjects_unique,
     calc_differences  = calc_differences,
@@ -127,8 +127,7 @@ performAnalysesNormal <- function(
     )
   }
 
-  ## ----- MAP RESULTS BACK TO SCENARIOS -------------------------------
-
+  ## map back to scenarios
   if (verbose) {
     start_time <- Sys.time()
     message("   Processing scenarios ...")
@@ -149,8 +148,7 @@ performAnalysesNormal <- function(
     )
   }
 
-  ## ----- BUILD OUTPUT OBJECT -----------------------------------------
-
+  ## build output
   analyses_list        <- vector("list", length(scenario_numbers))
   names(analyses_list) <- paste0("scenario_", scenario_numbers)
 
@@ -159,7 +157,8 @@ performAnalysesNormal <- function(
       quantiles_list      = list(normal = scenario_method_quantiles_list[[s]]),
       scenario_data       = scenario_list[[s]],
       analysis_parameters = list(
-        quantiles               = sort(unique(quantiles)),
+        quantiles               = quantiles,
+        evidence_levels         = evidence_levels,
         method_names            = "normal",
         prior_parameters_normal = prior_parameters_normal,
         n_mcmc_iterations       = n_mcmc_iterations
