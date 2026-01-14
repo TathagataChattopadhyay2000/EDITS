@@ -1,8 +1,234 @@
+## ======================================================================
+## One-treatment normal endpoint helper functions
+## Compatible with JAGS model:
+## 
+## model {
+##   for (k in 1:K) {
+##     for (i in 1:n[k]) {
+##       y[k,i] ~ dnorm(mu[k], prec_sigma)
+##     }
+##     mu[k] ~ dnorm(mu_pop, prec_tau)
+##   }
+##
+##   mu_pop   ~ dnorm(0, 0.0001)
+##   prec_tau ~ dgamma(0.5, 0.05)
+##   prec_sigma ~ dgamma(0.5, 0.05)
+## }
+## ======================================================================
 
+# ----------------------------------------------------------------------
+# is.scenario_list_normal
+# ----------------------------------------------------------------------
+is.scenario_list_normal <- function (x) {
+  if (missing(x)) stop("Please provide an object for the argument 'x'")
+  inherits(x, "scenario_list_normal")
+}
+
+# ----------------------------------------------------------------------
+# getScenarioNormal: single-treatment, normal endpoint
+# ----------------------------------------------------------------------
+getScenarioNormal <- function(
+  n_subjects,
+  true_means,
+  cohort_names = seq_along(n_subjects),
+  sd,
+  n_trials = 1e4
+) {
+  if (missing(n_subjects))
+    stop("Please provide 'n_subjects' (vector of positive integers).")
+  if (missing(true_means))
+    stop("Please provide 'true_means' (numeric vector).")
+  if (missing(sd))
+    stop("Please provide a single positive numeric for 'sd'.")
+
+  if (length(n_subjects) != length(true_means))
+    stop("n_subjects and true_means must have same length.")
+
+  if (any(!is.positive.wholenumber(n_subjects)))
+    stop("All entries in 'n_subjects' must be positive integers.")
+  if (!is.single.numeric(sd) || sd <= 0)
+    stop("sd must be a single positive numeric.")
+  if (!is.single.positive.wholenumber(n_trials))
+    stop("n_trials must be a single positive integer.")
+
+  K <- length(n_subjects)
+  trials <- vector("list", n_trials)
+
+  for (t in seq_len(n_trials)) {
+
+    y_list <- vector("list", K)
+
+    for (k in seq_len(K)) {
+      if (n_subjects[k] > 0) {
+        y_list[[k]] <- stats::rnorm(n_subjects[k], mean = true_means[k], sd = sd)
+      } else {
+        y_list[[k]] <- numeric(0L)
+      }
+    }
+
+    trials[[t]] <- list(
+      y = y_list,
+      n = n_subjects
+    )
+  }
+
+  n_subjects_mat <- matrix(
+    n_subjects,
+    nrow = n_trials,
+    ncol = K,
+    byrow = TRUE
+  )
+  colnames(n_subjects_mat) <- paste0("n_", cohort_names)
+
+  previous_gos <- matrix(
+    TRUE,
+    nrow = n_trials,
+    ncol = K + 1L,
+    byrow = TRUE
+  )
+  colnames(previous_gos) <- c("overall", paste0("decision_", cohort_names))
+
+  scenario_data <- list(
+    n_subjects        = n_subjects_mat,
+    true_means        = true_means,
+    sd                = sd,
+    trials            = trials,
+    previous_analyses = list(
+      go_decisions   = previous_gos,
+      post_quantiles = NULL
+    ),
+    n_trials          = n_trials,
+    endpoint          = "normal_one_treat"
+  )
+
+  return(scenario_data)
+}
+
+# ----------------------------------------------------------------------
+# simulateScenariosNormal: list of normal_one_treat scenarios
+# ----------------------------------------------------------------------
+simulateScenariosNormal <- function(
+  n_subjects_list,
+  mean_list,
+  sd,
+  scenario_numbers = seq_along(mean_list),
+  n_trials         = 1e4
+) {
+  error_n_subjects_list  <- simpleError(
+    "Please provide a list of vectors of positive integers for 'n_subjects_list'")
+  error_mean_list <- simpleError(
+    "Please provide a list of numeric vectors for 'mean_list'")
+  error_sd <- simpleError(
+    "Please provide a single positive numeric value for 'sd'")
+  error_n_trials <- simpleError(
+    "Please provide a positive integer for 'n_trials'")
+  error_scenario_numbers <- simpleError(
+    "Please provide a vector of positive integers for 'scenario_numbers'")
+
+  if (missing(n_subjects_list)) stop(error_n_subjects_list)
+  if (missing(mean_list))       stop(error_mean_list)
+  if (missing(sd))              stop(error_sd)
+
+  if (!is.list(n_subjects_list) ||
+      any(!sapply(n_subjects_list, is.positive.wholenumber)))
+    stop(error_n_subjects_list)
+
+  if (!is.list(mean_list) ||
+      any(!sapply(mean_list, is.numeric)))
+    stop(error_mean_list)
+
+  if (!identical(length(n_subjects_list), length(mean_list)))
+    stop(simpleError(
+      "'n_subjects_list' and 'mean_list' must have same length"
+    ))
+
+  if (any(!sapply(seq_along(n_subjects_list), function(s) {
+    length(n_subjects_list[[s]]) == length(mean_list[[s]])
+  })))
+    stop(simpleError(
+      "Within each scenario, vectors in n_subjects_list and mean_list must all have the same length"
+    ))
+
+  if (!is.single.numeric(sd) || sd <= 0) stop(error_sd)
+
+  if ("n_trials" %in% ls(envir = .GlobalEnv) & missing(n_trials)) {
+    n_trials <- get("n_trials", envir = .GlobalEnv)
+  }
+  if (!is.single.positive.wholenumber(n_trials)) stop(error_n_trials)
+
+  if (!is.positive.wholenumber(scenario_numbers)) stop(error_scenario_numbers)
+  if (!identical(length(scenario_numbers), length(n_subjects_list))) stop(simpleError(
+    "'scenario_numbers' and 'n_subjects_list' must have same length"
+  ))
+
+  scenario_list <- vector("list", length(scenario_numbers))
+
+  for (s in seq_along(scenario_numbers)) {
+    scenario_list[[s]] <- getScenarioNormal(
+      n_subjects   = n_subjects_list[[s]],
+      true_means   = mean_list[[s]],
+      cohort_names = seq_along(n_subjects_list[[s]]),
+      sd           = sd,
+      n_trials     = n_trials
+    )
+    scenario_list[[s]]$scenario_number <- scenario_numbers[s]
+  }
+
+  names(scenario_list) <- paste0("scenario_", scenario_numbers)
+  class(scenario_list) <- "scenario_list_normal"
+
+  return(scenario_list)
+}
+
+# ----------------------------------------------------------------------
+# createTrialNormal: wrapper for a single normal_one_treat trial
+# ----------------------------------------------------------------------
+createTrialNormal <- function(
+  n_subjects,
+  true_means,
+  sd
+) {
+  error_n_subjects <- simpleError(
+    "Please provide a vector of non-negative integers for the argument 'n_subjects'")
+  error_means <- simpleError(
+    "Please provide a numeric vector for 'true_means'")
+  error_sd <- simpleError(
+    "Please provide a single positive numeric for the argument 'sd'")
+
+  if (missing(n_subjects))  stop(error_n_subjects)
+  if (missing(true_means))  stop(error_means)
+  if (missing(sd))          stop(error_sd)
+
+  if (any(!is.wholenumber(n_subjects)) || any(n_subjects < 0))
+    stop(error_n_subjects)
+
+  if (!is.numeric(true_means))
+    stop(error_means)
+
+  if (length(n_subjects) != length(true_means))
+    stop("n_subjects and true_means must have same length")
+
+  if (!is.single.numeric(sd) || sd <= 0) stop(error_sd)
+
+  utils::capture.output({
+    trial <- simulateScenariosNormal(
+      n_subjects_list = list(n_subjects),
+      mean_list       = list(true_means),
+      sd              = sd,
+      n_trials        = 1
+    )
+  })
+
+  return(trial)
+}
+
+# ----------------------------------------------------------------------
+# continueRecruitmentNormal: add subjects where Go for normal_one_treat
+# ----------------------------------------------------------------------
 continueRecruitmentNormal <- function(
-    n_subjects_add_list,
-    decisions_list,
-    method_name = NULL
+  n_subjects_add_list,
+  decisions_list,
+  method_name = NULL
 ) {
   error_n_subjects_add_list <- simpleError(
     "Please provide a list of vectors of non-negative integers for 'n_subjects_add_list'")
@@ -10,13 +236,12 @@ continueRecruitmentNormal <- function(
     "Please provide an object of class 'decision_list' for 'decisions_list'")
   error_method_name <- simpleError(
     "Please provide a valid 'method_name' present in decisions_list$scenario_1$decisions_list")
-  
+
   if (missing(n_subjects_add_list)) stop(error_n_subjects_add_list)
   if (missing(decisions_list))      stop(error_decisions_list)
-  
+
   if (!is.decision_list(decisions_list)) stop(error_decisions_list)
-  
-  ## choose method_name
+
   if (is.null(method_name)) {
     n_methods <- length(decisions_list$scenario_1$decisions_list)
     if (n_methods > 1) {
@@ -28,61 +253,57 @@ continueRecruitmentNormal <- function(
     if (!method_name %in% names(decisions_list$scenario_1$decisions_list))
       stop(error_method_name)
   }
-  
-  ## recycle n_subjects_add_list if a single vector given
+
   if (!is.list(n_subjects_add_list)) {
     n_subjects_add_list <- rep(list(n_subjects_add_list), length(decisions_list))
   }
-  
+
   if (!is.list(n_subjects_add_list) ||
       any(!sapply(n_subjects_add_list, is.non.negative.wholenumber)))
     stop(error_n_subjects_add_list)
-  
+
   scenario_numbers <- as.numeric(sub("scenario_", "", names(decisions_list)))
-  
+
   if (length(n_subjects_add_list) != length(decisions_list)) {
     stop(simpleError(
       "The lengths of 'n_subjects_add_list' and 'decisions_list' must be equal"))
   }
-  
+
   scenario_list <- vector("list", length(decisions_list))
   names(scenario_list) <- paste0("scenario_", scenario_numbers)
-  
+
   for (s in seq_along(scenario_list)) {
-    
+
     scen_data <- decisions_list[[s]]$scenario_data
-    if (is.null(scen_data$endpoint) || scen_data$endpoint != "normal") {
-      stop("continueRecruitmentNormal: scenario_data$endpoint must be 'normal'")
+    if (is.null(scen_data$endpoint) || scen_data$endpoint != "normal_one_treat") {
+      stop("continueRecruitmentNormal: scenario_data$endpoint must be 'normal_one_treat'")
     }
-    
-    ## method must be in this scenario
+
     if (!(method_name %in%
           decisions_list[[s]]$analysis_data$analysis_parameters$method_names)) {
       stop(simpleError("Selected method_name not analyzed in this scenario"))
     }
-    
+
     n_subjects_add <- n_subjects_add_list[[s]]
-    
-    n_subjects <- scen_data$n_subjects        # matrix [n_trials x K]
-    trials     <- scen_data$trials            # list of length n_trials
+
+    n_subjects <- scen_data$n_subjects
+    trials     <- scen_data$trials
     n_trials   <- scen_data$n_trials
     sd         <- scen_data$sd
-    mu_c       <- scen_data$true_means_control
-    mu_t       <- scen_data$true_means_treatment
-    
+    true_means <- scen_data$true_means
+
     K <- ncol(n_subjects)
-    
+
     if (length(n_subjects_add) != K) {
-      stop("For normal endpoint, length of n_subjects_add must equal number of cohorts.")
+      stop("For normal_one_treat endpoint, length of n_subjects_add must equal number of cohorts.")
     }
     if (nrow(n_subjects) != n_trials || length(trials) != n_trials) {
       stop("Inconsistent n_trials, n_subjects, or trials in scenario_data.")
     }
-    
-    ## decisions for this method
+
     go_decisions_all <- decisions_list[[s]]$decisions_list[[method_name]]
     previous_gos     <- go_decisions_all
-    
+
     if ("overall" %in% colnames(go_decisions_all)) {
       overall_gos  <- go_decisions_all[, "overall"]
       go_decisions <- go_decisions_all[, colnames(go_decisions_all) != "overall", drop = FALSE]
@@ -90,431 +311,154 @@ continueRecruitmentNormal <- function(
       overall_gos  <- rep(TRUE, nrow(go_decisions_all))
       go_decisions <- go_decisions_all
     }
-    
+
     if (!identical(dim(go_decisions), dim(n_subjects))) {
-      stop("go_decisions and n_subjects must have same dimension [n_trials x K] for normal endpoint.")
+      stop("go_decisions and n_subjects must have same dimension [n_trials x K] for normal_one_treat endpoint.")
     }
-    
-    ## loop over trials and cohorts, add subjects where Go AND overall Go
+
     for (t in seq_len(n_trials)) {
       if (!overall_gos[t]) next
-      
+
       tr_t <- trials[[t]]
-      
+
       for (k in seq_len(K)) {
         if (!go_decisions[t, k]) next
-        
-        add_total <- n_subjects_add[k]
-        if (add_total <= 0) next
-        
-        ## simple split: half control, half treatment
-        add_n_control   <- floor(add_total / 2)
-        add_n_treatment <- add_total - add_n_control
-        
-        ## control arm
-        if (add_n_control > 0) {
-          yc_new <- stats::rnorm(add_n_control, mean = mu_c[k], sd = sd)
-          Xc_new <- matrix(1, nrow = add_n_control, ncol = ncol(tr_t$Xck[[k]]))
-          tr_t$yck[[k]] <- c(tr_t$yck[[k]], yc_new)
-          tr_t$Xck[[k]] <- rbind(tr_t$Xck[[k]], Xc_new)
-          tr_t$nck[k]   <- tr_t$nck[k] + add_n_control
-        }
-        
-        ## treatment arm
-        if (add_n_treatment > 0) {
-          yt_new <- stats::rnorm(add_n_treatment, mean = mu_t[k], sd = sd)
-          Xt_new <- matrix(1, nrow = add_n_treatment, ncol = ncol(tr_t$Xtk[[k]]))
-          tr_t$ytk[[k]] <- c(tr_t$ytk[[k]], yt_new)
-          tr_t$Xtk[[k]] <- rbind(tr_t$Xtk[[k]], Xt_new)
-          tr_t$ntk[k]   <- tr_t$ntk[k] + add_n_treatment
-        }
-        
-        ## update total n for this trial & cohort
-        n_subjects[t, k] <- tr_t$nck[k] + tr_t$ntk[k]
+
+        add_n <- n_subjects_add[k]
+        if (add_n <= 0) next
+
+        y_new <- stats::rnorm(add_n, mean = true_means[k], sd = sd)
+
+        tr_t$y[[k]] <- c(tr_t$y[[k]], y_new)
+        tr_t$n[k]   <- tr_t$n[k] + add_n
+
+        n_subjects[t, k] <- n_subjects[t, k] + add_n
       }
-      
+
       trials[[t]] <- tr_t
     }
-    
-    ## save updated scenario
+
     scenario_list[[s]] <- list(
-      n_subjects           = n_subjects,
-      true_means_control   = mu_c,
-      true_means_treatment = mu_t,
-      sd                   = sd,
-      trials               = trials,
-      previous_analyses    = list(
+      n_subjects        = n_subjects,
+      true_means        = true_means,
+      sd                = sd,
+      trials            = trials,
+      previous_analyses = list(
         go_decisions   = previous_gos,
         post_quantiles = decisions_list[[s]]$analysis_data$quantiles_list
       ),
-      n_trials             = n_trials,
-      endpoint             = "normal"
+      n_trials          = n_trials,
+      endpoint          = "normal_one_treat"
     )
-    
+
     scenario_list[[s]]$scenario_number <- scen_data$scenario_number
   }
-  
+
   class(scenario_list) <- "scenario_list_normal"
   return(scenario_list)
 }
 
-createTrialNormal <- function(
-    n_control,
-    n_treatment,
-    mean_control,
-    mean_treatment,
-    sd
-) {
-  error_n_control <- simpleError(
-    "Please provide a vector of non-negative integers for the argument 'n_control'")
-  error_n_treatment <- simpleError(
-    "Please provide a vector of non-negative integers for the argument 'n_treatment'")
-  error_means <- simpleError(
-    "Please provide numeric vectors for 'mean_control' and 'mean_treatment'")
-  error_sd <- simpleError(
-    "Please provide a single positive numeric for the argument 'sd'")
-  
-  if (missing(n_control))      stop(error_n_control)
-  if (missing(n_treatment))    stop(error_n_treatment)
-  if (missing(mean_control) ||
-      missing(mean_treatment)) stop(error_means)
-  if (missing(sd))             stop(error_sd)
-  
-  if (any(!is.wholenumber(n_control))   || any(n_control   < 0)) stop(error_n_control)
-  if (any(!is.wholenumber(n_treatment)) || any(n_treatment < 0)) stop(error_n_treatment)
-  
-  if (!is.numeric(mean_control)   || !is.numeric(mean_treatment))
-    stop(error_means)
-  
-  if (length(n_control)      != length(n_treatment) ||
-      length(n_control)      != length(mean_control) ||
-      length(n_control)      != length(mean_treatment)) {
-    stop("n_control, n_treatment, mean_control, mean_treatment must have same length")
-  }
-  
-  if (!is.single.numeric(sd) || sd <= 0) stop(error_sd)
-  
-  utils::capture.output({
-    trial <- simulateScenariosNormal(
-      n_control_list      = list(n_control),
-      n_treatment_list    = list(n_treatment),
-      mean_control_list   = list(mean_control),
-      mean_treatment_list = list(mean_treatment),
-      sd                  = sd,
-      n_trials            = 1
-    )
-  })
-  
-  return(trial)
-}
-
-is.scenario_list_normal <- function (x) {
-  
-  if (missing(x)) stop ("Please provide an object for the argument 'x'")
-  
-  inherits(x, "scenario_list_normal")
-  
-}
-
-getScenarioNormal <- function(
-    n_control,
-    n_treatment,
-    mean_control,
-    mean_treatment,
-    cohort_names = seq_along(n_control),
-    sd,
-    n_trials = 1e4
-) {
-  if (missing(n_control) || missing(n_treatment))
-    stop("Please provide 'n_control' and 'n_treatment' (vectors of positive integers).")
-  if (missing(mean_control) || missing(mean_treatment))
-    stop("Please provide 'mean_control' and 'mean_treatment' (numeric vectors).")
-  if (missing(sd))
-    stop("Please provide a single positive numeric for 'sd'.")
-  
-  if (length(n_control) != length(n_treatment) ||
-      length(n_control) != length(mean_control) ||
-      length(n_control) != length(mean_treatment))
-    stop("n_control, n_treatment, mean_control, mean_treatment must have same length.")
-  
-  if (any(!is.positive.wholenumber(n_control)) ||
-      any(!is.positive.wholenumber(n_treatment)))
-    stop("All entries in 'n_control' and 'n_treatment' must be positive integers.")
-  if (!is.single.numeric(sd) || sd <= 0)
-    stop("sd must be a single positive numeric.")
-  if (!is.single.positive.wholenumber(n_trials))
-    stop("n_trials must be a single positive integer.")
-  
-  K <- length(n_control)
-  num_cov <- 1L  # intercept-only by default
-  
-  trials <- vector("list", n_trials)
-  
-  for (t in seq_len(n_trials)) {
-    
-    yck_list <- vector("list", K)
-    ytk_list <- vector("list", K)
-    Xck_list <- vector("list", K)
-    Xtk_list <- vector("list", K)
-    
-    for (k in seq_len(K)) {
-      
-      # control outcomes
-      if (n_control[k] > 0) {
-        yck_list[[k]] <- stats::rnorm(n_control[k], mean = mean_control[k], sd = sd)
-        Xck_list[[k]] <- matrix(1, nrow = n_control[k], ncol = num_cov)  # intercept
-      } else {
-        yck_list[[k]] <- numeric(0L)
-        Xck_list[[k]] <- matrix(numeric(0L), nrow = 0L, ncol = num_cov)
-      }
-      
-      # treatment outcomes
-      if (n_treatment[k] > 0) {
-        ytk_list[[k]] <- stats::rnorm(n_treatment[k], mean = mean_treatment[k], sd = sd)
-        Xtk_list[[k]] <- matrix(1, nrow = n_treatment[k], ncol = num_cov) # intercept
-      } else {
-        ytk_list[[k]] <- numeric(0L)
-        Xtk_list[[k]] <- matrix(numeric(0L), nrow = 0L, ncol = num_cov)
-      }
-    }
-    
-    trials[[t]] <- list(
-      yck = yck_list,
-      ytk = ytk_list,
-      Xck = Xck_list,
-      Xtk = Xtk_list,
-      nck = n_control,
-      ntk = n_treatment
-    )
-  }
-  
-  # optional convenience: total n per cohort (control + treatment) per trial
-  n_subjects_mat <- matrix(
-    n_control + n_treatment,
-    nrow = n_trials,
-    ncol = K,
-    byrow = TRUE
-  )
-  colnames(n_subjects_mat) <- paste0("n_", cohort_names)
-  
-  previous_gos <- matrix(
-    TRUE,
-    nrow = n_trials,
-    ncol = K + 1L,
-    byrow = TRUE
-  )
-  colnames(previous_gos) <- c("overall", paste0("decision_", cohort_names))
-  
-  scenario_data <- list(
-    n_subjects        = n_subjects_mat,
-    true_means_control  = mean_control,
-    true_means_treatment = mean_treatment,
-    sd                = sd,
-    trials            = trials,
-    previous_analyses = list(
-      go_decisions   = previous_gos,
-      post_quantiles = NULL
-    ),
-    n_trials          = n_trials,
-    endpoint          = "normal"
-  )
-  
-  return(scenario_data)
-}
-
+# ----------------------------------------------------------------------
+# saveScenariosNormal
+# ----------------------------------------------------------------------
 saveScenariosNormal <- function(
-    scenario_list,
-    save_path = tempdir()
+  scenario_list,
+  save_path = tempdir()
 ) {
-  
+
   if (missing(scenario_list))
     stop("Please provide an object of class 'scenario_list_normal' for the argument 'scenario_list'")
-  
+
   if (!inherits(scenario_list, "scenario_list_normal"))
     stop("Please provide an object of class 'scenario_list_normal' for the argument 'scenario_list'")
-  
+
   if (!is.character(save_path) || length(save_path) > 1)
     stop("Please provide a string for the argument 'save_path'")
-  
+
   if (!dir.exists(save_path)) {
     dir.create(save_path)
   }
-  
+
   scenario_numbers <- sapply(scenario_list, function(x) x$scenario_number)
-  
+
   for (s in seq_along(scenario_list)) {
     saveRDS(
       scenario_list[[s]],
       file = file.path(save_path, paste0("scenario_data_", scenario_numbers[s], ".rds"))
     )
   }
-  
+
   return(list(scenario_numbers = scenario_numbers, path = save_path))
 }
 
+# ----------------------------------------------------------------------
+# loadScenariosNormal
+# ----------------------------------------------------------------------
 loadScenariosNormal <- function(
-    scenario_numbers,
-    load_path = tempdir()
+  scenario_numbers,
+  load_path = tempdir()
 ) {
-  
+
   if (missing(scenario_numbers))
     stop("Please provide a vector of positive integers for the argument 'scenario_numbers'")
-  
+
   if (!is.numeric(scenario_numbers) ||
       !is.wholenumber(scenario_numbers) ||
       any(scenario_numbers <= 0))
     stop("Please provide a vector of positive integers for the argument 'scenario_numbers'")
-  
+
   if (!is.character(load_path) || length(load_path) > 1)
     stop("Please provide a string for the argument 'load_path'")
-  
+
   scenario_list <- vector("list", length(scenario_numbers))
-  
+
   for (s in seq_along(scenario_numbers)) {
     scenario_list[[s]] <- readRDS(
       file.path(load_path, paste0("scenario_data_", scenario_numbers[s], ".rds"))
     )
   }
-  
+
   names(scenario_list) <- paste0("scenario_", scenario_numbers)
   class(scenario_list) <- "scenario_list_normal"
-  
+
   return(scenario_list)
 }
 
+# ----------------------------------------------------------------------
+# print.scenario_list_normal
+# ----------------------------------------------------------------------
 print.scenario_list_normal <- function(x, ...) {
-  
+
   n_scenarios    <- length(x)
   scenario_names <- names(x)
-  
-  first_scen <- x[[1]]
-  K          <- length(first_scen$true_means_control)
+
+  first_scen   <- x[[1]]
+  K            <- length(first_scen$true_means)
   cohort_names <- paste0("c_", seq_len(K))
-  
-  ## average n per cohort and scenario (over trials)
+
   avg_n_subjects <- lapply(x, function(scen) {
-    n_trials <- scen$n_trials
-    K        <- length(scen$true_means_control)
-    ns_mat   <- matrix(NA_real_, nrow = n_trials, ncol = K)
-    
-    for (t in seq_len(n_trials)) {
-      tr <- scen$trials[[t]]
-      ns_mat[t, ] <- tr$nck + tr$ntk   # total per cohort = control + treatment
-    }
-    colMeans(ns_mat)
+    colMeans(scen$n_subjects)
   })
-  
+
   cat("scenario_list_normal of ", n_scenarios, " scenario",
       ifelse(n_scenarios == 1, "", "s"),
       " with ", K, " cohort", ifelse(K == 1, "", "s"), "\n\n", sep = "")
-  
+
   for (i in seq_len(n_scenarios)) {
-    
-    mu_c <- x[[i]]$true_means_control
-    mu_t <- x[[i]]$true_means_treatment
+
+    mu   <- x[[i]]$true_means
     nbar <- avg_n_subjects[[i]]
-    
+
     df_out <- rbind(
-      "    - true control means:"         = mu_c,
-      "    - true treatment means:"       = mu_t,
-      "    - average number of subjects:" = nbar
+      "    - true means:"                  = mu,
+      "    - average number of subjects:"  = nbar
     )
     colnames(df_out) <- cohort_names
-    
+
     cat("  -", scenario_names[i], "\n")
     print(df_out)
     cat("\n")
   }
-  
-  cat("  -", x[[1]]$n_trials, "trial realizations per scenario\n")
-}
 
-simulateScenariosNormal <- function(
-    n_control_list,
-    n_treatment_list,
-    mean_control_list,
-    mean_treatment_list,
-    sd,
-    scenario_numbers = seq_along(mean_control_list),
-    n_trials         = 1e4
-) {
-  error_n_control_list  <- simpleError(
-    "Please provide a list of vectors of positive integers for 'n_control_list'")
-  error_n_treatment_list  <- simpleError(
-    "Please provide a list of vectors of positive integers for 'n_treatment_list'")
-  error_mean_list <- simpleError(
-    "Please provide lists of numeric vectors for 'mean_control_list' and 'mean_treatment_list'")
-  error_sd <- simpleError(
-    "Please provide a single positive numeric value for 'sd'")
-  error_n_trials <- simpleError(
-    "Please provide a positive integer for 'n_trials'")
-  error_scenario_numbers <- simpleError(
-    "Please provide a vector of positive integers for 'scenario_numbers'")
-  
-  if (missing(n_control_list))    stop(error_n_control_list)
-  if (missing(n_treatment_list))  stop(error_n_treatment_list)
-  if (missing(mean_control_list) || missing(mean_treatment_list)) stop(error_mean_list)
-  if (missing(sd))                stop(error_sd)
-  
-  if (!is.list(n_control_list) ||
-      any(!sapply(n_control_list, is.positive.wholenumber)))
-    stop(error_n_control_list)
-  if (!is.list(n_treatment_list) ||
-      any(!sapply(n_treatment_list, is.positive.wholenumber)))
-    stop(error_n_treatment_list)
-  
-  if (!is.list(mean_control_list) ||
-      any(!sapply(mean_control_list, is.numeric)) ||
-      !is.list(mean_treatment_list) ||
-      any(!sapply(mean_treatment_list, is.numeric)))
-    stop(error_mean_list)
-  
-  if (!identical(length(n_control_list), length(n_treatment_list)) ||
-      !identical(length(n_control_list), length(mean_control_list)) ||
-      !identical(length(n_control_list), length(mean_treatment_list)))
-    stop(simpleError(
-      "'n_control_list', 'n_treatment_list', 'mean_control_list', 'mean_treatment_list' must have same length"
-    ))
-  
-  # within each scenario: same number of cohorts and consistent lengths
-  if (any(!sapply(seq_along(n_control_list), function(s) {
-    length(n_control_list[[s]])      == length(n_treatment_list[[s]]) &&
-      length(n_control_list[[s]])      == length(mean_control_list[[s]]) &&
-      length(n_control_list[[s]])      == length(mean_treatment_list[[s]])
-  })))
-    stop(simpleError(
-      "Within each scenario, vectors in n_control_list, n_treatment_list, mean_control_list, mean_treatment_list must all have the same length"
-    ))
-  
-  if (!is.single.numeric(sd) || sd <= 0) stop(error_sd)
-  
-  if ("n_trials" %in% ls(envir = .GlobalEnv) & missing(n_trials)) {
-    n_trials <- get("n_trials", envir = .GlobalEnv)
-  }
-  if (!is.single.positive.wholenumber(n_trials)) stop(error_n_trials)
-  
-  if (!is.positive.wholenumber(scenario_numbers)) stop(error_scenario_numbers)
-  if (!identical(length(scenario_numbers), length(n_control_list))) stop(simpleError(
-    "'scenario_numbers' and 'n_control_list' must have same length"
-  ))
-  
-  scenario_list <- vector("list", length(scenario_numbers))
-  
-  for (s in seq_along(scenario_numbers)) {
-    scenario_list[[s]] <- getScenarioNormal(
-      n_control      = n_control_list[[s]],
-      n_treatment    = n_treatment_list[[s]],
-      mean_control   = mean_control_list[[s]],
-      mean_treatment = mean_treatment_list[[s]],
-      cohort_names   = seq_along(n_control_list[[s]]),
-      sd             = sd,
-      n_trials       = n_trials
-    )
-    scenario_list[[s]]$scenario_number <- scenario_numbers[s]
-  }
-  
-  names(scenario_list) <- paste0("scenario_", scenario_numbers)
-  class(scenario_list) <- "scenario_list_normal"
-  
-  return(scenario_list)
+  cat("  -", x[[1]]$n_trials, "trial realizations per scenario\n")
 }
