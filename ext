@@ -1,86 +1,42 @@
 library(R2jags)
 
-multi_treat_model <- "
+one_treat_model <- "
 model {
-  # Likelihood
-  for (k in 1:K) {          # baskets
-    for (a in 1:A) {        # treatments
-      for (i in 1:n[k,a]) { # patients in basket k, treatment a
-        y[k,a,i] ~ dnorm(mu[k,a], prec_sigma)
-      }
-      # basket-specific mean for treatment a
-      mu[k,a] ~ dnorm(mu_pop[a], prec_tau[a])
+
+  # Likelihood: same treatment in all baskets
+  for (k in 1:K) {
+    for (i in 1:n[k]) {
+      y[k,i] ~ dnorm(mu[k], prec_sigma)
     }
+
+    # basket-specific mean effect
+    mu[k] ~ dnorm(mu_pop, prec_tau)
   }
 
-  # Hierarchy across baskets for each treatment
-  for (a in 1:A) {
-    mu_pop[a]   ~ dnorm(0, 0.0001)      # population mean for treatment a
-    prec_tau[a] ~ dgamma(0.5, 0.05)     # between-basket precision
-    # sigma2_tau[a] <- 1 / prec_tau[a]  # optional
-  }
+  # Hierarchy across baskets
+  mu_pop   ~ dnorm(0, 0.0001)      # overall mean effect
+  prec_tau ~ dgamma(0.5, 0.05)     # between-basket precision
+  # sigma2_tau <- 1 / prec_tau     # optional
 
   # Residual variance
   prec_sigma ~ dgamma(0.5, 0.05)
-  # sigma2 <- 1 / prec_sigma           # optional
+  # sigma2 <- 1 / prec_sigma       # optional
 }
 "
 
 set.seed(123)
 
-K <- 3         # baskets
-A <- 3         # treatments
-sigma_true <- 1
+K <- 3                     # number of baskets
+mu_true <- c(0.0, 0.5, 1.0) # true treatment means per basket
+sigma_true <- 1             # residual SD
 
-# True basket × treatment means (mu_true[k, a])
-mu_true <- matrix(
-  c( 0.0,  0.5,  1.0,   # basket 1
-     0.2,  0.7,  1.2,   # basket 2
-     0.1,  0.6,  1.1),  # basket 3
-  nrow = K, byrow = TRUE
-)
-
-# Sample sizes per basket × treatment
-n <- matrix(
-  c(20, 20, 20,
-    20, 20, 20,
-    20, 20, 20),
-  nrow = K, byrow = TRUE
-)
-
+n <- c(20, 20, 20)          # patients per basket
 max_n <- max(n)
 
-# allocate y[k,a,i]
-y <- array(NA_real_, dim = c(K, A, max_n))
+# y[k, i]
+y <- matrix(NA_real_, nrow = K, ncol = max_n)
 
 for (k in 1:K) {
-  for (a in 1:A) {
-    y[k, a, 1:n[k,a]] <- rnorm(n[k,a], mean = mu_true[k,a], sd = sigma_true)
-  }
+  y[k, 1:n[k]] <- rnorm(n[k], mean = mu_true[k], sd = sigma_true)
 }
-
-j_data <- list(
-  K = K,
-  A = A,
-  n = n,
-  y = y
-)
-
-params <- c("mu", "mu_pop", "prec_sigma", "prec_tau")
-
-jags_fit <- jags(
-  data      = j_data,
-  parameters= params,
-  model.file = textConnection(multi_treat_model),
-  n.chains  = 2,
-  n.iter    = 4000,
-  n.burnin  = 2000
-)
-
-print(jags_fit, digits = 3)
-
-post <- jags_fit$BUGSoutput$summary
-post_mu <- post[grep("^mu\\[", rownames(post)), c("mean","2.5%","97.5%")]
-post_mu
-mu_true
 
