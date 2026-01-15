@@ -1,23 +1,22 @@
- n_coh <- ncol(scenario_list[[1]]$n_subjects)
-838		
-    
-839	!	
-    inconsistent_cohorts <- any(
-840	!	
-      sapply(
-841	!	
-        intersect(names(prior_parameters_list),
-842	!	
-                  c("exnex", "exnex_adj", "stratified")),
-843	!	
-        function(name) {
-844	!	
-          max(sapply(prior_parameters_list[[name]], length)) != n_coh
-845		
-        }
-846		
-      )
-847		
-    )
+# Shared scenario_list for performAnalyses tests
+scenario_list_pa <- make_scenario_list_pa()
 
-Inside performAnalyses why are these lines not tested even though we called exnex
+test_that("performAnalyses returns a well-formed analysis_list", {
+  res <- performAnalyses(
+    scenario_list       = scenario_list_pa,
+    target_rates        = c(0.5, 0.5, 0.5),
+    method_names        = c("pooled", "exnex"),
+    n_mcmc_iterations   = 50,
+    verbose             = FALSE
+  )
+  
+  expect_s3_class(res, "analysis_list")
+  expect_equal(length(res), length(scenario_list_pa))
+  expect_identical(names(res), paste0("scenario_", sapply(scenario_list_pa, `[[`, "scenario_number")))
+  
+  scen1 <- res[[1]]
+  expect_true(is.list(scen1))
+  expect_true(all(c("quantiles_list", "scenario_data", "analysis_parameters") %in% names(scen1)))
+  
+  expect_identical(scen1$scenario_data, scenario_list_pa[[1]])
+})
