@@ -1,41 +1,111 @@
-performJags <- function (
-  
-  data,
-  parameters_to_save,
-  model_file, 
-  n_chains = 2,
-  n_iter   = 1e4,
-  n_burnin = floor(n_iter/3)
+test_that("mapUniqueTrials with exnex correctly maps unique trial quantiles to all trials", {
+  skip_if_not_installed("rjags")
+  skip_if_not_installed("foreach")
+  foreach::registerDoSEQ()
+  set.seed(123)
 
-) {
-    
-  
-  n_adapt <- ifelse(n_burnin > 0, n_burnin, 100)
-  
-  inits <- vector("list", n_chains)
-  for (i in 1:n_chains) {
-    inits[[i]]$.RNG.name <- "base::Wichmann-Hill"
-    inits[[i]]$.RNG.seed <- stats::runif(1, 0, 2^31)
+  ## 1) One scenario, 10 trials, 2 cohorts from getScenario -------------------
+  scene <- getScenario(
+    n_subjects     = c(10, 20),
+    response_rates = c(0.4, 0.6),
+    n_trials       = 10
+  )
+
+  if (is.null(scene$scenario_number)) {
+    scene$scenario_number <- 1L
   }
-  
-  j_model <- rjags::jags.model(file     = model_file,
-                               data     = data,
-                               inits    = inits, 
-                               n.chains = n_chains,
-                               n.adapt  = 0,
-                               quiet    = TRUE)
-  
-  rjags::adapt(object         = j_model,
-               n.iter         = n_adapt,
-               progress.bar   = "none",
-               end.adaptation = TRUE)
-  
-  samples <- rjags::coda.samples(model          = j_model,
-                                 variable.names = parameters_to_save, 
-                                 n.iter         = n_iter - n_burnin,
-                                 thin           = 1, 
-                                 progress.bar   = "none")
-  
-  return(do.call(rbind, samples))
-    
-}
+  scenario_list <- list(scenario_1 = scene)
+  class(scenario_list) <- "scenario_list"
+
+  n_subj   <- scene$n_subjects    # 10 x 2
+  n_resp   <- scene$n_responders  # 10 x 2
+  n_trials <- nrow(n_subj)
+  n_coh    <- ncol(n_subj)
+
+  ## 2) Unique trial patterns across the scenario -----------------------------
+  trials_unique <- getUniqueTrials(scenario_list)
+  # trials_unique: [n_resp_cols | n_subj_cols | go_flag]
+  n_coh_u <- (ncol(trials_unique) - 1L) / 2L
+  expect_equal(n_coh_u, n_coh)
+
+  applicable_previous_trials <- FALSE  # ignore previous_analyses here
+
+  calc_trial_indices <- rep(TRUE, nrow(trials_unique))
+  trials_unique_calc <- trials_unique[calc_trial_indices, -ncol(trials_unique), drop = FALSE]
+
+  n_resp_unique <- trials_unique_calc[, seq_len(n_coh),                 drop = FALSE]
+  n_subj_unique <- trials_unique_calc[, seq_len(n_coh) + n_coh,         drop = FALSE]
+
+  ## 3) Set up exnex analysis for the unique patterns -------------------------
+  target_rates <- rep(0.5, n_coh)
+  priors_list  <- getPriorParameters(
+    method_names = "exnex",
+    target_rates = target_rates
+  )
+
+  prep <- prepareAnalysis(
+    method_name      = "exnex",
+    prior_parameters = priors_list[["exnex"]],
+    target_rates     = target_rates
+  )
+
+  quantiles <- c(0.025, 0.5, 0.975)
+
+  method_quantiles_list <- list(
+    exnex = getPostQuantiles(
+      method_name       = "exnex",
+      quantiles         = quantiles,
+      scenario_data     = list(
+        n_subjects   = n_subj_unique,
+        n_responders = n_resp_unique
+      ),
+      calc_differences  = NULL,
+      j_parameters      = prep$j_parameters,
+      j_model_file      = prep$j_model_file,
+      j_data            = prep$j_data,
+      n_mcmc_iterations = 500,
+      save_path         = NULL,
+      save_trial        = NULL
+    )
+  )
+
+  ## 4) Build the "naive" expected per-trial list by mapping manually ---------
+  # We'll use the same hashing logic as mapUniqueTrials internally.
+  # 4a) Create hash table from unique patterns -> quantile matrix
+  unique_keys <- getHashKeys(trials_unique_calc)
+  exnex_hash  <- createHashTable(unique_keys, method_quantiles_list$exnex)
+
+  # 4b) For each trial i, find its key and lookup the matrix
+  full_data_mat <- cbind(n_resp, n_subj)  # 10 x (2+2)
+  full_keys     <- getHashKeys(full_data_mat)
+
+  naive_exnex <- vector("list", length = n_trials)
+  for (i in seq_len(n_trials)) {
+    naive_exnex[[i]] <- getHashValues(full_keys[i], exnex_hash)[[1]]
+  }
+
+  ## 5) Use mapUniqueTrials to do the same mapping ----------------------------
+  out <- mapUniqueTrials(
+    scenario_list              = scenario_list,
+    method_quantiles_list      = method_quantiles_list,
+    trials_unique_calc         = trials_unique_calc,
+    applicable_previous_trials = applicable_previous_trials
+  )
+
+  expect_type(out, "list")
+  expect_identical(names(out), "scenario_1")
+
+  scen1_out <- out[["scenario_1"]]
+  expect_true(is.list(scen1_out))
+  expect_true("exnex" %in% names(scen1_out))
+  expect_equal(length(scen1_out$exnex), n_trials)
+
+  ## 6) Core check: mapUniqueTrials output == manual mapping ------------------
+  for (i in seq_len(n_trials)) {
+    expect_equal(
+      scen1_out$exnex[[i]],
+      naive_exnex[[i]],
+      tolerance = 0  # exact: we're not re-running JAGS here
+    )
+  }
+})
