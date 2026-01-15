@@ -1,126 +1,330 @@
-## ------------------------------------------------------------------
-## Helper: compute overall Go probability for (n, p_true, gamma)
-## using the existing bhmbasket workflow.
-## ------------------------------------------------------------------
-
-go_prob_overall <- function(n,
-                            p_true,
-                            p_beta,
-                            gamma,
-                            n_trials = 1000,
-                            method_name = "pooled") {
-  # 1) Simulate n_trials basket trials with 1 cohort
-  scen <- simulateScenarios(
-    n_subjects_list     = list(c(n)),          # 1 cohort with n patients
-    response_rates_list = list(c(p_true)),     # true response rate
-    n_trials            = n_trials
+performAnalyses <- function (
+    
+  scenario_list,
+  evidence_levels       = c(0.025, 0.05, 0.5, 0.8, 0.9, 0.95, 0.975),
+  
+  method_names          = c("berry", "exnex", "exnex_adj", "pooled", "stratified"),
+  target_rates          = NULL,
+  prior_parameters_list = NULL,
+  
+  calc_differences      = NULL,
+  
+  n_mcmc_iterations     = 1e4,
+  n_cores               = 1,
+  seed                  = 1,
+  verbose               = TRUE
+  
+) {
+  
+  warning_n_cores <- "The argument 'n_cores' is deprecated as of version 0.9.3."
+  warning_seed    <- "The argument 'seed' is deprecated as of version 0.9.3."
+  
+  if (!missing(n_cores)) warning(warning_n_cores)
+  if (!missing(seed))    warning(warning_seed)
+  
+  # scenario_list must be supplied and have the correct class
+  checkmate::assertClass(
+    scenario_list,
+    "scenario_list",
+    .var.name = "scenario_list"
   )
   
-  # 2) Analyse with performAnalyses (pooled => analytic Beta posterior)
-  analyses <- performAnalyses(
-    scenario_list      = scen,
-    target_rates       = c(p_beta),           # clinical boundary encoded as "target rate"
-    method_names       = method_name,
-    n_mcmc_iterations  = 100,                 # ignored for "pooled", but must be > 0
-    verbose            = FALSE
+  # evidence_levels: numeric, all in (0, 1)
+  checkmate::assertNumeric(
+    evidence_levels,
+    any.missing = FALSE,
+    .var.name   = "evidence_levels"
+  )
+  checkmate::assertTRUE(
+    all(evidence_levels > 0 & evidence_levels < 1),
+    .var.name = "evidence_levels must be in (0, 1)"
   )
   
-  # 3) Decision rule: P(p > p_beta | data) > gamma
-  #    -> implemented as q_{1-gamma} > p_beta  via boundary_rules
-  decisions <- getGoDecisions(
-    analyses_list   = analyses,
-    cohort_names    = "p_1",
-    evidence_levels = gamma,                  # γ
-    boundary_rules  = quote(c(x[1] > p_beta)) # p_beta from calling environment
+  # method_names: character and must be one of the allowed methods
+  checkmate::assertCharacter(
+    method_names,
+    any.missing = FALSE,
+    min.len     = 1,
+    .var.name   = "method_names"
+  )
+  method_names <- match.arg(
+    method_names,
+    choices    = c("berry", "exnex", "exnex_adj", "pooled", "stratified"),
+    several.ok = TRUE
   )
   
-  # 4) Convert decisions to Go probabilities
-  go_probs_list <- getGoProbabilities(decisions)
-  # go_probs_list[[method_name]][["scenario_1"]] is a 1×K matrix (row "Go")
-  go_mat <- go_probs_list[[method_name]][["scenario_1"]]
+  # target_rates: either NULL or numeric in (0, 1)
+  if (!is.null(target_rates)) {
+    checkmate::assertNumeric(
+      target_rates,
+      any.missing = FALSE,
+      .var.name   = "target_rates"
+    )
+    checkmate::assertTRUE(
+      all(target_rates > 0 & target_rates < 1),
+      .var.name = "target_rates must be in (0, 1)"
+    )
+  }
   
-  # Column "overall" = P(overall Go)
-  go_mat["Go", "overall"]
-}
-
-
-## ------------------------------------------------------------------
-## Grid search: find (n, gamma) that satisfy type I & power constraints
-## ------------------------------------------------------------------
-
-# Design settings
-p0          <- 0.30    # null true response rate
-p1          <- 0.50    # alternative true response rate
-p_beta      <- 0.50    # clinical boundary
-alpha_max   <- 0.10    # allowed type I error
-power_min   <- 0.80    # required power
-n_trials_oc <- 1000    # number of simulated trials per (n, gamma) scenario
-
-# Search grid:
-n_grid     <- c(20, 30, 40, 50, 60)          # candidate sample sizes
-gamma_grid <- seq(0.7, 0.95, by = 0.05)      # candidate evidence levels
-
-oc_results <- expand.grid(
-  n     = n_grid,
-  gamma = gamma_grid
-)
-
-oc_results$alpha_hat <- NA_real_
-oc_results$power_hat <- NA_real_
-
-set.seed(2026)  # for reproducibility of the simulation
-
-for (i in seq_len(nrow(oc_results))) {
-  n_i     <- oc_results$n[i]
-  gamma_i <- oc_results$gamma[i]
+  # prior_parameters_list: either NULL or object with class 'prior_parameters_list'
+  if (!is.null(prior_parameters_list)) {
+    checkmate::assertClass(
+      prior_parameters_list,
+      "prior_parameters_list",
+      .var.name = "prior_parameters_list"
+    )
+  }
   
-  # Type I error under p0
-  oc_results$alpha_hat[i] <- go_prob_overall(
-    n        = n_i,
-    p_true   = p0,
-    p_beta   = p_beta,
-    gamma    = gamma_i,
-    n_trials = n_trials_oc,
-    method_name = "pooled"
+  
+  if (is.null(target_rates)) {
+    
+    # If target_rates are missing, berry and exnex_adj are not allowed
+    checkmate::assertTRUE(
+      !any(c("berry", "exnex_adj") %in% method_names),
+      .var.name = "target_rates must be provided when using 'berry' or 'exnex_adj'"
+    )
+    
+    # Need at least one of prior_parameters_list or target_rates
+    checkmate::assertTRUE(
+      !is.null(prior_parameters_list),
+      .var.name = "provide at least one of 'prior_parameters_list' or 'target_rates'"
+    )
+    
+  } else {
+    # If target_rates is present, its length must match the number of cohorts
+    n_coh <- ncol(scenario_list[[1]]$n_subjects)
+    checkmate::assertTRUE(
+      identical(length(target_rates), n_coh),
+      .var.name = "length(target_rates) must match number of cohorts"
+    )
+  }
+  
+  
+  if (!is.null(prior_parameters_list)) {
+    
+    # All methods used must have entries in prior_parameters_list
+    checkmate::assertTRUE(
+      all(method_names %in% names(prior_parameters_list)),
+      .var.name = "all method_names must appear in names(prior_parameters_list)"
+    )
+    
+    # For exnex / exnex_adj / stratified, per-cohort prior lengths must
+    # match the number of cohorts in scenario_list
+    n_coh <- ncol(scenario_list[[1]]$n_subjects)
+    
+    inconsistent_cohorts <- any(
+      sapply(
+        intersect(names(prior_parameters_list),
+                  c("exnex", "exnex_adj", "stratified")),
+        function(name) {
+          max(sapply(prior_parameters_list[[name]], length)) != n_coh
+        }
+      )
+    )
+    
+    checkmate::assertFALSE(
+      inconsistent_cohorts,
+      .var.name = "number of cohorts in prior_parameters_list must match scenario_list"
+    )
+  }
+  
+  n_cohorts_min <- min(sapply(scenario_list, function(x) ncol(x$n_responders)))
+  
+  if (!is.null(calc_differences)) {
+    
+    checkmate::assertNumeric(
+      calc_differences,
+      any.missing = FALSE,
+      .var.name   = "calc_differences"
+    )
+    
+    is_len2   <- identical(length(calc_differences), 2L)
+    has_2cols <- !is.null(dim(calc_differences)) &&
+      identical(ncol(calc_differences), 2L)
+    
+    checkmate::assertTRUE(
+      is_len2 || has_2cols,
+      .var.name = "calc_differences must be length-2 vector or matrix with 2 columns"
+    )
+    
+    checkmate::assertIntegerish(
+      calc_differences,
+      lower       = 1,
+      any.missing = FALSE,
+      .var.name   = "calc_differences"
+    )
+    
+    checkmate::assertTRUE(
+      max(calc_differences) <= n_cohorts_min,
+      .var.name = "calc_differences indices must not exceed number of cohorts"
+    )
+  }
+  rm(n_cohorts_min)
+  
+  # If n_mcmc_iterations exists in .GlobalEnv and argument is missing, reuse it
+  if ("n_mcmc_iterations" %in% ls(envir = .GlobalEnv) && missing(n_mcmc_iterations)) {
+    n_mcmc_iterations <- get("n_mcmc_iterations", envir = .GlobalEnv)
+  }
+  
+  checkmate::assertInt(
+    n_mcmc_iterations,
+    lower    = 1,
+    .var.name = "n_mcmc_iterations"
   )
   
-  # Power under p1
-  oc_results$power_hat[i] <- go_prob_overall(
-    n        = n_i,
-    p_true   = p1,
-    p_beta   = p_beta,
-    gamma    = gamma_i,
-    n_trials = n_trials_oc,
-    method_name = "pooled"
+  checkmate::assertLogical(
+    verbose,
+    len         = 1L,
+    any.missing = FALSE,
+    .var.name   = "verbose"
   )
-}
-
-# Mark designs that satisfy the constraints
-oc_results$feasible <- with(
-  oc_results,
-  alpha_hat <= alpha_max & power_hat >= power_min
-)
-
-oc_results
-
-
-## ------------------------------------------------------------------
-## Select minimal n that satisfies the design constraints
-## ------------------------------------------------------------------
-
-feasible_designs <- subset(oc_results, feasible)
-
-if (nrow(feasible_designs) == 0) {
-  message("No (n, gamma) combination satisfies the constraints with this grid.")
-} else {
-  # Sort by n, then by how close power/alpha are to targets (optional)
-  feasible_designs <- feasible_designs[order(feasible_designs$n, -feasible_designs$power_hat), ]
   
-  best_design <- feasible_designs[1, ]
+  # Only need a parallel backend if there is at least one method that is not pooled/stratified
+  if (!all(method_names %in% c("stratified", "pooled"))) {
+    checkForParallelBackend()
+  }
   
-  print(best_design)
-  # You can phrase this in your report as:
-  # "With n = best_design$n and gamma = best_design$gamma, we obtain
-  #  estimated type I error alpha_hat and power power_hat under the chosen
-  #  null/alternative, and this is the smallest n that meets our criteria."
+  ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
+  
+  ## message to user
+  if (verbose) message(format(Sys.time(), "%d-%h-%Y"), " Performing Analyses")
+  
+  ## some housekeeping
+  method_names <- sort(method_names)
+  quantiles    <- sort(unique(round(1 - c(0.025, 0.05, 0.5, 0.8, 0.9, 0.95, 0.975,
+                                          evidence_levels), 9)))
+  if (!is.null(calc_differences)) {
+    calc_differences <- convertVector2Matrix(calc_differences)
+  }
+  
+  ## get scenario numbers
+  scenario_numbers <- sapply(scenario_list, function (x) x$scenario_number)
+  
+  ## get unique trials over all scenarios
+  trials_unique <- getUniqueTrials(scenario_list)
+  n_cohorts     <- (ncol(trials_unique) - 1L) / 2
+  
+  ## analyze only unique trials that have not been previously analyzed
+  applicable_previous_trials <- applicablePreviousTrials(
+    scenario_list    = scenario_list,
+    method_names     = method_names,
+    quantiles        = quantiles,
+    n_cohorts        = n_cohorts,
+    calc_differences = calc_differences)
+  
+  ## only get previous go indices if all conditions for previous trials are met
+  if (applicable_previous_trials) {
+    calc_trial_indices <- trials_unique[, ncol(trials_unique)] > 0
+  } else {
+    calc_trial_indices <- rep(TRUE, nrow(trials_unique))
+  }
+  
+  ## get resulting unique number of responders and number of subjects
+  trials_unique_calc <- trials_unique[calc_trial_indices, -ncol(trials_unique)]
+  n_responders       <- trials_unique_calc[, seq_len(n_cohorts)]
+  n_subjects         <- trials_unique_calc[, seq_len(n_cohorts) + n_cohorts]
+  
+  ## message to user
+  if (verbose) {
+    
+    message("         Analyzing ", length(scenario_numbers) ," scenario", ifelse(length(scenario_numbers) == 1, "", "s")," ",
+            "(", nrow(n_responders), " unique", ifelse(applicable_previous_trials, " updated ", " "),
+            "trial realization", ifelse(nrow(trials_unique) == 1, "", "s"),")")
+    
+  }
+  
+  ## get default prior parameters if needed
+  if(is.null(prior_parameters_list)) {
+    
+    prior_parameters_list <- getPriorParameters(
+      method_names = method_names,
+      target_rates = target_rates)
+    
+  }
+  
+  ## Create lists to save all results of the unique trials
+  method_quantiles_list        <- vector(mode = "list", length = length(method_names))
+  names(method_quantiles_list) <- method_names
+  
+  ## For each method
+  for (n in seq_along(method_names)) {
+    
+    ## message to user
+    if (verbose) {
+      start_time  <- Sys.time()
+      out_message <- paste0(format(start_time, "   %H:%M", digits = 1),
+                            " - with ", firstUpper(method_names[n]), " ...")
+      message(out_message, rep(".", 33 - nchar(out_message)))
+    }
+    
+    ## prepare analysis
+    prepare_analysis <- prepareAnalysis(
+      method_name       = method_names[n],
+      target_rates      = target_rates,
+      prior_parameters  = prior_parameters_list[[method_names[n]]])
+    
+    ## run analysis
+    method_quantiles_list[[method_names[n]]] <- getPostQuantiles(
+      method_name       = method_names[n],
+      quantiles         = quantiles,
+      scenario_data     = list(n_subjects   = n_subjects,
+                               n_responders = n_responders),
+      calc_differences  = calc_differences,
+      j_parameters      = prepare_analysis$j_parameters,
+      j_model_file      = prepare_analysis$j_model_file,
+      j_data            = prepare_analysis$j_data,
+      n_mcmc_iterations = n_mcmc_iterations,
+      save_path         = NULL,
+      save_trial        = NULL)
+    
+    ## message to user
+    if (verbose) {
+      message("             finished after ", round(Sys.time() - start_time, 1), " ",
+              units(Sys.time() - start_time), ".")
+      rm(start_time)
+    }
+    
+  }
+  
+  ## message to user
+  if (verbose) {
+    start_time  <- Sys.time()
+    message("         Processing scenarios ...")
+  }
+  
+  ## Process scenarios
+  scenario_method_quantiles_list <- mapUniqueTrials(
+    scenario_list              = scenario_list,
+    method_quantiles_list      = method_quantiles_list,
+    trials_unique_calc         = trials_unique_calc,
+    applicable_previous_trials = applicable_previous_trials)
+  
+  ## message to user
+  if (verbose) {
+    message("             finished after ", round(Sys.time() - start_time, 1), " ",
+            units(Sys.time() - start_time), ".")
+    rm(start_time)
+  }
+  
+  ## combine results from all scenarios & return
+  analyses_list        <- vector(mode = "list", length = length(scenario_numbers))
+  names(analyses_list) <- paste0("scenario_", scenario_numbers)
+  
+  for (s in seq_along(scenario_numbers)) {
+    
+    analyses_list[[s]] <- list(
+      quantiles_list      = scenario_method_quantiles_list[[s]],
+      scenario_data       = scenario_list[[s]],
+      analysis_parameters = list(
+        quantiles             = quantiles,
+        method_names          = method_names,
+        prior_parameters_list = prior_parameters_list,
+        n_mcmc_iterations     = n_mcmc_iterations))
+    
+  }
+  
+  class(analyses_list) <- "analysis_list"
+  
+  return (analyses_list)
+  
 }
