@@ -1,154 +1,61 @@
-Run r-lib/actions/setup-r-dependencies@v2
-Run # Set site library path
-Set site library path
-Run # Install pak
-Install pak
-Run # Repo status
-Repo status
-Run # Dependency resolution
-Dependency resolution
-Show Lockfile
-Run actions/cache@v4
-Cache not found for input keys: macOS Sequoia 15.7.3-R version 4.5.2 (2025-10-31)-2-91d933ea6b6b2c1ecd5c4cf2087fe39cab43cca4885ea99b1a645bc16ed1d68a, macOS Sequoia 15.7.3-R version 4.5.2 (2025-10-31)-2-
-Run # Install/Update packages
-Install/update packages
-  ℹ Installing lockfile '.github/pkg.lock'
-   
-  → Will install 52 packages.
-  → Will download 49 CRAN packages (28.66 MB).
-  → Will download 3 packages with unknown size.
-  + base64enc      0.1-3    🔧 ⬇ (35.07 kB)
-  + bslib          0.9.0     ⬇ (5.68 MB)
-  + cachem         1.1.0    🔧 ⬇ (71.08 kB)
-  + callr          3.7.6     ⬇ (454.39 kB)
-  + cli            3.6.5    🔧 ⬇ (1.47 MB)
-  + coda           0.19-4.1  ⬇ (331.07 kB)
-  + curl           7.0.0    🔧 ⬇ (1.21 MB)
-  + desc           1.4.3     ⬇ (337.82 kB)
-  + digest         0.6.39   🔧 ⬇ (362.19 kB)
-  + doFuture       1.1.3     ⬇ (169.98 kB)
-  + doRNG          1.8.6.2   ⬇ (42.47 kB)
-  + evaluate       1.0.5     ⬇ (102.94 kB)
-  + fastmap        1.2.0    🔧 ⬇ (192.97 kB)
-  + fontawesome    0.5.3     ⬇ (1.39 MB)
-  + foreach        1.5.2     ⬇ (141.00 kB)
-  + fs             1.6.6    🔧 ⬇ (641.28 kB)
-  + future         1.68.0    ⬇ (984.04 kB)
-  + future.apply   1.20.1    ⬇ (193.22 kB)
-  + globals        0.18.0    ⬇ (159.30 kB)
-  + highr          0.11      ⬇ (37.70 kB)
-  + htmltools      0.5.9    🔧 ⬇ (360.56 kB)
-  + iterators      1.0.14    ⬇ (346.35 kB)
-  + jquerylib      0.1.4     ⬇ (526.50 kB)
-  + jsonlite       2.0.0    🔧 ⬇ (1.11 MB)
-  + knitr          1.51      ⬇ (1.06 MB)
-  + lifecycle      1.0.5     ⬇ (132.98 kB)
-  + listenv        0.10.0    ⬇ (106.33 kB)
-  + memoise        2.0.1     ⬇ (49.48 kB)
-  + mime           0.13     🔧 ⬇ (48.28 kB)
-  + parallelly     1.46.1   🔧 ⬇ (620.39 kB)
-  + pkgbuild       1.4.8     ⬇ (209.86 kB)
-  + prettyunits    1.2.0     ⬇ (154.05 kB)
-  + processx       3.8.6    🔧 ⬇ (334.40 kB)
-  + ps             1.9.1    🔧 ⬇ (408.56 kB)
-  + R6             2.6.1     ⬇ (87.28 kB)
-  + rappdirs       0.3.3    🔧 ⬇ (48.63 kB)
-  + rcmdcheck      1.4.0     ⬇ (171.87 kB)
-  + rjags          4-17     🔧 ⬇ (321.74 kB)
-  + rlang          1.1.7    🔧 ⬇ (1.90 MB)
-  + rmarkdown      2.30      ⬇ (2.63 MB)
-  + rngtools       1.5.2     ⬇ (79.13 kB)
-  + rprojroot      2.1.1     ⬇ (113.09 kB)
-  + sass           0.4.10   🔧 ⬇ (2.41 MB)
-  + sessioninfo    1.2.3     ⬇ (196.56 kB)
-  + tinytex        0.58      ⬇ (144.38 kB)
-  + withr          3.0.2     ⬇ (224.91 kB)
-  + xfun           0.55     🔧 ⬇ (600.83 kB)
-  + xopen          1.0.1     ⬇ (25.60 kB)
-  + yaml           2.3.12   🔧 ⬇ (225.55 kB)
-    
-  ℹ Getting 49 pkgs (28.66 MB)
-  ✔ Cached copy of codetools 0.2-20 (*) is the latest build
-  ✔ Cached copy of lattice 0.22-7 (aarch64-apple-darwin20) is the latest build
-  ✔ Got base64enc 0.1-3 (aarch64-apple-darwin20) (35.07 kB)
-  ✔ Got cachem 1.1.0 (aarch64-apple-darwin20) (71.08 kB)
-  ✔ Got R6 2.6.1 (aarch64-apple-darwin20) (87.28 kB)
-  ✔ Got highr 0.11 (aarch64-apple-darwin20) (37.70 kB)
-  ✔ Got foreach 1.5.2 (aarch64-apple-darwin20) (141.00 kB)
-  ✔ Got coda 0.19-4.1 (aarch64-apple-darwin20) (331.07 kB)
-  ✔ Got iterators 1.0.14 (aarch64-apple-darwin20) (346.35 kB)
-  ✔ Got listenv 0.10.0 (aarch64-apple-darwin20) (106.33 kB)
-  ✔ Got fs 1.6.6 (aarch64-apple-darwin20) (641.28 kB)
-  ✔ Got lifecycle 1.0.5 (aarch64-apple-darwin20) (132.98 kB)
-  ✔ Got parallelly 1.46.1 (aarch64-apple-darwin20) (620.39 kB)
-  ✔ Got tinytex 0.58 (aarch64-apple-darwin20) (144.38 kB)
-  ✔ Got cli 3.6.5 (aarch64-apple-darwin20) (1.47 MB)
-  ✔ Got jsonlite 2.0.0 (aarch64-apple-darwin20) (1.11 MB)
-  ✔ Got knitr 1.51 (aarch64-apple-darwin20) (1.06 MB)
-  ✔ Got callr 3.7.6 (aarch64-apple-darwin20) (454.39 kB)
-  ✔ Got prettyunits 1.2.0 (aarch64-apple-darwin20) (154.05 kB)
-  ✔ Got sessioninfo 1.2.3 (aarch64-apple-darwin20) (196.56 kB)
-  ✔ Got processx 3.8.6 (aarch64-apple-darwin20) (334.40 kB)
-  ✔ Got rcmdcheck 1.4.0 (aarch64-apple-darwin20) (171.87 kB)
-  ✔ Got xopen 1.0.1 (aarch64-apple-darwin20) (25.60 kB)
-  ✔ Got pkgbuild 1.4.8 (aarch64-apple-darwin20) (209.86 kB)
-  ✔ Got doRNG 1.8.6.2 (aarch64-apple-darwin20) (42.47 kB)
-  ✔ Got evaluate 1.0.5 (aarch64-apple-darwin20) (102.94 kB)
-  ✔ Got digest 0.6.39 (aarch64-apple-darwin20) (362.19 kB)
-  ✔ Got fastmap 1.2.0 (aarch64-apple-darwin20) (192.97 kB)
-  ✔ Got globals 0.18.0 (aarch64-apple-darwin20) (159.30 kB)
-  ✔ Got rlang 1.1.7 (aarch64-apple-darwin20) (1.90 MB)
-  ✔ Got rjags 4-17 (aarch64-apple-darwin20) (321.74 kB)
-  ✔ Got htmltools 0.5.9 (aarch64-apple-darwin20) (360.56 kB)
-  ✔ Got xfun 0.55 (aarch64-apple-darwin20) (600.83 kB)
-  ✔ Got desc 1.4.3 (aarch64-apple-darwin20) (337.82 kB)
-  ✔ Got rmarkdown 2.30 (aarch64-apple-darwin20) (2.63 MB)
-  ✔ Got future 1.68.0 (aarch64-apple-darwin20) (984.04 kB)
-  ✔ Got ps 1.9.1 (aarch64-apple-darwin20) (408.56 kB)
-  ✔ Got memoise 2.0.1 (aarch64-apple-darwin20) (49.48 kB)
-  ✔ Got mime 0.13 (aarch64-apple-darwin20) (48.28 kB)
-  ✔ Got curl 7.0.0 (aarch64-apple-darwin20) (1.21 MB)
-  ✖ Failed to download doFuture 1.1.3 (aarch64-apple-darwin20)
-  ✔ Got future.apply 1.20.1 (aarch64-apple-darwin20) (193.22 kB)
-  ✔ Got rappdirs 0.3.3 (aarch64-apple-darwin20) (48.63 kB)
-  ✔ Got rngtools 1.5.2 (aarch64-apple-darwin20) (79.13 kB)
-  ✔ Got yaml 2.3.12 (aarch64-apple-darwin20) (225.55 kB)
-  ✔ Got rprojroot 2.1.1 (aarch64-apple-darwin20) (113.09 kB)
-  ✔ Got withr 3.0.2 (aarch64-apple-darwin20) (224.91 kB)
-  ✔ Got jquerylib 0.1.4 (aarch64-apple-darwin20) (526.50 kB)
-  ✔ Got fontawesome 0.5.3 (aarch64-apple-darwin20) (1.39 MB)
-  ✔ Got bslib 0.9.0 (aarch64-apple-darwin20) (5.68 MB)
-  ✔ Got sass 0.4.10 (aarch64-apple-darwin20) (2.41 MB)
-  ✔ Installed R6 2.6.1  (26ms)
-  ✔ Installed base64enc 0.1-3  (19ms)
-  ✔ Installed bslib 0.9.0  (278ms)
-  ✔ Installed cachem 1.1.0  (23ms)
-  ✔ Installed cli 3.6.5  (27ms)
-  ✔ Installed coda 0.19-4.1  (17ms)
-  ✔ Installed digest 0.6.39  (56ms)
-  Error: 
-  ! error in pak subprocess
-  Caused by error in `file(con, "rb")`:
-  ! cannot open the connection
-  ---
-  Backtrace:
-  1. pak::lockfile_install(".github/pkg.lock")
-  2. pak:::remote(function(...) { …
-  3. err$throw(res$error)
-  ---
-  Subprocess backtrace:
-   1. base::withCallingHandlers(cli_message = function(msg) { …
-   2. get("lockfile_install_internal", asNamespace("pak"))(...)
-   3. plan$install()
-   4. pkgdepends::install_package_plan(plan, lib = private$library, num_workers = nw, …
-   5. base::withCallingHandlers({ …
-   6. pkgdepends:::start_task(state, task)
-   7. pkgdepends:::start_task_install(state, task)
-   8. pkgdepends:::make_install_process(filename, lib = lib, metadata = metadata)
-   9. pkgdepends:::detect_package_archive_type(filename)
-  10. base::readBin(file, what = "raw", n = 6)
-  11. base::file(con, "rb")
-  12. base::.handleSimpleError(function (e) …
-  13. global h(simpleError(msg, call))
-  Execution halted
-  Error: Process completed with exit code 1.
+# Workflow derived from https://github.com/r-lib/actions/tree/v2/examples
+# Need help debugging build failures? Start at https://github.com/r-lib/actions#where-to-find-help
+# Does not install Jags
+on:
+  push:
+    branches: [test]
+  pull_request:
+    branches: [test]
+  workflow_dispatch:
+
+name: Mac
+
+jobs:
+  R-CMD-check:
+    runs-on: ${{ matrix.config.os }}
+
+    name: ${{ matrix.config.os }} (${{ matrix.config.r }})
+
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - {os: macos-latest,   r: 'release'}
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+      R_KEEP_PKG_SOURCE: yes
+
+    steps:
+      - uses: quarto-dev/quarto-actions/setup@v2
+      - uses: actions/checkout@v2
+
+      - uses: r-lib/actions/setup-pandoc@v2
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: ${{ matrix.config.r }}
+          http-user-agent: ${{ matrix.config.http-user-agent }}
+          use-public-rspm: true
+          
+      - name: Install JAGS on macOS
+        if: runner.os == 'macOS'
+        run: |
+          brew install jags
+      
+      - name: Configure JAGS library path
+        if: runner.os == 'macOS'
+        run: |
+          
+          brew install jags
+          sudo mkdir -p /usr/local/lib/JAGS
+          sudo ln -s /opt/homebrew/lib/JAGS/modules-4 /usr/local/lib/JAGS/modules-4
+          sudo ln -s /opt/homebrew/lib/libjags*.dylib /usr/local/lib/
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::rcmdcheck
+          needs: check
+
+      - uses: r-lib/actions/check-r-package@v2
+        with:
+          upload-snapshots: true
