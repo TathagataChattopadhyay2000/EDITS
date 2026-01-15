@@ -1,131 +1,41 @@
-test_that("mapUniqueTrials with exnex preserves per-trial posteriors vs naive computation", {
-  skip_if_not_installed("rjags")
-  skip_if_not_installed("foreach")
-  foreach::registerDoSEQ()
-  set.seed(123)
+performJags <- function (
+  
+  data,
+  parameters_to_save,
+  model_file, 
+  n_chains = 2,
+  n_iter   = 1e4,
+  n_burnin = floor(n_iter/3)
 
-  ## 1) Build a scenario with 10 trials, 2 cohorts, using getScenario ----------
-  scene <- getScenario(
-    n_subjects     = c(10, 20),
-    response_rates = c(0.4, 0.6),
-    n_trials       = 10
-  )
-
-  # Ensure scenario_number is present (getScenario usually does this)
-  if (is.null(scene$scenario_number)) {
-    scene$scenario_number <- 1L
+) {
+    
+  
+  n_adapt <- ifelse(n_burnin > 0, n_burnin, 100)
+  
+  inits <- vector("list", n_chains)
+  for (i in 1:n_chains) {
+    inits[[i]]$.RNG.name <- "base::Wichmann-Hill"
+    inits[[i]]$.RNG.seed <- stats::runif(1, 0, 2^31)
   }
-
-  scenario_list <- list(scenario_1 = scene)
-  class(scenario_list) <- "scenario_list"
-
-  n_subj   <- scene$n_subjects    # 10 × 2 matrix
-  n_resp   <- scene$n_responders  # 10 × 2 matrix
-  n_trials <- nrow(n_subj)
-  n_coh    <- ncol(n_subj)
-
-  ## 2) Check we actually have duplicates; otherwise skip ----------------------
-  trials_unique <- getUniqueTrials(scenario_list)
-  if (nrow(trials_unique) == n_trials) {
-    skip("No duplicated trial patterns with this seed; adjust seed or parameters if you want this test to run.")
-  }
-
-  ## 3) Prepare exnex analysis (real JAGS setup) -------------------------------
-  target_rates <- rep(0.5, n_coh)
-  priors_list  <- getPriorParameters(
-    method_names = "exnex",
-    target_rates = target_rates
-  )
-
-  prep <- prepareAnalysis(
-    method_name      = "exnex",
-    prior_parameters = priors_list[["exnex"]],
-    target_rates     = target_rates
-  )
-
-  quantiles <- c(0.025, 0.5, 0.975)
-
-  ## 4) Naive approach: one getPostQuantiles call per trial row -----------------
-  naive_list <- vector("list", length = n_trials)
-
-  for (i in seq_len(n_trials)) {
-    scen_data_i <- list(
-      n_subjects   = matrix(n_subj[i, ],   nrow = 1),
-      n_responders = matrix(n_resp[i, ],   nrow = 1)
-    )
-
-    naive_list[[i]] <- getPostQuantiles(
-      method_name       = "exnex",
-      quantiles         = quantiles,
-      scenario_data     = scen_data_i,
-      calc_differences  = NULL,
-      j_parameters      = prep$j_parameters,
-      j_model_file      = prep$j_model_file,
-      j_data            = prep$j_data,
-      n_mcmc_iterations = 500,
-      save_path         = NULL,
-      save_trial        = NULL
-    )[[1]]  # single matrix for this trial
-  }
-
-  ## 5) Optimised approach: unique trials + mapUniqueTrials --------------------
-
-  # Unique rows: [responders | subjects | go_flag]
-  n_coh_u <- (ncol(trials_unique) - 1L) / 2L
-  expect_equal(n_coh_u, n_coh)
-
-  applicable_previous_trials <- FALSE  # we ignore previous_analyses in this test
-
-  calc_trial_indices <- rep(TRUE, nrow(trials_unique))
-  trials_unique_calc <- trials_unique[calc_trial_indices, -ncol(trials_unique), drop = FALSE]
-
-  n_resp_unique <- trials_unique_calc[, seq_len(n_coh),                drop = FALSE]
-  n_subj_unique <- trials_unique_calc[, seq_len(n_coh) + n_coh,        drop = FALSE]
-
-  # Compute posteriors only for the unique patterns
-  method_quantiles_list <- list(
-    exnex = getPostQuantiles(
-      method_name       = "exnex",
-      quantiles         = quantiles,
-      scenario_data     = list(
-        n_subjects   = n_subj_unique,
-        n_responders = n_resp_unique
-      ),
-      calc_differences  = NULL,
-      j_parameters      = prep$j_parameters,
-      j_model_file      = prep$j_model_file,
-      j_data            = prep$j_data,
-      n_mcmc_iterations = 500,
-      save_path         = NULL,
-      save_trial        = NULL
-    )
-  )
-
-  # Map unique results back to each trial via hashes
-  out <- mapUniqueTrials(
-    scenario_list              = scenario_list,
-    method_quantiles_list      = method_quantiles_list,
-    trials_unique_calc         = trials_unique_calc,
-    applicable_previous_trials = applicable_previous_trials
-  )
-
-  expect_type(out, "list")
-  expect_identical(names(out), "scenario_1")
-
-  scen1_out <- out[["scenario_1"]]
-  expect_true(is.list(scen1_out))
-  expect_true("exnex" %in% names(scen1_out))
-
-  # We should now have one matrix per original trial
-  expect_equal(length(scen1_out$exnex), n_trials)
-
-  ## 6) Core check: mapUniqueTrials vs naive must match trial-by-trial ---------
-
-  for (i in seq_len(n_trials)) {
-    expect_equal(
-      scen1_out$exnex[[i]],
-      naive_list[[i]],
-      tolerance = 1e-6
-    )
-  }
-})
+  
+  j_model <- rjags::jags.model(file     = model_file,
+                               data     = data,
+                               inits    = inits, 
+                               n.chains = n_chains,
+                               n.adapt  = 0,
+                               quiet    = TRUE)
+  
+  rjags::adapt(object         = j_model,
+               n.iter         = n_adapt,
+               progress.bar   = "none",
+               end.adaptation = TRUE)
+  
+  samples <- rjags::coda.samples(model          = j_model,
+                                 variable.names = parameters_to_save, 
+                                 n.iter         = n_iter - n_burnin,
+                                 thin           = 1, 
+                                 progress.bar   = "none")
+  
+  return(do.call(rbind, samples))
+    
+}
