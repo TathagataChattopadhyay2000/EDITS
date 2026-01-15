@@ -1,110 +1,123 @@
-test_that("mapUniqueTrials: with previous trials, only GO trials are updated from hash tables", {
-  foreach::registerDoSEQ()
-  set.seed(456)
+# Workflow derived from https://github.com/r-lib/actions/tree/v2/examples
+# Need help debugging build failures? Start at https://github.com/r-lib/actions#where-to-find-help
+# Does not install Jags
+on:
+  push:
+    branches: [test]
+  pull_request:
+    branches: [test]
+  workflow_dispatch:
 
-  ## 1) Build a one-scenario object with 2 trials, 2 cohorts, incl. previous_analyses
-  scene <- getScenario(
-    n_subjects     = c(10, 10),
-    response_rates = c(0.1, 0.2),
-    n_trials       = 2
-  )
+name: Mac
 
-  trial_data <- list(scenario_1 = scene)
-  class(trial_data) <- "scenario_list"
-  if (is.null(trial_data$scenario_1$scenario_number)) {
-    trial_data$scenario_1$scenario_number <- 1L
-  }
+jobs:
+  R-CMD-check:
+    runs-on: ${{ matrix.config.os }}
 
-  ## 2) Force GO / NoGo pattern in the "overall" column:
-  ##    - trial 1: GO
-  ##    - trial 2: NoGo
-  go_mat <- trial_data$scenario_1$previous_analyses$go_decisions
-  go_mat[, 1] <- c(TRUE, FALSE)   # column 1 is used by mapUniqueTrials
-  trial_data$scenario_1$previous_analyses$go_decisions <- go_mat
+    name: ${{ matrix.config.os }} (${{ matrix.config.r }})
 
-  ## 3) Create REAL "previous" post_quantiles using package functions
-  n_trials   <- trial_data$scenario_1$n_trials
-  n_cohorts  <- ncol(trial_data$scenario_1$n_subjects)
-  quantiles  <- c(0.025, 0.5, 0.975)
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - {os: macos-latest,   r: 'release'}
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+      R_KEEP_PKG_SOURCE: yes
 
-  prior_parameters_list <- getPriorParameters(
-    method_names = "berry",
-    target_rates = rep(0.5, n_cohorts)
-  )
+    steps:
+      - uses: quarto-dev/quarto-actions/setup@v2
+      - uses: actions/checkout@v2
 
-  prep <- prepareAnalysis(
-    method_name      = "berry",
-    prior_parameters = prior_parameters_list[["berry"]],
-    target_rates     = rep(0.5, n_cohorts)
-  )
+      - uses: r-lib/actions/setup-pandoc@v2
 
-  ## Build a per-trial list of matrices (the structure mapUniqueTrials expects)
-  old_q_list <- vector("list", length = n_trials)
-  for (i in seq_len(n_trials)) {
-    n_subj_i <- trial_data$scenario_1$n_subjects[i, , drop = FALSE]
-    n_resp_i <- trial_data$scenario_1$n_responders[i, , drop = FALSE]
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: ${{ matrix.config.r }}
+          http-user-agent: ${{ matrix.config.http-user-agent }}
+          use-public-rspm: true
 
-    old_q_list[[i]] <- getPostQuantiles(
-      method_name       = "berry",
-      quantiles         = quantiles,
-      scenario_data     = list(
-        n_subjects   = n_subj_i,
-        n_responders = n_resp_i
-      ),
-      calc_differences  = NULL,
-      j_parameters      = prep$j_parameters,
-      j_model_file      = prep$j_model_file,
-      j_data            = prep$j_data,
-      n_mcmc_iterations = 100,
-      save_path         = NULL,
-      save_trial        = NULL
-    )[[1]]
-  }
+      - name: Install JAGS on macOS
+        if: runner.os == 'macOS'
+        run: |
+          brew install jags
+      
+      - name: Configure JAGS library path
+        if: runner.os == 'macOS'
+        run: |
+          
+          brew install jags
+          sudo mkdir -p /usr/local/lib/JAGS
+          sudo ln -s /opt/homebrew/lib/JAGS/modules-4 /usr/local/lib/JAGS/modules-4
+          sudo ln -s /opt/homebrew/lib/libjags*.dylib /usr/local/lib/
 
-  trial_data$scenario_1$previous_analyses$post_quantiles <- list(
-    berry = old_q_list
-  )
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::rcmdcheck
+          needs: check
 
-  ## 4) Build trials_unique and the subset used for new calculations
-  trials_unique <- getUniqueTrials(trial_data)
-  n_cohorts_u   <- (ncol(trials_unique) - 1L) / 2L
+      - uses: r-lib/actions/check-r-package@v2
+        with:
+          upload-snapshots: true
 
-  ## applicable_previous_trials is TRUE by design in this test
-  applicable_previous_trials <- TRUE
 
-  ## We only (re)analyse unique GO trials:
-  calc_trial_indices <- trials_unique[, ncol(trials_unique)] > 0
-  trials_unique_calc <- trials_unique[calc_trial_indices, -ncol(trials_unique), drop = FALSE]
-
-  ## 5) Create NEW quantiles for the GO pattern by modifying the existing ones
-  ##    - trials_unique_calc contains only the GO pattern(s). Here, with our setup,
-  ##      that's just trial 1.
-  ##    - We derive a new matrix from the previous one to ensure they differ.
-  new_q_go <- old_q_list[[1]] + 1  # simple shift to guarantee a difference
-
-  method_quantiles_list <- list(
-    berry = list(new_q_go)  # one entry per UNIQUE GO pattern
-  )
-
-  ## 6) Run mapUniqueTrials: should update only the GO trial
-  out <- mapUniqueTrials(
-    scenario_list              = trial_data,
-    method_quantiles_list      = method_quantiles_list,
-    trials_unique_calc         = trials_unique_calc,
-    applicable_previous_trials = applicable_previous_trials
-  )
-
-  ## 7) Checks
-  expect_type(out, "list")
-  expect_identical(names(out), "scenario_1")
-
-  scen1 <- out[["scenario_1"]]
-  expect_true(is.list(scen1))
-  expect_true("berry" %in% names(scen1))
-
-  ## Trial 1 (GO) must now be the NEW quantiles
-  expect_identical(scen1$berry[[1]], new_q_go)
-
-  ## Trial 2 (NoGo) must remain with its original (old) quantiles
-  expect_identical(scen1$berry[[2]], old_q_list[[2]])
-})
+24s
+Run r-lib/actions/setup-r-dependencies@v2
+Run # Set site library path
+Set site library path
+Run # Install pak
+Install pak
+Run # Repo status
+Repo status
+Run # Dependency resolution
+Dependency resolution
+Show Lockfile
+Run actions/cache@v4
+Cache hit for restore-key: macOS Sequoia 15.7.2-R version 4.5.2 (2025-10-31)-1-0d3051ef315b89ef9298c6b5198689afff4073a0d98d18da6ac1dd480c7e3d5a
+Received 0 of 26960297 (0.0%), 0.0 MBs/sec
+Received 26960297 of 26960297 (100.0%), 14.9 MBs/sec
+Cache Size: ~26 MB (26960297 B)
+/opt/homebrew/bin/gtar -xf /Users/runner/work/_temp/e858298c-8751-4cd8-8218-f350ad24d5fc/cache.tzst -P -C /Users/runner/work/bhmbasket/bhmbasket --delay-directory-restore --use-compress-program unzstd
+Cache restored successfully
+Cache restored from key: macOS Sequoia 15.7.2-R version 4.5.2 (2025-10-31)-1-0d3051ef315b89ef9298c6b5198689afff4073a0d98d18da6ac1dd480c7e3d5a
+Run # Install/Update packages
+Install/update packages
+  ℹ Installing lockfile '.github/pkg.lock'
+   
+  → Will install 5 packages.
+  → Will download 2 CRAN packages (840.92 kB).
+  → Will download 3 packages with unknown size.
+  + parallelly   1.45.1 🔧 ⬇ (615.38 kB)
+  + yaml         2.3.12 🔧 ⬇ (225.55 kB)
+    
+  ℹ Getting 2 pkgs (840.92 kB)
+  ✔ Cached copy of codetools 0.2-20 (*) is the latest build
+  ✔ Cached copy of lattice 0.22-7 (aarch64-apple-darwin20) is the latest build
+  ✔ Got yaml 2.3.12 (aarch64-apple-darwin20) (225.55 kB)
+  ✖ Failed to download parallelly 1.45.1 (aarch64-apple-darwin20)
+  Error: 
+  ! error in pak subprocess
+  Caused by error in `file(con, "rb")`:
+  ! cannot open the connection
+  ---
+  Backtrace:
+  1. pak::lockfile_install(".github/pkg.lock")
+  2. pak:::remote(function(...) { …
+  3. err$throw(res$error)
+  ---
+  Subprocess backtrace:
+   1. base::withCallingHandlers(cli_message = function(msg) { …
+   2. get("lockfile_install_internal", asNamespace("pak"))(...)
+   3. plan$install()
+   4. pkgdepends::install_package_plan(plan, lib = private$library, num_workers = nw, …
+   5. base::withCallingHandlers({ …
+   6. pkgdepends:::start_task(state, task)
+   7. pkgdepends:::start_task_install(state, task)
+   8. pkgdepends:::make_install_process(filename, lib = lib, metadata = metadata)
+   9. pkgdepends:::detect_package_archive_type(filename)
+  10. base::readBin(file, what = "raw", n = 6)
+  11. base::file(con, "rb")
+  12. base::.handleSimpleError(function (e) …
+  13. global h(simpleError(msg, call))
+  Execution halted
+  Error: Process completed with exit code 1.
