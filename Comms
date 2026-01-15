@@ -1,229 +1,126 @@
-## 1. Baseline functional behaviour & structure  -------------------------------
+## ------------------------------------------------------------------
+## Helper: compute overall Go probability for (n, p_true, gamma)
+## using the existing bhmbasket workflow.
+## ------------------------------------------------------------------
 
-test_that("getEstimates works for simulated scenarios and returns sensible structure", {
-  
-  res <- getEstimates(analyses_list)
-  
-  # function must run and return a list-like structure
-  expect_type(res, "list")
-  
-  expect_true(length(res) > 0)
-  
-  # Handle both shapes: listPerMethod can give list-of-lists or list-of-matrices
-  # TODO seems like it gives list all the time because the name of the method is 
-  # also printed so we can skip it
-  
-  first_obj <- res[[1]]
-  
-  if (is.list(first_obj)) {
-    
-    first_mat <- first_obj[[1]]
-    
-  } else {
-    
-    first_mat <- first_obj
-    
-  }
-  
-  # Inner object must be a matrix of estimates
-  expect_true(is.matrix(first_mat))
-  
-  # For simulated trials (n_trials > 1): expect posterior summaries + Bias + MSE
-  expect_true(all(c("Mean", "SD", "2.5%", "50%", "97.5%", "Bias", "MSE") %in% colnames(first_mat)))
-  
-  # Row names should include:
-  #  - p_* cohorts (response rate parameters)
-  #  - 'diff' rows from calc_differences matrix
-  expect_true(any(grepl("^p_",   rownames(first_mat))))
-  
-  expect_true(any(grepl("diff", rownames(first_mat))))
-})
-
-
-# 2. Additional parameters + historic-rate handling ----------------------------
-
-test_that("additional parameters are added and have NA bias/MSE", {
-  
-  # Baseline without additional parameters: used to compare row/column structure
-  res_base <- getEstimates(analyses_list)
-  
-  base_obj <- res_base[[1]]
-  
-  if (is.list(base_obj)) base_mat <- base_obj[[1]] else base_mat <- base_obj
-  
-  # Same analyses_list, but now request additional hierarchical parameters
-  res_add <- getEstimates(
-    
-    analyses_list   = analyses_list,
-    add_parameters  = c("mu", "tau", "w_1", "w_2", "w_3")
-    
-  )
-  add_obj <- res_add[[1]]
-  
-  if (is.list(add_obj)) add_mat <- add_obj[[1]] else add_mat <- add_obj
-  
-  # ---- Historic rate branch check for p_3 ----
-  # Row for p_3 must exist (this cohort had response_rate = 3 in simulateScenarios)
-  p3_row <- grep("^p_3$", rownames(add_mat))
-  
-  expect_length(p3_row, 1)
-  
-  bias_p3   <- add_mat[p3_row, "Bias"]
-  
-  median_p3 <- add_mat[p3_row, "50%"]
-  
-  # In scenario_data: response_rates = c(0.1, 0.2, 3) and n_subjects[1,3] = 30
-  # getEstimates transforms true_rr[3] to 3 / 30 = 0.1 in the 'historic' branch
-  true_rr_raw       <- analyses_list[[1]]$scenario_data$response_rates
-  
-  n_subj            <- analyses_list[[1]]$scenario_data$n_subjects[1, ]
-  
-  expected_true_rr3 <- true_rr_raw[3] / n_subj[[3]]
-  
-  # Bias is defined as: Bias = (point_estimate - true_rr_used)
-  # -> point_estimate = Bias + true_rr_used
-  point_estimate3 <- bias_p3 + expected_true_rr3
-  
-  # For median point_estimator (default), the "50%" column should match that estimate
-  expect_equal(point_estimate3, median_p3)
-  
-  # Column structure must be identical with and without add_parameters
-  expect_identical(colnames(base_mat), colnames(add_mat))
-  
-  # Extra rows should correspond exactly to mu/tau/w_* (hierarchical parameters)
-  extra_rows <- setdiff(rownames(add_mat), rownames(base_mat))
-  
-  expect_true(length(extra_rows) > 0)
-  
-  expect_true(all(grepl("mu|tau|w_", extra_rows)))
-  
-  # By design: Bias and MSE are *not* computed for non-p_* parameters -> should be NA
-  expect_true(all(is.na(add_mat[extra_rows, "Bias"])))
-  
-  expect_true(all(is.na(add_mat[extra_rows, "MSE"])))
-  
-})
-
-# 3. Single-trial: only posterior summaries, no Bias/MSE -----------------------
-
-test_that("single-trial outcome returns only posterior summaries (no bias/MSE)", {
-  
-  # outcome_analysis has a single trial generated with createTrial()
-  res_single <- getEstimates(outcome_analysis)
-  
-  single_obj <- res_single[[1]]
-  
-  if (is.list(single_obj)) single_mat <- single_obj[[1]] else single_mat <- single_obj
-  
-  # For a single trial, the function should skip bias/MSE and return only posterior summaries
-  expect_true(is.matrix(single_mat))
-  
-  expect_identical(
-    
-    colnames(single_mat),
-    c("Mean", "SD", "2.5%", "50%", "97.5%")
-    
-  )
-})
-
-# 4. Validation of alpha_level and add_parameters ------------------------------
-
-test_that("alpha_level and add_parameters are validated correctly", {
-  
-  # (a) alpha_level must be in (0,1) AND match stored quantiles
-  #     This hits: numeric constraints + 'stored quantiles' check.
-  expect_error(
-    
-    getEstimates(analyses_list, alpha_level = 0.07)
-    
+go_prob_overall <- function(n,
+                            p_true,
+                            p_beta,
+                            gamma,
+                            n_trials = 1000,
+                            method_name = "pooled") {
+  # 1) Simulate n_trials basket trials with 1 cohort
+  scen <- simulateScenarios(
+    n_subjects_list     = list(c(n)),          # 1 cohort with n patients
+    response_rates_list = list(c(p_true)),     # true response rate
+    n_trials            = n_trials
   )
   
-  # (b) add_parameters that never appear in any method must trigger the specific error
-  expect_error(
-    
-    getEstimates(analyses_list, add_parameters = c("totally_unknown_param"))
-    
-  )
-})
-
-# 5. point_estimator behaviour and basic input type assertions -----------------
-
-test_that("point_estimator argument is respected and input type is validated", {
-  
-  # (a) Both 'median' and 'mean' must work and produce matrices of identical shape
-  res_median <- getEstimates(analyses_list, point_estimator = "median")
-  
-  res_mean   <- getEstimates(analyses_list, point_estimator = "mean")
-  
-  med_obj  <- res_median[[1]]
-  
-  mean_obj <- res_mean[[1]]
-  
-  if (is.list(med_obj))  med_mat  <- med_obj[[1]]  else med_mat  <- med_obj
-  
-  if (is.list(mean_obj)) mean_mat <- mean_obj[[1]] else mean_mat <- mean_obj
-  
-  expect_identical(dim(med_mat),   dim(mean_mat))
-  
-  expect_identical(colnames(med_mat), colnames(mean_mat))
-  
-  # (b) Invalid point_estimator choice -> checkmate::assertChoice should fail
-  expect_error(
-    
-    getEstimates(analyses_list, point_estimator = "mode")
-
+  # 2) Analyse with performAnalyses (pooled => analytic Beta posterior)
+  analyses <- performAnalyses(
+    scenario_list      = scen,
+    target_rates       = c(p_beta),           # clinical boundary encoded as "target rate"
+    method_names       = method_name,
+    n_mcmc_iterations  = 100,                 # ignored for "pooled", but must be > 0
+    verbose            = FALSE
   )
   
-  # (c) Non-analysis_list input must fail the class assertion on analyses_list
-  expect_error(
-    
-    getEstimates(list(a = 1))
+  # 3) Decision rule: P(p > p_beta | data) > gamma
+  #    -> implemented as q_{1-gamma} > p_beta  via boundary_rules
+  decisions <- getGoDecisions(
+    analyses_list   = analyses,
+    cohort_names    = "p_1",
+    evidence_levels = gamma,                  # γ
+    boundary_rules  = quote(c(x[1] > p_beta)) # p_beta from calling environment
+  )
   
+  # 4) Convert decisions to Go probabilities
+  go_probs_list <- getGoProbabilities(decisions)
+  # go_probs_list[[method_name]][["scenario_1"]] is a 1×K matrix (row "Go")
+  go_mat <- go_probs_list[[method_name]][["scenario_1"]]
+  
+  # Column "overall" = P(overall Go)
+  go_mat["Go", "overall"]
+}
+
+
+## ------------------------------------------------------------------
+## Grid search: find (n, gamma) that satisfy type I & power constraints
+## ------------------------------------------------------------------
+
+# Design settings
+p0          <- 0.30    # null true response rate
+p1          <- 0.50    # alternative true response rate
+p_beta      <- 0.50    # clinical boundary
+alpha_max   <- 0.10    # allowed type I error
+power_min   <- 0.80    # required power
+n_trials_oc <- 1000    # number of simulated trials per (n, gamma) scenario
+
+# Search grid:
+n_grid     <- c(20, 30, 40, 50, 60)          # candidate sample sizes
+gamma_grid <- seq(0.7, 0.95, by = 0.05)      # candidate evidence levels
+
+oc_results <- expand.grid(
+  n     = n_grid,
+  gamma = gamma_grid
+)
+
+oc_results$alpha_hat <- NA_real_
+oc_results$power_hat <- NA_real_
+
+set.seed(2026)  # for reproducibility of the simulation
+
+for (i in seq_len(nrow(oc_results))) {
+  n_i     <- oc_results$n[i]
+  gamma_i <- oc_results$gamma[i]
+  
+  # Type I error under p0
+  oc_results$alpha_hat[i] <- go_prob_overall(
+    n        = n_i,
+    p_true   = p0,
+    p_beta   = p_beta,
+    gamma    = gamma_i,
+    n_trials = n_trials_oc,
+    method_name = "pooled"
   )
-})
-
-# 6. Additional explicit validation tests --------------------------------------
-#     (Some overlap with test 4 & 5)
-
-test_that("throws error for invalid alpha_level (outside 0,1)", {
-  # This hits the numeric constraint (0 < alpha_level < 1)
-  expect_error(getEstimates(analyses_list, alpha_level = 1.5), "alpha_level")
-})
-
-test_that("throws error if alpha_level quantiles not available", {
-  # This specifically hits: 'alpha_level must be among the stored quantiles'
-  expect_error(
-    getEstimates(analyses_list, alpha_level = 0.123),
-    "must be among the stored quantiles"
+  
+  # Power under p1
+  oc_results$power_hat[i] <- go_prob_overall(
+    n        = n_i,
+    p_true   = p1,
+    p_beta   = p_beta,
+    gamma    = gamma_i,
+    n_trials = n_trials_oc,
+    method_name = "pooled"
   )
-})
+}
 
-test_that("throws error if add_parameters not found in any method", {
-  # This isolates the 'all(!occurences)' error branch for add_parameters
-  expect_error(
-    getEstimates(analyses_list, add_parameters = c("nonexistent")),
-    "do not occur"
-  )
-})
+# Mark designs that satisfy the constraints
+oc_results$feasible <- with(
+  oc_results,
+  alpha_hat <= alpha_max & power_hat >= power_min
+)
 
-test_that("works for single trial outcome (basic check)", {
-  # Simpler version of the single-trial test: only structure is checked here
-  result <- getEstimates(outcome_analysis)
-  expect_type(result, "list")
-})
+oc_results
 
-test_that("invalid point_estimator throws error explicitly", {
-  # Explicit repeat of the assertChoice branch for point_estimator
-  expect_error(
-    getEstimates(analyses_list, point_estimator = "mode"),
-    "point_estimator"
-  )
-})
 
-test_that("invalid analyses_list class throws error explicitly", {
-  # Explicit repeat of the assertClass(analyses_list, 'analysis_list')
-  expect_error(
-    getEstimates(list()),
-    "analyses_list"
-  )
-})
+## ------------------------------------------------------------------
+## Select minimal n that satisfies the design constraints
+## ------------------------------------------------------------------
+
+feasible_designs <- subset(oc_results, feasible)
+
+if (nrow(feasible_designs) == 0) {
+  message("No (n, gamma) combination satisfies the constraints with this grid.")
+} else {
+  # Sort by n, then by how close power/alpha are to targets (optional)
+  feasible_designs <- feasible_designs[order(feasible_designs$n, -feasible_designs$power_hat), ]
+  
+  best_design <- feasible_designs[1, ]
+  
+  print(best_design)
+  # You can phrase this in your report as:
+  # "With n = best_design$n and gamma = best_design$gamma, we obtain
+  #  estimated type I error alpha_hat and power power_hat under the chosen
+  #  null/alternative, and this is the smallest n that meets our criteria."
+}
