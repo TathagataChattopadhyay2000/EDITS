@@ -1,131 +1,33 @@
-## compute overall Go probability for (n, p_true, gamma)
-## using the existing bhmbasket workflow.
-## ------------------------------------------------------------------
-
-go_prob_overall <- function(n,
-                            p_true_vec,
-                            p_beta_vec,
-                            gamma,
-                            overall_min_gos = 1,
-                            n_trials,
-                            method_name = "berry"
-) {
-  
-  scen <- simulateScenarios(
-    n_subjects_list     = list(c(n, n)),        
-    response_rates_list = list(p_true_vec),
-    n_trials            = n_trials
-  )
-  
-  analyses <- performAnalyses(
-    scenario_list      = scen,
-    evidence_levels    = seq(0.7, 0.95, by = 0.05),
-    target_rates       = p_beta_vec,           # clinical boundary encoded as "target rate"
-    method_names       = method_name,
-    n_mcmc_iterations  = 100,
-    verbose            = FALSE
-  )
-  
-  # Decision rule: P(p > p_beta | data) > gamma
-  #    -> implemented as q_{1-gamma} > p_beta  via boundary_rules
-  decisions <- getGoDecisions(
-    analyses_list   = analyses,
-    cohort_names    = c("p_1", "p_2"),
-    evidence_levels = c(gamma, gamma),                  # γ
-    boundary_rules  = quote(c(x[1] > p_beta_vec[1],
-                              x[2] > p_beta_vec[2])),
-    overall_min_gos = overall_min_gos
-  )
-  
-  # Convert decisions to Go probabilities
-  go_probs_list <- getGoProbabilities(decisions)
-  # go_probs_list[[method_name]][["scenario_1"]] is a 1×K matrix (row "Go")
-  go_mat <- go_probs_list[[method_name]][["scenario_1"]]
-  
-  # Column "overall" = P(overall Go)
-  go_mat["Go", "overall"]
-}
-
-
-## Grid search: find (n, gamma) that satisfy type I & power constraints
-## ------------------------------------------------------------------
-
-# Design settings
-p0          <- c(0.30, 0.30)    # null true response rate
-p1          <- c(0.50, 0.50)    # alternative true response rate
-p_beta_vec  <- c(0.50, 0.50)    # clinical boundary
-alpha_max   <- 0.10    # allowed type I error
-power_min   <- 0.80    # required power
-n_trials_oc <- 1000    # number of simulated trials per (n, gamma) scenario
-
-# Search grid:
-n_grid     <- c(20, 30, 40, 50, 60)          # candidate sample sizes
-gamma_grid <- seq(0.7, 0.95, by = 0.05)      # candidate evidence levels
-
-oc_results <- expand.grid(
-  n     = n_grid,
-  gamma = gamma_grid
-)
-
-oc_results$alpha_hat <- NA_real_
-oc_results$power_hat <- NA_real_
-
-set.seed(2026)
-
-for (i in seq_len(nrow(oc_results))) {
-  n_i     <- oc_results$n[i]
-  gamma_i <- oc_results$gamma[i]
-  
-  # Type I error under p0
-  oc_results$alpha_hat[i] <- go_prob_overall(
-    n        = n_i,
-    p_true_vec   = p0,
-    p_beta_vec   = p_beta_vec,
-    gamma    = gamma_i,
-    n_trials = n_trials_oc,
-  )
-  
-  # Power under p1
-  oc_results$power_hat[i] <- go_prob_overall(
-    n        = n_i,
-    p_true_vec   = p1,
-    p_beta_vec   = p_beta,
-    gamma    = gamma_i,
-    n_trials = n_trials_oc,
-  )
-}
-
-# Mark designs that satisfy the constraints
-oc_results$feasible <- with(
-  oc_results,
-  alpha_hat <= alpha_max & power_hat >= power_min
-)
-
-oc_results
-
-
-## ------------------------------------------------------------------
-## Select minimal n that satisfies the design constraints
-## ------------------------------------------------------------------
-
-feasible_designs <- subset(oc_results, feasible)
-
-if (nrow(feasible_designs) == 0) {
-  message("No (n, gamma) combination satisfies the constraints with this grid.")
-} else {
-  # Sort by n, then by how close power/alpha are to targets (optional)
-  feasible_designs <- feasible_designs[order(feasible_designs$n, -feasible_designs$power_hat), ]
-  
-  best_design <- feasible_designs[1, ]
-  
-  print(best_design)
-  # You can phrase this in your report as:
-  # "With n = best_design$n and gamma = best_design$gamma, we obtain
-  #  estimated type I error alpha_hat and power power_hat under the chosen
-  #  null/alternative, and this is the smallest n that meets our criteria."
-}
-
-
-
-Error in performAnalyses(scenario_list = scen, evidence_levels = seq(0.7,  : 
-  Assertion on 'length(target_rates) must match number of cohorts' failed: Must be TRUE.
+ oc_results
+    n gamma alpha_hat power_hat feasible
+1  20  0.70     0.008     0.429    FALSE
+2  30  0.70     0.002     0.477    FALSE
+3  40  0.70     0.003     0.486    FALSE
+4  50  0.70     0.000     0.446    FALSE
+5  60  0.70     0.001     0.454    FALSE
+6  20  0.75     0.006     0.351    FALSE
+7  30  0.75     0.001     0.365    FALSE
+8  40  0.75     0.001     0.390    FALSE
+9  50  0.75     0.000     0.390    FALSE
+10 60  0.75     0.000     0.401    FALSE
+11 20  0.80     0.004     0.254    FALSE
+12 30  0.80     0.001     0.295    FALSE
+13 40  0.80     0.000     0.295    FALSE
+14 50  0.80     0.000     0.305    FALSE
+15 60  0.80     0.000     0.299    FALSE
+16 20  0.85     0.004     0.213    FALSE
+17 30  0.85     0.000     0.235    FALSE
+18 40  0.85     0.000     0.233    FALSE
+19 50  0.85     0.000     0.241    FALSE
+20 60  0.85     0.000     0.217    FALSE
+21 20  0.90     0.000     0.127    FALSE
+22 30  0.90     0.000     0.168    FALSE
+23 40  0.90     0.000     0.201    FALSE
+24 50  0.90     0.000     0.188    FALSE
+25 60  0.90     0.000     0.149    FALSE
+26 20  0.95     0.000     0.136    FALSE
+27 30  0.95     0.000     0.096    FALSE
+28 40  0.95     0.000     0.100    FALSE
+29 50  0.95     0.000     0.078    FALSE
+30 60  0.95     0.000     0.098    FALSE
+> 
