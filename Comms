@@ -1,14 +1,453 @@
-  if(is.null(rng_id)){
-    for (i in 1:n_chains) {
-      inits[[i]]$.RNG.name <- "base::Wichmann-Hill"
-      inits[[i]]$.RNG.seed <- stats::runif(1, 0, 2^31)
-    }
-  } else{
-    
-    base_seed <- digest::digest2int(as.character(rng_id))
-    
-    for (i in 1:n_chains) {
-      inits[[i]]$.RNG.name <- "base::Wichmann-Hill"
-      seed_val <- base_seed + (i - 1L)
-      seed_val <- (seed_val %% (2^31 - 1L)) +1L
-      inits[[i]]$.RNG.seed <- as.integer(seed_val)
+# Tests for getGoDecisions -----------------------------------------------------
+
+set.seed(123)
+
+# Use a standard 3-cohort simulation as the main test fixture.
+
+scenarios_list <- simulateScenarios(
+  n_subjects_list     = list(c(10, 20, 30)),
+  response_rates_list = list(c(0.3, 0.5, 0.7)),
+  n_trials            = 10
+)
+
+analyses_list <- performAnalyses(
+  scenario_list     = scenarios_list,
+  target_rates      = c(0.3, 0.3, 0.3),
+  n_mcmc_iterations = 100
+)
+
+default_cohorts <- c("p_1", "p_2", "p_3")
+
+
+## 1. Basic argument validation ------------------------------------------------
+
+test_that("getGoDecisions: errors if analyses_list is not of class 'analysis_list'", {
+  # exercise checkmate::assertClass(analyses_list, "analysis_list").
+  # expect a clear error mentioning 'analysis_list'.
+  expect_error(
+    getGoDecisions(
+      analyses_list   = list(),          # wrong class
+      cohort_names    = "p_1",
+      evidence_levels = 0.5,
+      boundary_rules  = quote(c(TRUE))
+    ),
+    "analysis_list"
+  )
+})
+
+test_that("getGoDecisions: errors when evidence_levels or boundary_rules are missing", {
+  # triggers the custom simpleError objects for missing evidence_levels / boundary_rules.
+  # we expect messages referring to evidence_levels / boundary_rules.
+  expect_error(
+    getGoDecisions(
+      analyses_list = analyses_list,
+      cohort_names  = "p_1",
+      boundary_rules = quote(c(TRUE))
+    ),
+    "evidence_levels"
+  )
+  
+  expect_error(
+    getGoDecisions(
+      analyses_list   = analyses_list,
+      cohort_names    = "p_1",
+      evidence_levels = 0.5
+    ),
+    "boundary_rules"
+  )
+})
+
+test_that("getGoDecisions: errors if cohort_names are not valid posterior parameters", {
+  # exercises checkmate::assertSubset(cohort_names, choices = ...).
+  # an invalid cohort name should cause an immediate error.
+  expect_error(
+    getGoDecisions(
+      analyses_list   = analyses_list,
+      cohort_names    = "invalid",
+      evidence_levels = 0.5,
+      boundary_rules  = quote(c(TRUE))
+    ),
+    "cohort_names"
+  )
+})
+
+test_that("getGoDecisions: errors if overall_min_gos is not a positive integer", {
+  # exercises checkmate::assertInt(overall_min_gos, lower = 1).
+  # zero or negative overall_min_gos is not allowed.
+  expect_error(
+    getGoDecisions(
+      analyses_list   = analyses_list,
+      cohort_names    = "p_1",
+      evidence_levels = 0.5,
+      boundary_rules  = quote(c(TRUE)),
+      overall_min_gos = 0L
+    ),
+    "overall_min_gos"
+  )
+})
+
+
+## 2. evidence_levels as numeric and as list -----------------------------------
+
+test_that("getGoDecisions: numeric evidence_levels outside (0,1) cause an error", {
+  # still in the non-list branch, but with invalid values.
+  # we expect check.evidence.levels() to reject them.
+  expect_error(
+    getGoDecisions(
+      analyses_list   = analyses_list,
+      cohort_names    = default_cohorts,
+      evidence_levels = c(-0.1, 0.5, 1.3),
+      boundary_rules  = quote(c(TRUE, TRUE, TRUE))
+    )
+  )
+})
+
+test_that("getGoDecisions: list evidence_levels all elements valid", {
+  # exercises the list(evidence_levels) branch and the for-loop over elements.
+  # all elements are valid vectors in (0,1), so we expect no error.
+  ev_list_ok <- list(
+    rep(0.5, length(default_cohorts)), # here length is 3
+    rep(0.5, length(default_cohorts))
+  )
+  
+  expect_silent(
+    getGoDecisions(
+      analyses_list   = analyses_list,
+      cohort_names    = default_cohorts,
+      evidence_levels = ev_list_ok,
+      boundary_rules  = quote(c(TRUE, TRUE, TRUE))
+    )
+  )
+})
+
+## 3. boundary_rules validation (non-list branch) ------------------------------
+
+test_that("getGoDecisions: non-list boundary_rules must be a language object", {
+  # exercises the non-list boundary_rules branch in check_boundary_rules.
+  # a plain number is not a language object and should fail is.language().
+  expect_error(
+    getGoDecisions(
+      analyses_list   = analyses_list,
+      cohort_names    = default_cohorts,
+      evidence_levels = c(0.5, 0.5, 0.8),
+      boundary_rules  = 1  # not language
+    ),
+    "boundary_rules"
+  )
+})
+
+test_that("getGoDecisions: non-list boundary_rules must start with c()", {
+  # boundary_rules must have head c() (e.g., quote(c(...))).
+  # here the call is list(...), so the [1] check against quote(c()) fails.
+  expect_error(
+  getGoDecisions(
+    analyses_list   = analyses_list,
+    cohort_names    = default_cohorts,
+    evidence_levels = c(0.5, 0.5, 0.8),
+    boundary_rules  = quote(list(TRUE, TRUE, TRUE))  # language, but not c()
+  ),
+  "boundary_rules"
+  )
+})
+
+test_that("getGoDecisions: non-list boundary_rules must have one entry per cohort", {
+  # exercises the non-list length check in check_boundary_rules.
+  # with 3 cohorts, c(...) must have length 3, length 2 should trigger an error.
+  expect_error(
+    getGoDecisions(
+      analyses_list   = analyses_list,
+      cohort_names    = default_cohorts,           # 3 cohorts
+      evidence_levels = c(0.5, 0.5, 0.8),
+      boundary_rules  = quote(c(TRUE, TRUE))       # only 2 entries
+    ),
+    "boundary_rules"
+  )
+})
+
+## 4. boundary_rules validation (list branch) ----------------------------------
+
+test_that("getGoDecisions: list boundary_rules each element must be a language object", {
+  # Exercises the list(boundary_rules) branch.
+  # Non-language element (123) should fail is.language(boundary_rules[[i]]).
+  br <- list(123)
+  
+  expect_error(
+    getGoDecisions(
+      analyses_list   = analyses_list,
+      cohort_names    = default_cohorts,
+      evidence_levels = c(0.5, 0.5, 0.8),
+      boundary_rules  = br
+    ),
+    "boundary_rules"
+  )
+})
+
+test_that("getGoDecisions: list boundary_rules each element must start with c()", {
+  # In the list case, each element still must be c(...).
+  # list(TRUE, TRUE, TRUE) fails the head == quote(c()) check.
+  br <- list(quote(list(TRUE, TRUE, TRUE)))
+  
+  expect_error(
+    getGoDecisions(
+      analyses_list   = analyses_list,
+      cohort_names    = default_cohorts,
+      evidence_levels = c(0.5, 0.5, 0.8),
+      boundary_rules  = br
+    ),
+    "boundary_rules"
+  )
+})
+
+test_that("getGoDecisions: list boundary_rules must match number of cohorts", {
+  # Exercises list + length check: for 3 cohorts, c(...) must have 3 entries.
+  # Here we only provide 2, which should trigger the error.
+  br <- list(quote(c(TRUE, TRUE)))
+  
+  expect_error(
+    getGoDecisions(
+      analyses_list   = analyses_list,
+      cohort_names    = default_cohorts,
+      evidence_levels = c(0.5, 0.5, 0.8),
+      boundary_rules  = br
+    ),
+    "boundary_rules"
+  )
+})
+
+## 5. Length consistency: method_names vs boundary_rules / gamma_levels --------
+
+test_that("errors if boundary_rules list is longer than method_names", {
+  
+  m    <- analyses_list[[1]]$analysis_parameters$method_names
+  coh  <- c("p_1", "p_2", "p_3")
+  ev   <- c(0.5, 0.5, 0.5)
+  
+  # list longer than number of methods
+  br   <- rep(list(quote(c(TRUE, TRUE, TRUE))), length(m) + 1L)
+  
+  expect_error(
+    getGoDecisions(
+      analyses_list   = analyses_list,
+      cohort_names    = coh,
+      evidence_levels = ev,
+      boundary_rules  = br
+    ),
+    "boundary_rules"
+  )
+})
+
+
+test_that("errors if evidence_levels list is longer than method_names", {
+  
+  m    <- analyses_list[[1]]$analysis_parameters$method_names
+  coh  <- c("p_1", "p_2", "p_3")
+  
+  # 0.5 is safe (1 - 0.5 = 0.5 in stored quantiles)
+  ev_vec <- c(0.5, 0.5, 0.5)
+  ev     <- rep(list(ev_vec), length(m) + 1L)
+  
+  expect_error(
+    getGoDecisions(
+      analyses_list   = analyses_list,
+      cohort_names    = coh,
+      evidence_levels = ev,
+      boundary_rules  = quote(c(TRUE, TRUE, TRUE))
+    ),
+    "evidence_levels"
+  )
+})
+
+
+test_that("single boundary_rules expression is recycled to all methods", {
+  
+  m    <- analyses_list[[1]]$analysis_parameters$method_names
+  coh  <- c("p_1", "p_2", "p_3")
+  ev   <- c(0.5, 0.5, 0.5)
+  rule <- quote(c(TRUE, TRUE, TRUE))
+  
+  dec <- getGoDecisions(
+    analyses_list   = analyses_list,
+    cohort_names    = coh,
+    evidence_levels = ev,
+    boundary_rules  = rule
+  )
+  
+  br <- dec[[1]]$decision_rules$boundary_rules
+  
+  expect_identical(length(br), length(m))
+  for (i in seq_along(br)) {
+    expect_true(identical(br[[i]], rule))
+  }
+})
+
+
+test_that("single evidence_levels vector is recycled to all methods", {
+  
+  m    <- analyses_list[[1]]$analysis_parameters$method_names
+  coh  <- c("p_1", "p_2", "p_3")
+  ev   <- c(0.5, 0.5, 0.5)
+  
+  dec <- getGoDecisions(
+    analyses_list   = analyses_list,
+    cohort_names    = coh,
+    evidence_levels = ev,                # not a list -> will be wrapped + recycled
+    boundary_rules  = quote(c(TRUE, TRUE, TRUE))
+  )
+  
+  gamma <- dec[[1]]$decision_rules$gamma_levels
+  
+  expect_identical(length(gamma), length(m))
+  for (i in seq_along(gamma)) {
+    expect_equal(gamma[[i]], ev)
+  }
+})
+
+
+## 6. Method names consistency across scenarios --------------------------------
+
+test_that("getGoDecisions: succeeds when all scenarios use identical method_names", {
+  # If all scenarios use the same method_names, no error is thrown.
+  
+  res <- getGoDecisions(
+    analyses_list   = analyses_list,
+    cohort_names    = default_cohorts,
+    evidence_levels = c(0.5, 0.5, 0.8),
+    boundary_rules  = quote(c(TRUE, TRUE, TRUE))
+  )
+  
+  expect_s3_class(res, "decision_list")
+})
+
+test_that("getGoDecisions: errors when scenarios were analysed with different methods", {
+  # We clone scenario_1 as scenario_2 and then reverse its method_names.
+  
+  bad <- analyses_list
+  bad$scenario_2 <- bad$scenario_1
+  bad$scenario_2$analysis_parameters$method_names <-
+    rev(bad$scenario_2$analysis_parameters$method_names)
+  
+  expect_error(
+    getGoDecisions(
+      analyses_list   = bad,
+      cohort_names    = default_cohorts,
+      evidence_levels = c(0.5, 0.5, 0.8),
+      boundary_rules  = quote(c(TRUE, TRUE, TRUE))
+    ),
+    "analysed with different methods"
+  )
+})
+
+
+## 7. Core structure: decision_list and 'overall' column -----------------------
+
+test_that("getGoDecisions: returns decision_list with overall and cohort decisions", {
+  # Exercises the full decision-generation code path for a valid case.
+  # We inspect the structure of one scenario/method for basic sanity.
+  decisions <- getGoDecisions(
+    analyses_list   = analyses_list,
+    cohort_names    = default_cohorts,
+    evidence_levels = c(0.5, 0.5, 0.8),
+    boundary_rules  = quote(c(TRUE, TRUE, TRUE))
+  )
+  
+  scen1  <- decisions[[1]]
+  m_dec  <- as.matrix(scen1$decisions_list[[1]])
+  
+  # Expect one 'overall' column and at least one cohort-level decision column.
+  expect_true("overall" %in% colnames(m_dec))
+  cohort_cols <- setdiff(colnames(m_dec), "overall")
+  expect_true(length(cohort_cols) >= 1)
+  
+  # decision_rules should remember the cohort_names we passed in.
+  expect_identical(scen1$decision_rules$cohort_names, default_cohorts)
+  
+  # gamma_levels may be a vector or list; flatten and check values are present.
+  stored_gamma_flat <- unlist(scen1$decision_rules$gamma_levels, use.names = FALSE)
+  expect_true(all(c(0.5, 0.5, 0.8) %in% stored_gamma_flat))
+})
+
+
+## 8. Semantics: overall_min_gos behaviour -------------------------------------
+
+test_that("overall_min_gos = 1 means overall Go if at least one cohort is Go", {
+  
+  dec <- getGoDecisions(
+    analyses_list   = analyses_list,
+    cohort_names    = default_cohorts,
+    evidence_levels = rep(0.5, length(default_cohorts)),
+    boundary_rules  = quote(c(TRUE, TRUE, TRUE)),  # simple always-true rule
+    overall_min_gos = 1L
+  )
+  
+  m <- as.matrix(dec[[1]]$decisions_list[[1]])
+  
+  # All columns except 'overall' are cohort-level decisions.
+  coh_cols <- setdiff(colnames(m), "overall")
+  expect_true(length(coh_cols) >= 1)
+  
+  coh <- m[, coh_cols, drop = FALSE] > 0   # logical matrix of cohort decisions
+  
+  # Definition: overall is TRUE if at least one cohort is TRUE.
+  overall_calc <- apply(coh, 1, function(x) sum(x) >= 1L)
+  
+  overall <- as.logical(m[, "overall"])
+  expect_identical(overall, overall_calc)
+})
+
+
+test_that("overall_min_gos = 2 means overall Go if at least two cohorts are Go", {
+  
+  dec <- getGoDecisions(
+    analyses_list   = analyses_list,
+    cohort_names    = default_cohorts,
+    evidence_levels = rep(0.5, length(default_cohorts)),
+    boundary_rules  = quote(c(TRUE, TRUE, TRUE)),
+    overall_min_gos = 2L
+  )
+  
+  m <- as.matrix(dec[[1]]$decisions_list[[1]])
+  
+  coh_cols <- setdiff(colnames(m), "overall")
+  expect_true(length(coh_cols) >= 1)
+  
+  coh <- m[, coh_cols, drop = FALSE] > 0
+  
+  # Definition: overall is TRUE if at least two cohorts are TRUE.
+  overall_calc <- apply(coh, 1, function(x) sum(x) >= 2L)
+  
+  overall <- as.logical(m[, "overall"])
+  expect_identical(overall, overall_calc)
+})
+
+## 9. There should not be a case where a cohort was NoGo before and go now -----
+
+test_that("getGoDecisions: previous go_decisions prevent resurrection of stopped cohorts", {
+  # This test exercises 
+  #   go_decisions <- go_decisions * previous_gos > 0
+  # It ensures that once a cohort was no-go previously, it cannot become go now.
+  if (is.null(analyses_list[[1]]$scenario_data$previous_analyses)) {
+    skip("previous_analyses not available in scenario_data")
+  }
+  
+  decisions <- getGoDecisions(
+    analyses_list   = analyses_list,
+    cohort_names    = default_cohorts,
+    evidence_levels = c(0.5, 0.5, 0.8),
+    boundary_rules  = quote(c(TRUE, TRUE, TRUE))
+  )
+  
+  new_mat     <- as.matrix(decisions[[1]]$decisions_list[[1]])
+  new_cohcols <- setdiff(colnames(new_mat), "overall")
+  new_gos     <- new_mat[, new_cohcols, drop = FALSE] > 0
+  
+  prev_mat <- analyses_list[[1]]$scenario_data$previous_analyses$go_decisions
+  # Drop first column (overall) to get per-cohort previous decisions.
+  prev_gos <- as.matrix(prev_mat[, -1, drop = FALSE]) > 0
+  
+  # Ensure matrices are conformable for comparison.
+  expect_identical(dim(prev_gos), dim(new_gos))
+  
+  # A 'resurrected' decision would be TRUE now but FALSE previously.
+  resurrected <- new_gos & !prev_gos
+  expect_false(any(resurrected))
+})
