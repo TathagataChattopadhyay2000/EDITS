@@ -1,17 +1,14 @@
- scenario_list must be supplied and have the correct class
-  checkmate::assertClass(
-    scenario_list,
-    "scenario_list",
-    .var.name = "scenario_list"
-  )
-  
-  # evidence_levels: numeric, all in (0, 1)
-  checkmate::assertNumeric(
-    evidence_levels,
-    any.missing = FALSE,
-    .var.name   = "evidence_levels"
-  )
-  checkmate::assertTRUE(
-    all(evidence_levels > 0 & evidence_levels < 1),
-    .var.name = "evidence_levels must be in (0, 1)"
-  )
+  if(is.null(rng_id)){
+    for (i in 1:n_chains) {
+      inits[[i]]$.RNG.name <- "base::Wichmann-Hill"
+      inits[[i]]$.RNG.seed <- stats::runif(1, 0, 2^31)
+    }
+  } else{
+    
+    base_seed <- digest::digest2int(as.character(rng_id))
+    
+    for (i in 1:n_chains) {
+      inits[[i]]$.RNG.name <- "base::Wichmann-Hill"
+      seed_val <- base_seed + (i - 1L)
+      seed_val <- (seed_val %% (2^31 - 1L)) +1L
+      inits[[i]]$.RNG.seed <- as.integer(seed_val)
