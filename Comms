@@ -1,33 +1,142 @@
- oc_results
-    n gamma alpha_hat power_hat feasible
-1  20  0.70     0.008     0.429    FALSE
-2  30  0.70     0.002     0.477    FALSE
-3  40  0.70     0.003     0.486    FALSE
-4  50  0.70     0.000     0.446    FALSE
-5  60  0.70     0.001     0.454    FALSE
-6  20  0.75     0.006     0.351    FALSE
-7  30  0.75     0.001     0.365    FALSE
-8  40  0.75     0.001     0.390    FALSE
-9  50  0.75     0.000     0.390    FALSE
-10 60  0.75     0.000     0.401    FALSE
-11 20  0.80     0.004     0.254    FALSE
-12 30  0.80     0.001     0.295    FALSE
-13 40  0.80     0.000     0.295    FALSE
-14 50  0.80     0.000     0.305    FALSE
-15 60  0.80     0.000     0.299    FALSE
-16 20  0.85     0.004     0.213    FALSE
-17 30  0.85     0.000     0.235    FALSE
-18 40  0.85     0.000     0.233    FALSE
-19 50  0.85     0.000     0.241    FALSE
-20 60  0.85     0.000     0.217    FALSE
-21 20  0.90     0.000     0.127    FALSE
-22 30  0.90     0.000     0.168    FALSE
-23 40  0.90     0.000     0.201    FALSE
-24 50  0.90     0.000     0.188    FALSE
-25 60  0.90     0.000     0.149    FALSE
-26 20  0.95     0.000     0.136    FALSE
-27 30  0.95     0.000     0.096    FALSE
-28 40  0.95     0.000     0.100    FALSE
-29 50  0.95     0.000     0.078    FALSE
-30 60  0.95     0.000     0.098    FALSE
-> 
+test_that("mapUniqueTrials preserves per-trial posteriors vs naive computation", {
+  foreach::registerDoSEQ()
+  set.seed(123)
+  
+  get_rng_id <- function(r_vec, n_vec) {
+    paste0(
+      "r:", paste(r_vec, collapse = ","),
+      "|n:", paste(n_vec, collapse = ",")
+    )
+  }
+  
+  scene <- getScenario(
+    n_subjects     = c(10, 20),
+    response_rates = c(0.4, 0.6),
+    n_trials       = 10
+  )
+  
+  if (is.null(scene$scenario_number)) {
+    scene$scenario_number <- 1L
+  }
+  
+  scenario_list <- list(scenario_1 = scene)
+  class(scenario_list) <- "scenario_list"
+  
+  n_subj   <- scene$n_subjects    # 10 × 2
+  n_resp   <- scene$n_responders  # 10 × 2
+  n_trials <- nrow(n_subj)
+  n_coh    <- ncol(n_subj)
+  
+  trials_unique <- getUniqueTrials(scenario_list)
+  if (nrow(trials_unique) == n_trials) {
+    skip("No duplicated trial patterns with this seed.")
+  }
+  
+  target_rates <- rep(0.5, n_coh)
+  priors_list  <- getPriorParameters(
+    method_names = "exnex",
+    target_rates = target_rates
+  )
+  
+  prep <- prepareAnalysis(
+    method_name      = "exnex",
+    prior_parameters = priors_list[["exnex"]],
+    target_rates     = target_rates
+  )
+  
+  quantiles <- c(0.025, 0.5, 0.975)
+  
+  naive_list <- vector("list", length = n_trials)
+  
+  for (i in seq_len(n_trials)) {
+    j_data_i <- prep$j_data
+    j_data_i$r <- as.numeric(n_resp[i, ])
+    j_data_i$n <- as.numeric(n_subj[i, ])
+    
+    rng_id_i <- get_rng_id(j_data_i$r, j_data_i$n)
+    
+    post_i <- getPosteriors(
+      j_parameters      = prep$j_parameters,
+      j_model_file      = prep$j_model_file,
+      j_data            = j_data_i,
+      n_mcmc_iterations = 1000,
+      rng_id            = rng_id_i  # <-- passes through to performJags
+    )
+    
+    # Keep only p_* columns for quantiles (as getPostQuantiles would)
+    p_cols <- post_i[, grepl("^p_", colnames(post_i)), drop = FALSE]
+    
+    naive_list[[i]] <- posteriors2Quantiles(
+      quantiles  = quantiles,
+      posteriors = p_cols
+    )
+  }
+  
+  # trials_unique: [responders | subjects | go_flag]
+  n_coh_u <- (ncol(trials_unique) - 1L) / 2L
+  expect_equal(n_coh_u, n_coh)
+  
+  applicable_previous_trials <- FALSE
+  
+  calc_trial_indices <- rep(TRUE, nrow(trials_unique))
+  trials_unique_calc <- trials_unique[calc_trial_indices, -ncol(trials_unique), drop = FALSE]
+  
+  n_resp_unique <- trials_unique_calc[, seq_len(n_coh),         drop = FALSE]
+  n_subj_unique <- trials_unique_calc[, seq_len(n_coh) + n_coh, drop = FALSE]
+  
+  # For each unique pattern, run JAGS once with the *same* rng_id logic
+  unique_quantiles <- vector("list", length = nrow(n_resp_unique))
+  
+  for (u in seq_len(nrow(n_resp_unique))) {
+    j_data_u <- prep$j_data
+    j_data_u$r <- as.numeric(n_resp_unique[u, ])
+    j_data_u$n <- as.numeric(n_subj_unique[u, ])
+    
+    rng_id_u <- get_rng_id(j_data_u$r, j_data_u$n)
+    
+    post_u <- getPosteriors(
+      j_parameters      = prep$j_parameters,
+      j_model_file      = prep$j_model_file,
+      j_data            = j_data_u,
+      n_mcmc_iterations = 1000,
+      rng_id            = rng_id_u
+    )
+    
+    p_cols_u <- post_u[, grepl("^p_", colnames(post_u)), drop = FALSE]
+    
+    unique_quantiles[[u]] <- posteriors2Quantiles(
+      quantiles  = quantiles,
+      posteriors = p_cols_u
+    )
+  }
+  
+  method_quantiles_list <- list(
+    exnex = unique_quantiles
+  )
+  
+  # Map unique results back to all trials
+  out <- mapUniqueTrials(
+    scenario_list              = scenario_list,
+    method_quantiles_list      = method_quantiles_list,
+    trials_unique_calc         = trials_unique_calc,
+    applicable_previous_trials = applicable_previous_trials
+  )
+  
+  expect_type(out, "list")
+  expect_identical(names(out), "scenario_1")
+  
+  scen1_out <- out[["scenario_1"]]
+  expect_true(is.list(scen1_out))
+  expect_true("exnex" %in% names(scen1_out))
+  
+  # Should now have one quantile matrix per *original* trial
+  expect_equal(length(scen1_out$exnex), n_trials)
+  
+  for (i in seq_len(n_trials)) {
+    expect_equal(
+      scen1_out$exnex[[i]],
+      naive_list[[i]],
+      tolerance = 1e-10
+    )
+  }
+})
