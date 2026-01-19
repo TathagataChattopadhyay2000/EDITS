@@ -1,4 +1,292 @@
-is.scenario_list <- function (x) {
-  if (missing(x)) stop ("Please provide an object for the argument 'x'")
-  inherits(x, "scenario_list")
+#' @title loadScenarios
+#' @md
+#' @description This function loads scenarios saved with \code{\link[bhmbasket]{saveScenarios}}
+#' @param scenario_numbers A vector of integers naming the scenario to be loaded
+#' @param load_path A string for the directory where the scenarios are being stored,
+#' Default: \code{\link[base]{tempfile}}
+#' @return Returns an object of class `scenario_list`
+#' @rdname loadScenarios
+#' @author Stephan Wojciekowski
+#' @seealso
+#'  \code{\link[bhmbasket]{simulateScenarios}}
+#'  \code{\link[bhmbasket]{saveScenarios}}
+#'  \code{\link[base]{tempfile}}
+#' @examples
+#'   scenarios_list <- simulateScenarios(
+#'     n_subjects_list     = list(c(10, 20, 30)),
+#'     response_rates_list = list(rep(0.9, 3)),
+#'     n_trials            = 10)
+#'
+#'   save_info      <- saveScenarios(scenarios_list)
+#'   scenarios_list <- loadScenarios(scenario_numbers = save_info$scenario_numbers,
+#'                                   load_path        = save_info$path)
+#' @export
+loadScenarios <- function (
+
+  scenario_numbers,
+  load_path = tempdir()
+
+) {
+
+  if (missing(scenario_numbers))
+    stop ("Please provide a vector of positive integers for the argument 'scenario_numbers'")
+
+  if (!is.numeric(scenario_numbers) || !is.wholenumber(scenario_numbers) || scenario_numbers <= 0)
+    stop ("Please provide a positive integer for the argument 'scenario_numbers'")
+  if (!is.character(load_path) || length(load_path) > 1)
+    stop ("Please provide a string for the argument 'load_path'")
+
+  scenario_list <- vector(mode = "list", length = length(scenario_numbers))
+
+  for (s in seq_along(scenario_numbers)) {
+
+    paste0("scenario_data_", scenario_numbers[s], ".rds")
+
+    scenario_list[[s]] <- readRDS(
+      file.path(load_path, paste0("scenario_data_", scenario_numbers[s], ".rds")))
+
+    names(scenario_list) <- paste0("scenario_", scenario_numbers)
+
+  }
+
+  class(scenario_list) <- "scenario_list"
+
+  return (scenario_list)
+
+}
+
+#' @export
+print.scenario_list <- function(x, ...) {
+  
+  n_scenarios    <- length(x)
+  scenario_names <- names(x)
+  
+  n_cohorts      <- length(x[[1]]$response_rates)
+  cohort_names   <- paste0("c_", seq_len(n_cohorts))
+  
+  response_rates <- lapply(x, function (x) x$response_rates)
+  n_subjects     <- getAverageNSubjects(x)
+  
+  n_trial_realizations  <- x[[1]]$n_trials
+  n_unique_realizations <- nrow(getUniqueTrials(x))
+  
+  cat("scenario_list of ", n_scenarios, " scenario", ifelse(n_scenarios == 1, "", "s"),
+      " with ", n_cohorts, " cohort", ifelse(n_cohorts == 1, "", "s"),"\n\n", sep = "")
+  for (n in seq_along(scenario_names)) {
+    
+    df_out <- t(data.frame(c(response_rates[[n]]),
+                             n_subjects[[n]]))
+    rownames(df_out) <- c("    - true response rates:",
+                          "    - average number of subjects:")
+    colnames(df_out) <- cohort_names
+    
+    cat("  -", scenario_names[n], "\n")
+    print(df_out)
+    
+    cat("\n")
+    
+  }
+  
+  cat("  -", n_trial_realizations, "trial realizations per scenario\n")
+  cat("  -", n_unique_realizations, "unique trial realizations overall\n")
+  
+}
+
+#' @title saveScenarios
+#' @md
+#' @description Saves the scenario data in a newly created or existing directory
+#' @param scenario_list An object of class `scenario_list`, e.g. created with `simulateScenarios()`
+#' @param save_path A string providing the path for the directory in which the directory of the
+#' scenario should be created, Default: \code{\link[base]{tempfile}}
+#' @return A named list of length 2 with the scenario numbers and the `save_path`
+#' @author Stephan Wojciekowski
+#' @seealso
+#'  \code{\link[bhmbasket]{simulateScenarios}}
+#'  \code{\link[bhmbasket]{loadScenarios}}
+#'  \code{\link[base]{tempfile}}
+#' @examples
+#'   scenarios_list <- simulateScenarios(
+#'     n_subjects_list     = list(c(10, 20, 30)),
+#'     response_rates_list = list(rep(0.9, 3)),
+#'     n_trials            = 10)
+#'
+#'   save_info      <- saveScenarios(scenarios_list)
+#'   scenarios_list <- loadScenarios(scenario_numbers = save_info$scenario_numbers,
+#'                                   load_path        = save_info$path)
+#' @rdname saveScenarios
+#' @export
+saveScenarios <- function (
+  
+  scenario_list,
+  save_path = tempdir()
+  
+) {
+  
+  if (missing(scenario_list))
+    stop ("Please provide an object of class scenario_list for the argument 'scenario_list'")
+  
+  if (!is.scenario_list(scenario_list))
+    stop ("Please provide an object of class scenario_list for the argument 'scenario_list'")
+  if (!is.character(save_path) || length(save_path) > 1)
+    stop ("Please provide a string for the argument 'save_path'")
+  
+  if (!dir.exists(save_path)) {
+    dir.create(save_path)
+  }
+  
+  scenario_numbers <- sapply(scenario_list, function (x) x$scenario_number)
+  
+  for (s in seq_along(scenario_list)) {
+    
+    saveRDS(scenario_list[[s]],
+            file = paste0(save_path, "/scenario_data_", scenario_numbers[s], ".rds"))
+    
+  }
+  
+  return (list(scenario_numbers = scenario_numbers, path = save_path))
+  
+}
+
+
+#' @title loadScenarios
+#' @md
+#' @description This function loads scenarios saved with \code{\link[bhmbasket]{saveScenarios}}
+#' @param scenario_numbers A vector of integers naming the scenario to be loaded
+#' @param load_path A string for the directory where the scenarios are being stored,
+#' Default: \code{\link[base]{tempfile}}
+#' @return Returns an object of class `scenario_list`
+#' @rdname loadScenarios
+#' @author Stephan Wojciekowski
+#' @seealso
+#'  \code{\link[bhmbasket]{simulateScenarios}}
+#'  \code{\link[bhmbasket]{saveScenarios}}
+#'  \code{\link[base]{tempfile}}
+#' @examples
+#'   scenarios_list <- simulateScenarios(
+#'     n_subjects_list     = list(c(10, 20, 30)),
+#'     response_rates_list = list(rep(0.9, 3)),
+#'     n_trials            = 10)
+#'
+#'   save_info      <- saveScenarios(scenarios_list)
+#'   scenarios_list <- loadScenarios(scenario_numbers = save_info$scenario_numbers,
+#'                                   load_path        = save_info$path)
+#' @export
+loadScenarios <- function (
+    
+  scenario_numbers,
+  load_path = tempdir()
+  
+) {
+  
+  # Validation via checkmate
+  checkmate::assert_integerish(
+    scenario_numbers,
+    lower = 1, any.missing = FALSE#, finite = TRUE
+  )
+  
+  checkmate::assert_string(load_path)
+  
+  # Build file paths and read
+  files <- file.path(load_path, paste0("scenario_data_", scenario_numbers, ".rds"))
+  scenario_list <- lapply(files, readRDS)
+  
+  # Name and class
+  names(scenario_list) <- paste0("scenario_", scenario_numbers)
+  class(scenario_list) <- "scenario_list"
+  
+  return (scenario_list)
+  
+}
+
+#' @export
+print.scenario_list <- function(x, ...) {
+  
+  n_scenarios    <- length(x)
+  scenario_names <- names(x)
+  
+  n_cohorts      <- length(x[[1]]$response_rates)
+  cohort_names   <- paste0("c_", seq_len(n_cohorts))
+  
+  response_rates <- lapply(x, function (x) x$response_rates)
+  n_subjects     <- getAverageNSubjects(x)
+  
+  n_trial_realizations  <- x[[1]]$n_trials
+  n_unique_realizations <- nrow(getUniqueTrials(x))
+  
+  cat("scenario_list of ", n_scenarios, " scenario", ifelse(n_scenarios == 1, "", "s"),
+      " with ", n_cohorts, " cohort", ifelse(n_cohorts == 1, "", "s"),"\n\n", sep = "")
+  for (n in seq_along(scenario_names)) {
+    
+    df_out <- t(data.frame(c(response_rates[[n]]),
+                           n_subjects[[n]]))
+    rownames(df_out) <- c("    - true response rates:",
+                          "    - average number of subjects:")
+    colnames(df_out) <- cohort_names
+    
+    cat("  -", scenario_names[n], "\n")
+    print(df_out)
+    
+    cat("\n")
+    
+  }
+  
+  cat("  -", n_trial_realizations, "trial realizations per scenario\n")
+  cat("  -", n_unique_realizations, "unique trial realizations overall\n")
+  
+}
+
+#' @title saveScenarios
+#' @md
+#' @description Saves the scenario data in a newly created or existing directory
+#' @param scenario_list An object of class `scenario_list`, e.g. created with `simulateScenarios()`
+#' @param save_path A string providing the path for the directory in which the directory of the
+#' scenario should be created, Default: \code{\link[base]{tempfile}}
+#' @return A named list of length 2 with the scenario numbers and the `save_path`
+#' @author Stephan Wojciekowski
+#' @seealso
+#'  \code{\link[bhmbasket]{simulateScenarios}}
+#'  \code{\link[bhmbasket]{loadScenarios}}
+#'  \code{\link[base]{tempfile}}
+#' @examples
+#'   scenarios_list <- simulateScenarios(
+#'     n_subjects_list     = list(c(10, 20, 30)),
+#'     response_rates_list = list(rep(0.9, 3)),
+#'     n_trials            = 10)
+#'
+#'   save_info      <- saveScenarios(scenarios_list)
+#'   scenarios_list <- loadScenarios(scenario_numbers = save_info$scenario_numbers,
+#'                                   load_path        = save_info$path)
+#' @rdname saveScenarios
+#' @export
+saveScenarios <- function (
+    
+  scenario_list,
+  save_path = tempdir()
+  
+) {
+  
+  checkmate::assert(
+    
+    checkmate::check_class(scenario_list, "scenario_list"),
+    
+    checkmate::check_character(save_path, len = 1),
+    
+    combine = "and"
+    
+  )
+  
+  if (!dir.exists(save_path)) {
+    dir.create(save_path)
+  }
+  
+  scenario_numbers <- sapply(scenario_list, function (x) x$scenario_number)
+  
+  for (s in seq_along(scenario_list)) {
+    saveRDS(
+      scenario_list[[s]],
+      file = paste0(save_path, "/scenario_data_", scenario_numbers[s], ".rds")
+    )
+  }
+  
+  return (list(scenario_numbers = scenario_numbers, path = save_path))
 }
