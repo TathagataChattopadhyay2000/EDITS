@@ -1,94 +1,3 @@
-
-simulateScenarios <- function (
-  
-  n_subjects_list,
-  response_rates_list,
-  scenario_numbers = seq_along(response_rates_list),
-  
-  n_trials         = 1e4
-  
-) {
-  
-  error_n_subjects_list     <- simpleError(
-    "Please provide a list of vectors of positive integers for the argument 'n_subjects_list'")
-  error_response_rates_list <- simpleError(
-    paste("Please provide a list of vectors of non-negative numerics for the argument",
-          "'response_rates_list'\n", "Values outside of (0, 1) must be integers"))
-  error_n_trials            <- simpleError(
-    "Please provide a positive integer for the argument 'n_trials'")
-  error_scenario_numbers    <- simpleError(
-    "Please provide a vector of positive integers for the argument 'scenario_numbers'")
-  
-  if (missing(n_subjects_list))                                stop (error_n_subjects_list)
-  if (missing(response_rates_list))                            stop (error_response_rates_list)
-  
-  if (!is.list(response_rates_list) ||
-      any(!sapply(response_rates_list, is.numeric)))           stop (error_response_rates_list)
-  
-  ## put n_subjects as a list if provided as vector
-  if (!is.list(n_subjects_list)) {
-    n_subjects_list <- rep(list(n_subjects_list), length(response_rates_list))
-  }
-  
-  if (!is.list(n_subjects_list) ||
-      any(!sapply(n_subjects_list, is.positive.wholenumber)))  stop (error_n_subjects_list)
-  
-  if (!is.positive.wholenumber(scenario_numbers))              stop (error_scenario_numbers)
-  
-  if (!identical(length(scenario_numbers), length(n_subjects_list))) stop (simpleError(
-    "'scenario_numbers' and 'n_subjects_list' must have same lenth"
-  ))
-  
-  if (!identical(length(n_subjects_list), length(response_rates_list))) stop (simpleError(
-    "'n_subjects_list' and 'response_rates_list' must have same length"))
-  
-  if (any(!sapply(response_rates_list, function (x) {
-    identical(length(response_rates_list[[1]]), length(x))}))) stop (simpleError(
-      "All scenarios within a set of scenarios must have the same number of cohorts"))
-  
-  if (identical(length(response_rates_list[[1]]), 1L)) stop (simpleError(
-    "Each scenario must have at least 2 cohorts"))
-  
-  if (any(!sapply(n_subjects_list, function (x) {
-    identical(length(response_rates_list[[1]]), length(x))}))) stop (simpleError(
-      "All scenarios within a set of scenarios must have the same number of cohorts"))
-  
-  if (any(sapply(seq_along(n_subjects_list), function (x) {
-    any(n_subjects_list[[x]] < response_rates_list[[x]])})))   stop (simpleError(
-      "Values in 'response_rates_list' must not be greater than values in 'n_subjects_list'"))
-  
-  if (any(!sapply(response_rates_list, function (x) {
-    is.numeric(x) & x > 0 & x < 1 |
-      is.wholenumber(x) & (x == 0 | x >= 1)})))                stop(error_response_rates_list)
-  
-  ## check whether n_trials is present in global environment
-  if ("n_trials" %in% ls(envir = .GlobalEnv) & missing(n_trials)) {
-    n_trials <- get("n_trials", envir = .GlobalEnv)
-  }
-  
-  if (!is.single.positive.wholenumber(n_trials))               stop (error_n_trials)
-  
-  ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
-  
-  scenario_list    <- vector(mode = "list", length = length(scenario_numbers))
-  for (s in seq_along(scenario_numbers)) {
-    
-    scenario_list[[s]] <- getScenario(
-      n_subjects          = n_subjects_list[[s]],
-      response_rates      = response_rates_list[[s]],
-      n_trials            = n_trials)
-    
-    scenario_list[[s]]$scenario_number <- scenario_numbers[s]
-    
-  }
-  
-  names(scenario_list) <- paste0("scenario_", scenario_numbers)
-  class(scenario_list) <- "scenario_list"
-  
-  return (scenario_list)
-  
-}
-
 #' @title simulateScenarios
 #' @description This function creates scenarios for the analysis with
 #' \code{\link[bhmbasket]{performAnalyses}}.
@@ -127,98 +36,141 @@ simulateScenarios <- function (
 #'                                rr_positive))
 #' @export
 #' @md
-
 simulateScenarios <- function (
-    
   n_subjects_list,
   response_rates_list,
   scenario_numbers = seq_along(response_rates_list),
   n_trials         = 1e4
-  
 ) {
+  ## --- Basic structure checks ------------------------------------------------
   
-  # Basic structure checks
-  checkmate::assert_list(response_rates_list, types = "numeric", any.missing = FALSE)
+  # response_rates_list: list of numeric vectors, no NAs
+  checkmate::assert_list(
+    response_rates_list,
+    types       = "numeric",
+    any.missing = FALSE,
+    .var.name   = "response_rates_list"
+  )
   
-  # could also be said for respose rates? We can just assert user to input
-  # list for n_subjects
+  # n_subjects_list: allow vector -> recycle to list
   if (!is.list(n_subjects_list)) {
     n_subjects_list <- rep(list(n_subjects_list), length(response_rates_list))
   }
   
-  checkmate::assert_list(n_subjects_list, types = "integerish", any.missing = FALSE)
-  
-  for (subjects in n_subjects_list) {
-    checkmate::assert_integerish(subjects, lower = 1, any.missing = FALSE)
-  }
-  
-  checkmate::assert_integerish(scenario_numbers, lower = 1, any.missing = FALSE)
-  
-  # checking all use cases for failure
-  checkmate::assert_count(n_trials, positive = TRUE)
-  
-  # Length compatibility with custom messages (Pattern A)
-  checkmate::assert(
-    
-    if (length(scenario_numbers) == length(n_subjects_list)) TRUE else
-      "'scenario_numbers' and 'n_subjects_list' must have same length",
-    
-    if (length(n_subjects_list) == length(response_rates_list)) TRUE else
-      "'n_subjects_list' and 'response_rates_list' must have same length",
-    combine = "and"
-    
+  # list structure + no NAs
+  checkmate::assert_list(
+    n_subjects_list,
+    types       = "numeric",
+    any.missing = FALSE,
+    .var.name   = "n_subjects_list"
   )
+  
+  # each element: positive integerish
+  checkmate::assert_true(
+    all(vapply(
+      n_subjects_list,
+      checkmate::test_integerish,
+      logical(1),
+      lower        = 1,
+      any.missing  = FALSE
+    )),
+    .var.name = "Provide a list of vectors of positive integers for 'n_subjects_list'"
+  )
+  
+  # scenario_numbers: positive integerish vector
+  checkmate::assert_integerish(
+    scenario_numbers,
+    lower       = 1,
+    any.missing = FALSE,
+    .var.name   = "scenario_numbers"
+  )
+  
+  ## --- Length compatibility --------------------------------------------------
+  
+  # 'scenario_numbers' and 'n_subjects_list' must have same length
+  checkmate::assert_true(
+    length(scenario_numbers) == length(n_subjects_list),
+    .var.name = "'scenario_numbers' and 'n_subjects_list' must have same length"
+  )
+  
+  # 'n_subjects_list' and 'response_rates_list' must have same length
+  checkmate::assert_true(
+    length(n_subjects_list) == length(response_rates_list),
+    .var.name = "'n_subjects_list' and 'response_rates_list' must have same length"
+  )
+  
+  ## --- Cohort consistency ----------------------------------------------------
   
   n_cohorts <- length(response_rates_list[[1L]])
   
-  # Cohort consistency checks with messages
-  checkmate::assert(
-    
-    if (n_cohorts >= 2) TRUE else "Each scenario must have at least 2 cohorts",
-    
-    if (all(vapply(response_rates_list, length, integer(1)) == n_cohorts)) TRUE else
-      "All scenarios must have same number of cohorts",
-    
-    if (all(vapply(n_subjects_list, length, integer(1)) == n_cohorts)) TRUE else
-      "All scenarios must have same number of cohorts",
-    combine = "and"
-    
+  # each scenario must have at least 2 cohorts
+  checkmate::assert_true(
+    n_cohorts >= 2L,
+    .var.name = "Each scenario must have at least 2 cohorts"
   )
   
-  # Validate each scenario's rates: either probabilities in [0,1] or nonnegative integers
+  # all scenarios: same number of cohorts in response_rates_list
+  cohort_lengths_rr <- vapply(response_rates_list, length, integer(1))
+  checkmate::assert_true(
+    all(cohort_lengths_rr == n_cohorts),
+    .var.name = "All scenarios must have same number of cohorts in 'response_rates_list'"
+  )
+  
+  # all scenarios: same number of cohorts in n_subjects_list
+  cohort_lengths_ns <- vapply(n_subjects_list, length, integer(1))
+  checkmate::assert_true(
+    all(cohort_lengths_ns == n_cohorts),
+    .var.name = "All scenarios must have same number of cohorts in 'n_subjects_list'"
+  )
+  
+  ## --- Response rate semantics (match original element-wise rule) -----------
+  # For each element r:
+  #   either  0 < r < 1 (probability) OR
+  #   integer and (r == 0 or r >= 1)   (historical / fixed)
+  
   for (rates in response_rates_list) {
+    # already numeric & NA-free from assert_list
+  
+    ok <- (rates > 0 & rates < 1) |
+          (is.wholenumber(rates) & (rates == 0 | rates >= 1))
     
-    checkmate::assert(
-      
-      checkmate::check_numeric(rates, lower = 0, upper = 1, any.missing = FALSE),
-      
-      checkmate::check_integerish(rates, lower = 0, any.missing = FALSE),
-      combine   = "or",
-      .var.name = "response_rates_list"
-      
+    checkmate::assert_true(
+      all(ok),
+      .var.name = paste(
+        "Each element in 'response_rates_list' must be",
+        "either a probability in (0, 1) or an integer equal to 0 or ≥ 1"
+      )
     )
-    
   }
   
-  # Each rate must not exceed corresponding n_subjects (per scenario)
+  ## --- Logical consistency: n_subjects >= response_rates --------------------
+  
   for (i in seq_along(n_subjects_list)) {
-    
-    checkmate::assert(
-      
-      if (all(n_subjects_list[[i]] >= response_rates_list[[i]])) TRUE else
-        "Values in 'response_rates_list' must not exceed 'n_subjects_list'"
-      
+    checkmate::assert_true(
+      all(n_subjects_list[[i]] >= response_rates_list[[i]]),
+      .var.name = "Values in 'response_rates_list' must not exceed 'n_subjects_list'"
     )
   }
   
-  # Global n_trials fallback
+  ## --- n_trials: global override + validation -------------------------------
+  
+  # Original behaviour: if n_trials exists in .GlobalEnv and argument is missing,
+  # use the global one. Then validate the *final* value.
   if ("n_trials" %in% ls(envir = .GlobalEnv) && missing(n_trials)) {
-    
     n_trials <- get("n_trials", envir = .GlobalEnv)
-    
   }
+  
+  # scalar, integerish, > 0
+  checkmate::assert_count(
+    n_trials,
+    positive = TRUE,
+    .var.name = "n_trials"
+  )
+  
+  ## --- Scenario construction -------------------------------------------------
   
   scenario_list <- vector(mode = "list", length = length(scenario_numbers))
+  
   for (s in seq_along(scenario_numbers)) {
     scenario_list[[s]] <- getScenario(
       n_subjects     = n_subjects_list[[s]],
@@ -231,6 +183,5 @@ simulateScenarios <- function (
   names(scenario_list) <- paste0("scenario_", scenario_numbers)
   class(scenario_list) <- "scenario_list"
   
-  return (scenario_list)
-  
+  return(scenario_list)
 }
