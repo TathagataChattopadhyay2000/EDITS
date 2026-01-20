@@ -1,11 +1,6 @@
 checkmate::assert(
-  {
-    if (!checkmate::testClass(scenario_list, "scenario_list")) {
-      "Please provide an object of class scenario_list for the argument 'scenario_list'"
-    } else {
-      TRUE
-    }
-  },
+  checkmate::check_class(scenario_list, "scenario_list"),
   checkmate::check_character(save_path, len = 1, .var.name = "save_path"),
-  combine = "and"
+  combine = "and",
+  .var.name = "Please provide an object of class scenario_list for the argument 'scenario_list'"
 )
