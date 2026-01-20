@@ -1,7 +1,9 @@
-$u = 'https://sourceforge.net/projects/mcmc-jags/files/JAGS/4.x/Windows/JAGS-4.3.2.exe/download'
-$p = "$env:TEMP\JAGS-4.3.2.exe"
-
-curl.exe -L $u -o $p
-
-$fi = Get-Item $p
-Write-Host "Size(bytes)=$($fi.Length)"
+PS C:\Users\chattota> $u = 'https://sourceforge.net/projects/mcmc-jags/files/JAGS/4.x/Windows/JAGS-4.3.2.exe/download'
+PS C:\Users\chattota> $p = "$env:TEMP\JAGS-4.3.2.exe"
+PS C:\Users\chattota>
+PS C:\Users\chattota> curl.exe -L $u -o $p
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   627  100   627    0     0   1075      0 --:--:-- --:--:-- --:--:--  1079
+100   369  100   369    0     0    407      0 --:--:-- --:--:-- --:--:--  1186
+ 15 27.6M   15 4479k    0     0  58371      0  0:08:17  0:01:18  0:06:59 55761
