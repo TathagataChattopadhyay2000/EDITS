@@ -1,6 +1,27 @@
-checkmate::assert(
-  checkmate::check_class(scenario_list, "scenario_list"),
-  checkmate::check_character(save_path, len = 1, .var.name = "save_path"),
-  combine = "and",
-  .var.name = "Please provide an object of class scenario_list for the argument 'scenario_list'"
-)
+# Link you want to use
+$u = 'https://sourceforge.net/projects/mcmc-jags/files/JAGS/4.x/Windows/JAGS-4.3.1.exe/download'
+
+# Download
+$p = "$env:TEMP\JAGS-4.3.1.exe"
+Invoke-WebRequest -Uri $u -OutFile $p
+
+# Basic download checks
+$fi = Get-Item $p
+Write-Host "Downloaded: $($fi.FullName)  Size(bytes)=$($fi.Length)"
+if ($fi.Length -lt 1000000) { throw "File too small; download likely failed." }
+
+# EXE signature check (should start with MZ)
+$bytes = [System.IO.File]::ReadAllBytes($p)[0..1]
+$sig = ([char]$bytes[0]) + ([char]$bytes[1])
+Write-Host "Signature: $sig"
+if ($sig -ne "MZ") { throw "Not a Windows EXE (missing MZ header)." }
+
+# Install silently
+Start-Process $p -ArgumentList '/S' -Wait
+
+# Verify install path
+$jagsExe = "C:\Program Files\JAGS\JAGS-4.3.1\bin\jags-terminal.exe"
+if (!(Test-Path $jagsExe)) {
+  throw "JAGS was not installed where expected: $jagsExe"
+}
+Write-Host "JAGS installed OK at: $jagsExe"
