@@ -1,4 +1,4 @@
-# OLD OC FUNTIONS -----------------------------------------------------------
+# NEW OC FUNCTIONS ----------------------------------
 
 getAllCohortNames <- function (
   
@@ -69,14 +69,8 @@ getAverageNSubjects <- function (
   scenario_list
   
 ) {
-  
-  error_scenario_list <-
-    simpleError("Please provide an object of class scenario_list for the argument 'scenario_list'")
-  
-  if (missing(scenario_list))                      stop (error_scenario_list)
-  
-  if (!is.scenario_list(scenario_list))            stop (error_scenario_list)
-  
+
+  checkmate::assertClass(scenario_list, "scenario_list", .var.name = "scenario_list")
   ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
   
   lapply(scenario_list, function (x) colMeans(x$n_subjects))
@@ -153,33 +147,14 @@ getEstimates <- function (
   
 ) {
   
-  error_analyses_list <- simpleError(
-    "Please provide an object of class analysis_list for the argument 'analyses_list'")
-  error_add_parameters  <- simpleError(paste(
-    "Please provide a either NULL or vector of strings for the argument 'add_parameters'",
-    "naming additional parameters of the applied model(s)"))
-  error_point_estimator <- simpleError(
-    "Please provide either 'median' or 'mean' for the argument 'point_estimator'")
-  error_alpha_level <- simpleError(
-    "Please provide a numeric in (0, 1) for the argument 'alpha_level'")
+  checkmate::assertClass(analyses_list, "analysis_list", .var.name = "analyses_list")
   
-  if (missing(analyses_list))                      stop (error_analyses_list)
+  checkmate::assertCharacter(add_parameters, null.ok = TRUE, .var.name = "add_parameters")
   
-  if (!is.analysis_list(analyses_list))            stop (error_analyses_list)
+  checkmate::assertChoice(point_estimator, choices = c("median", "mean"), .var.name = "point_estimator")
   
-  point_estimator <- tryCatch({
-    
-    match.arg(
-      point_estimator,
-      choices    = c("median", "mean"),
-      several.ok = FALSE)
-    
-  }, error = function (e) e)
-  
-  if (!is.null(add_parameters) &&
-      !is.character(add_parameters))               stop (error_add_parameters)
-  if (inherits(point_estimator, "error"))          stop (error_point_estimator)
-  if (!is.single.numeric.in.zero.one(alpha_level)) stop (error_alpha_level)
+  checkmate::assertNumber(alpha_level, finite = TRUE, .var.name = "alpha_level")
+  checkmate::assertTRUE((alpha_level > 0 & alpha_level < 1), .var.name = "alpha_level")
   
   available_quantiles <- round(analyses_list[[1]]$analysis_parameters$quantiles, 9)
   asked_quantiles     <- round(c(alpha_level / 2, 1 - alpha_level / 2), 9)
@@ -618,6 +593,7 @@ getGoDecisions <- function (
   
 ) {
   
+  # WHAT TO DO WITH THE ERROR MESSAGES HERE
   error_analyses_list <- simpleError(
     "Please provide an object of class analysis_list for the argument 'analyses_list'")
   error_cohort_names <- simpleError(paste(
@@ -632,16 +608,19 @@ getGoDecisions <- function (
   error_overall_min_gos <- simpleError(
     "Please privide a positive integer for the argument 'overall_min_gos'")
   
-  if (missing(analyses_list))           stop (error_analyses_list)
-  if (missing(cohort_names))            stop (error_cohort_names)
+  checkmate::assertClass(analyses_list, "analysis_list", .var.name = "analyses_list")
+  
+  checkmate::assertCharacter(cohort_names, min.len = 1, any.missing = FALSE, .var.name = "cohort_names")
+  
+  checkmate::assertInt(overall_min_gos, lower = 1, .var.name = "overall_min_gos")
+  
+  checkmate::assertSubset(cohort_names,
+                          choices = colnames(analyses_list[[1]]$quantiles_list[[1]][[1]]),
+                          .var.name = "cohort_names"
+  )
+  
   if (missing(evidence_levels))         stop (error_evidence_levels)
   if (missing(boundary_rules))          stop (error_boundary_rules)
-  
-  if (!is.analysis_list(analyses_list)) stop (error_analyses_list)
-  if (!is.character(cohort_names))      stop (error_cohort_names)
-  
-  if (any(!cohort_names %in% colnames(analyses_list[[1]]$quantiles_list[[1]][[1]]))) stop (
-    simpleError("The specified cohorts do not match the cohorts analyzed in 'analyses_list'"))
   
   if (is.list(evidence_levels)) {
     for (i in seq_along(evidence_levels)) {
@@ -674,8 +653,6 @@ getGoDecisions <- function (
     rm(x)
   }, error = function (e) e)
   if (inherits(check_boundary_rules, "error"))     stop(error_boundary_rules)
-  
-  if (!is.positive.wholenumber(overall_min_gos))   stop (error_overall_min_gos)
   
   ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
   
@@ -842,25 +819,20 @@ getGoProbabilities <- function (
   
 ) {
   
-  error_go_decisions_list <-
-    simpleError( paste("Please provide an object of class decision_list",
-                       "for the argument 'go_decisions_list'"))
-  error_nogo_decisions_list <- simpleError(paste(
-    "Please provide either NULL or an object of class decision_list",
-    "for the argument 'nogo_decisions_list'"))
+  checkmate::assertClass(go_decisions_list, "decision_list", .var.name = "go_decisions_list")
   
-  if (missing(go_decisions_list))             stop (error_go_decisions_list)
+  checkmate::assertClass(nogo_decisions_list, "decision_list", null.ok = TRUE,)
   
-  if (!is.decision_list(go_decisions_list))   stop (error_go_decisions_list)
-  if (!is.null(nogo_decisions_list) &&
-      !is.decision_list(nogo_decisions_list)) stop (error_nogo_decisions_list)
-  
-  if (!is.null(nogo_decisions_list) &&
-      !identical(dim(go_decisions_list[[1]]$decisions_list[[1]]),
-                 dim(nogo_decisions_list[[1]]$decisions_list[[1]]))) stop(
-                   simpleError(paste("The decision_lists 'go_decisions_list'",
-                                     "and 'go_decisions_list'",
-                                     "do not follow the same format")))
+  # Validate that both decision lists have the same dimensions if nogo_decisions_list is not NULL
+  if (!is.null(nogo_decisions_list)) {
+    checkmate::assertTRUE(
+      identical(
+        dim(go_decisions_list[[1]]$decisions_list[[1]]),
+        dim(nogo_decisions_list[[1]]$decisions_list[[1]])
+      ),
+      .var.name = "decision_list dimensions"
+    )
+  }
   
   ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
   
@@ -926,8 +898,8 @@ getNumericGammaIndex <- function (
   quantiles
 
 ) {
-
-  if (is.numeric.in.zero.one(g_numeric)) {
+  
+  if (checkmate::testNumeric(g_numeric) && all(g_numeric > 0 & g_numeric < 1)) {
 
     gamma_index <- which(round(1 - quantiles, 5) == round(g_numeric, 5))
 
@@ -1179,19 +1151,14 @@ negateGoDecisions <- function (
   
 ) {
   
-  error_go_decisions_list <-
-    simpleError(paste("Please provide an object of class decision_list",
-                      "for the argument 'go_decisions_list'"))
+  checkmate::assertClass(go_decisions_list, "decision_list", .var.name = "go_decisions_list")
   
-  error_overall_min_nogos <- simpleError(
-    paste("Please provide either a non-negative integer or the string 'all'",
-          "for the  'overall_min_nogos'"))
-  
-  if (missing(go_decisions_list))                      stop (error_go_decisions_list)
-  
-  if (!is.decision_list(go_decisions_list))            stop (error_go_decisions_list)
-  if (!identical(overall_min_nogos, "all") &&
-      !is.non.negative.wholenumber(overall_min_nogos)) stop (error_overall_min_nogos)
+  checkmate::assert(
+    checkmate::checkChoice(overall_min_nogos, choices = "all"),
+    checkmate::checkInt(overall_min_nogos, lower = 0),
+    combine = "or",
+    .var.name = "overall_min_nogos"
+  )
   
   ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
   
