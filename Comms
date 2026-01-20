@@ -4,7 +4,11 @@
   run: |
     $u = 'https://sourceforge.net/projects/mcmc-jags/files/JAGS/4.x/Windows/JAGS-4.3.2.exe/download'
     $p = "$env:RUNNER_TEMP\JAGS-4.3.2.exe"
-    curl.exe -L $u -o $p
+
+    & "$env:SystemRoot\System32\curl.exe" -L $u -o $p
+
+    if (!(Test-Path $p)) { throw "Download failed: $p not found" }
+
     Start-Process $p -ArgumentList '/S' -Wait
     Add-Content -Path $env:GITHUB_ENV -Value 'JAGS_HOME=C:\Program Files\JAGS\JAGS-4.3.2'
 
