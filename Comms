@@ -1,55 +1,7 @@
-PS C:\Users\chattota> $u = 'https://sourceforge.net/projects/mcmc-jags/files/JAGS/4.x/Windows/JAGS-4.3.2.exe/download'
-PS C:\Users\chattota>
-PS C:\Users\chattota> # Download
-PS C:\Users\chattota> $p = "$env:TEMP\JAGS-4.3.2.exe"
-PS C:\Users\chattota> Invoke-WebRequest -Uri $u -OutFile $p
-PS C:\Users\chattota>
-PS C:\Users\chattota> # Basic download checks
-PS C:\Users\chattota> $fi = Get-Item $p
-PS C:\Users\chattota> Write-Host "Downloaded: $($fi.FullName)  Size(bytes)=$($fi.Length)"
-Downloaded: C:\Users\chattota\AppData\Local\Temp\JAGS-4.3.2.exe  Size(bytes)=177659
-PS C:\Users\chattota> if ($fi.Length -lt 1000000) { throw "File too small; download likely failed." }
-File too small; download likely failed.
-At line:1 char:31
-+ ... ngth -lt 1000000) { throw "File too small; download likely failed." }
-+                         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : OperationStopped: (File too small; download likely failed.:String) [], RuntimeException
-    + FullyQualifiedErrorId : File too small; download likely failed.
+$u = 'https://sourceforge.net/projects/mcmc-jags/files/JAGS/4.x/Windows/JAGS-4.3.2.exe/download'
+$p = "$env:TEMP\JAGS-4.3.2.exe"
 
-PS C:\Users\chattota>
-PS C:\Users\chattota> # EXE signature check (should start with MZ)
-PS C:\Users\chattota> $bytes = [System.IO.File]::ReadAllBytes($p)[0..1]
-PS C:\Users\chattota> $sig = ([char]$bytes[0]) + ([char]$bytes[1])
-PS C:\Users\chattota> Write-Host "Signature: $sig"
-Signature: <!
-PS C:\Users\chattota> if ($sig -ne "MZ") { throw "Not a Windows EXE (missing MZ header)." }
-Not a Windows EXE (missing MZ header).
-At line:1 char:22
-+ if ($sig -ne "MZ") { throw "Not a Windows EXE (missing MZ header)." }
-+                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : OperationStopped: (Not a Windows EXE (missing MZ header).:String) [], RuntimeException
-    + FullyQualifiedErrorId : Not a Windows EXE (missing MZ header).
+curl.exe -L $u -o $p
 
-PS C:\Users\chattota>
-PS C:\Users\chattota> # Install silently
-PS C:\Users\chattota> Start-Process $p -ArgumentList '/S' -Wait
-Start-Process : This command cannot be run due to the error: The file or directory is corrupted and unreadable.
-At line:1 char:1
-+ Start-Process $p -ArgumentList '/S' -Wait
-+ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : InvalidOperation: (:) [Start-Process], InvalidOperationException
-    + FullyQualifiedErrorId : InvalidOperationException,Microsoft.PowerShell.Commands.StartProcessCommand
-
-PS C:\Users\chattota>
-PS C:\Users\chattota> # Verify install path
-PS C:\Users\chattota> $jagsExe = "C:\Program Files\JAGS\JAGS-4.3.1\bin\jags-terminal.exe"
-PS C:\Users\chattota> if (!(Test-Path $jagsExe)) {
->>   throw "JAGS was not installed where expected: $jagsExe"
->> }
-JAGS was not installed where expected: C:\Program Files\JAGS\JAGS-4.3.1\bin\jags-terminal.exe
-At line:2 char:3
-+   throw "JAGS was not installed where expected: $jagsExe"
-+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : OperationStopped: (JAGS was not in...gs-terminal.exe:String) [], RuntimeException
-    + FullyQualifiedErrorId : JAGS was not installed where expected: C:\Program Files\JAGS\JAGS-4.3.1\bin\jags-termina
-   l.exe
+$fi = Get-Item $p
+Write-Host "Size(bytes)=$($fi.Length)"
