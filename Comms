@@ -1,27 +1,11 @@
-> saveScenarios(scen)
-Error in checkmate::check_class(scenario_list, "scenario_list", .var.name = "Please provide an object of class scenario_list for the argument 'scenario_list'") : 
-  unused argument (.var.name = "Please provide an object of class scenario_list for the argument 'scenario_list'")
-
-saveScenarios <- function (
-    
-  scenario_list,
-  save_path = tempdir()
-  
-) {
-  
-  checkmate::assert(
-    
-    checkmate::check_class(
-      scenario_list, "scenario_list", 
-      .var.name = "Please provide an object of class scenario_list for the argument 'scenario_list'"
-      ),
-    
-    checkmate::check_character(
-      save_path, len = 1, 
-      .var.name = "Please provide a string for the argument 'save_path'"
-      ),
-    
-    combine = "and"
-    
-  )
-  
+checkmate::assert(
+  {
+    if (!checkmate::testClass(scenario_list, "scenario_list")) {
+      "Please provide an object of class scenario_list for the argument 'scenario_list'"
+    } else {
+      TRUE
+    }
+  },
+  checkmate::check_character(save_path, len = 1, .var.name = "save_path"),
+  combine = "and"
+)
