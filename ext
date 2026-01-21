@@ -1,15 +1,90 @@
-chunkVector <- function(x, n_chunks) {
+getPostQuantiles <- function (
   
-  if (n_chunks <= 1) {
+  ## The method to be applied to the likelihood and the quantiles of the posterior
+  method_name,
+  quantiles,
+  
+  ## Scenario data
+  scenario_data,
+  
+  ## Differences between cohorts
+  calc_differences  = NULL,
+  
+  ## JAGS parameters
+  j_parameters,
+  j_model_file,
+  j_data,
+  
+  ## MCMC Parameters
+  n_mcmc_iterations = 1e4,
+  
+  ## Where to save one of the posterior response rates approximations provided by JAGS
+  save_path         = NULL,
+  save_trial        = NULL
+  
+) {
+  
+  if (is.null(dim(scenario_data$n_responders))) {
     
-    chunk_list <- list(x)
-    
-  } else {
-    
-    chunk_list <- unname(split(x, cut(seq_along(x), n_chunks, labels = FALSE)))
+    scenario_data$n_responders <- t(convertVector2Matrix(scenario_data$n_responders))
+    scenario_data$n_subjects   <- t(convertVector2Matrix(scenario_data$n_subjects))
     
   }
   
-  return (chunk_list)
+  n_analyses <- nrow(scenario_data$n_responders)
+  
+  ## Create random index for saving one of the posterior response rates
+  if (is.null(save_trial) && !is.null(save_path)) {
+    # set.seed(seed)
+    save_trial <- sample(seq_len(n_analyses), size = 1)
+  }
+  
+  ## Run parallel loops
+  ## prepare foreach loop over 
+  
+  exported_stuff <- c(
+    "posteriors2Quantiles", "getPosteriors", "getPostQuantilesOfTrial",
+    "qbetaDiff")
+  
+  ## prepare chunking
+  chunks_outer <- chunkVector(seq_len(n_analyses), foreach::getDoParWorkers())
+  
+  "%dorng%" <- doRNG::"%dorng%"
+  "%dopar%" <- foreach::"%dopar%"
+  posterior_quantiles_list <- suppressMessages(
+    foreach::foreach(
+      k = chunks_outer,
+      .combine  = c,
+      .verbose  = FALSE,
+      .packages = c("rjags"),
+      .export   = exported_stuff) %dorng% {
+        
+        chunks_inner <- chunkVector(k, foreach::getDoParWorkers())
+        
+        foreach::foreach(i = chunks_inner, .combine = c) %dorng% {
+          
+          lapply(i, function (j) {
+            
+            ## Calculate the posterior quantiles for the kth unique trial outcome
+            getPostQuantilesOfTrial(
+              n_responders      = as.numeric(scenario_data$n_responders[j, ]),
+              n_subjects        = as.numeric(scenario_data$n_subjects[j, ]),
+              j_data            = j_data,
+              j_parameters      = j_parameters,
+              j_model_file      = j_model_file,
+              method_name       = method_name,
+              quantiles         = quantiles,
+              calc_differences  = calc_differences,
+              n_mcmc_iterations = n_mcmc_iterations,
+              save_path         = save_path,
+              save_trial        = save_trial)
+            
+          })
+          
+        }
+        
+      })
+  
+  return (posterior_quantiles_list)
   
 }
