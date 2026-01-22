@@ -1,109 +1,73 @@
-md <- as.data.frame(oc_results)
+> oc_results  # full OC table
+     n gamma type_1_error_hat power_hat feasible
+1   20  0.50            0.030     0.951     TRUE
+2   30  0.50            0.010     0.968     TRUE
+3   40  0.50            0.004     0.990     TRUE
+4   50  0.50            0.004     0.993     TRUE
+5   60  0.50            0.001     0.990     TRUE
+6   80  0.50            0.001     0.999     TRUE
+7  100  0.50            0.000     0.998     TRUE
+8   20  0.55            0.023     0.897     TRUE
+9   30  0.55            0.005     0.957     TRUE
+10  40  0.55            0.002     0.977     TRUE
+11  50  0.55            0.001     0.983     TRUE
+12  60  0.55            0.000     0.991     TRUE
+13  80  0.55            0.000     0.993     TRUE
+14 100  0.55            0.000     0.997     TRUE
+15  20  0.60            0.009     0.893     TRUE
+16  30  0.60            0.004     0.947     TRUE
+17  40  0.60            0.001     0.960     TRUE
+18  50  0.60            0.000     0.982     TRUE
+19  60  0.60            0.000     0.992     TRUE
+20  80  0.60            0.000     0.994     TRUE
+21 100  0.60            0.000     0.997     TRUE
+22  20  0.65            0.012     0.886     TRUE
+23  30  0.65            0.006     0.922     TRUE
+24  40  0.65            0.002     0.958     TRUE
+25  50  0.65            0.000     0.968     TRUE
+26  60  0.65            0.000     0.992     TRUE
+27  80  0.65            0.000     0.991     TRUE
+28 100  0.65            0.000     0.995     TRUE
+29  20  0.70            0.004     0.801     TRUE
+30  30  0.70            0.002     0.921     TRUE
+31  40  0.70            0.000     0.944     TRUE
+32  50  0.70            0.000     0.951     TRUE
+33  60  0.70            0.000     0.974     TRUE
+34  80  0.70            0.000     0.989     TRUE
+35 100  0.70            0.000     0.998     TRUE
+36  20  0.75            0.007     0.820     TRUE
+37  30  0.75            0.001     0.866     TRUE
+38  40  0.75            0.000     0.869     TRUE
+39  50  0.75            0.000     0.937     TRUE
+40  60  0.75            0.000     0.967     TRUE
+41  80  0.75            0.000     0.983     TRUE
+42 100  0.75            0.000     0.994     TRUE
+43  20  0.80            0.002     0.758    FALSE
+44  30  0.80            0.000     0.811     TRUE
+45  40  0.80            0.000     0.879     TRUE
+46  50  0.80            0.000     0.914     TRUE
+47  60  0.80            0.000     0.914     TRUE
+48  80  0.80            0.000     0.956     TRUE
+49 100  0.80            0.000     0.986     TRUE
+50  20  0.85            0.000     0.704    FALSE
+51  30  0.85            0.002     0.797    FALSE
+52  40  0.85            0.000     0.851     TRUE
+53  50  0.85            0.000     0.864     TRUE
+54  60  0.85            0.000     0.907     TRUE
+55  80  0.85            0.000     0.945     TRUE
+56 100  0.85            0.000     0.980     TRUE
+57  20  0.90            0.002     0.583    FALSE
+58  30  0.90            0.000     0.699    FALSE
+59  40  0.90            0.000     0.732    FALSE
+60  50  0.90            0.000     0.797    FALSE
+61  60  0.90            0.000     0.846     TRUE
+62  80  0.90            0.000     0.938     TRUE
+63 100  0.90            0.000     0.953     TRUE
+64  20  0.95            0.000     0.398    FALSE
+65  30  0.95            0.000     0.557    FALSE
+66  40  0.95            0.000     0.643    FALSE
+67  50  0.95            0.000     0.669    FALSE
+68  60  0.95            0.000     0.738    FALSE
+69  80  0.95            0.000     0.837     TRUE
+70 100  0.95            0.000     0.896     TRUE
 
-md$feasible_factor <- ifelse(md$feasible, "Feasible", "Not feasible")
-md$feasible_factor <- factor(md$feasible_factor,
-                             levels = c("Not feasible", "Feasible"))
-
-## --- Compute boundary: min n per gamma (among feasible designs) ------------
-feas_only <- md[md$feasible, , drop = FALSE]
-
-if (nrow(feas_only) > 0L) {
-  # For each gamma, pick the row with the smallest n
-  tmp_gamma <- aggregate(n ~ gamma, data = feas_only, FUN = min)
-  min_n_per_gamma <- merge(
-    tmp_gamma,
-    feas_only,
-    by = c("gamma", "n"),
-    all.x = TRUE,
-    sort = TRUE
-  )
-} else {
-  min_n_per_gamma <- md[FALSE, , drop = FALSE]  # empty df
-}
-
-## --- Compute boundary: min gamma per n (among feasible designs) ------------
-if (nrow(feas_only) > 0L) {
-  tmp_n <- aggregate(gamma ~ n, data = feas_only, FUN = min)
-  min_gamma_per_n <- merge(
-    tmp_n,
-    feas_only,
-    by = c("n", "gamma"),
-    all.x = TRUE,
-    sort = TRUE
-  )
-} else {
-  min_gamma_per_n <- md[FALSE, , drop = FALSE]
-}
-
-## --- Base scatter: all (n, gamma) combos -----------------------------------
-fig <- plot_ly(
-  data  = md,
-  x     = ~n,
-  y     = ~gamma,
-  type  = "scatter",
-  mode  = "markers",
-  color = ~feasible_factor,
-  colors = c("Not feasible" = "red", "Feasible" = "green"),
-  text  = ~paste0(
-    "n = ", n,
-    "<br>gamma = ", round(gamma, 3),
-    "<br>Type I error = ", round(type_1_error_hat, 3),
-    "<br>Power = ", round(power_hat, 3),
-    "<br>Feasible = ", feasible
-  ),
-  hoverinfo = "text",
-  name  = "Designs"
-) %>%
-  layout(
-    title = "Feasible vs Non-feasible Designs (berry, 2 cohorts)",
-    xaxis = list(title = "Sample size per cohort (n)"),
-    yaxis = list(title = "Evidence level (gamma)")
-  )
-
-## --- Boundary curve: minimum n per gamma -----------------------------------
-if (nrow(min_n_per_gamma) > 0L) {
-  fig <- fig %>%
-    add_trace(
-      data   = min_n_per_gamma,
-      x      = ~n,          # 'n' is already the min n for that gamma
-      y      = ~gamma,
-      type   = "scatter",
-      mode   = "lines+markers",
-      inherit = FALSE,      # <--- do NOT inherit mappings from first trace
-      line   = list(width = 2),
-      marker = list(size = 8, symbol = "x"),
-      name   = "Min n per gamma",
-      hoverinfo = "text",
-      text = ~paste0(
-        "gamma = ", round(gamma, 3),
-        "<br>min n = ", n,
-        "<br>Type I error = ", round(type_1_error_hat, 3),
-        "<br>Power = ", round(power_hat, 3)
-      )
-    )
-}
-
-## --- Boundary curve: minimum gamma per n -----------------------------------
-if (nrow(min_gamma_per_n) > 0L) {
-  fig <- fig %>%
-    add_trace(
-      data   = min_gamma_per_n,
-      x      = ~n,
-      y      = ~gamma,      # gamma is already the min gamma for that n
-      type   = "scatter",
-      mode   = "lines+markers",
-      inherit = FALSE,
-      line   = list(dash = "dot", width = 2),
-      marker = list(size = 8, symbol = "triangle-up"),
-      name   = "Min gamma per n",
-      hoverinfo = "text",
-      text = ~paste0(
-        "n = ", n,
-        "<br>min gamma = ", round(gamma, 3),
-        "<br>Type I error = ", round(type_1_error_hat, 3),
-        "<br>Power = ", round(power_hat, 3)
-      )
-    )
-}
-
-fig  # interactive plot
