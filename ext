@@ -1,39 +1,74 @@
- fig  # show interactive plot in RStudio / browser
-Error in eval(expr, data, expr_env) : object 'feasible_factor' not found
-> md
-     n gamma type_1_error_hat power_hat feasible feasible_factor
-1   20  0.50            0.576     1.000    FALSE    Not feasible
-2   30  0.50            0.633     1.000    FALSE    Not feasible
-3   40  0.50            0.646     1.000    FALSE    Not feasible
-4   50  0.50            0.641     1.000    FALSE    Not feasible
-5   60  0.50            0.646     1.000    FALSE    Not feasible
-6   80  0.50            0.634     1.000    FALSE    Not feasible
-7  100  0.50            0.649     1.000    FALSE    Not feasible
-8   20  0.55            0.556     1.000    FALSE    Not feasible
-9   30  0.55            0.611     1.000    FALSE    Not feasible
-10  40  0.55            0.594     1.000    FALSE    Not feasible
-11  50  0.55            0.584     1.000    FALSE    Not feasible
-12  60  0.55            0.637     1.000    FALSE    Not feasible
-13  80  0.55            0.575     1.000    FALSE    Not feasible
-14 100  0.55            0.652     1.000    FALSE    Not feasible
-15  20  0.60            0.468     1.000    FALSE    Not feasible
-16  30  0.60            0.510     1.000    FALSE    Not feasible
-17  40  0.60            0.505     1.000    FALSE    Not feasible
-18  50  0.60            0.490     1.000    FALSE    Not feasible
-19  60  0.60            0.519     1.000    FALSE    Not feasible
-20  80  0.60            0.587     1.000    FALSE    Not feasible
-21 100  0.60            0.554     1.000    FALSE    Not feasible
-22  20  0.65            0.418     1.000    FALSE    Not feasible
-23  30  0.65            0.395     1.000    FALSE    Not feasible
-24  40  0.65            0.499     1.000    FALSE    Not feasible
-25  50  0.65            0.408     1.000    FALSE    Not feasible
-26  60  0.65            0.449     1.000    FALSE    Not feasible
-27  80  0.65            0.498     1.000    FALSE    Not feasible
-28 100  0.65            0.498     1.000    FALSE    Not feasible
-29  20  0.70            0.365     0.999    FALSE    Not feasible
-30  30  0.70            0.398     1.000    FALSE    Not feasible
-31  40  0.70            0.397     1.000    FALSE    Not feasible
-32  50  0.70            0.434     1.000    FALSE    Not feasible
-33  60  0.70            0.418     1.000    FALSE    Not feasible
-34  80  0.70            0.457     1.000    FALSE    Not feasible
-35 100  0.70            0.415     1.000    FALSE    Not feasible
+md <- as.data.frame(oc_results)
+md$feasible_factor <- ifelse(md$feasible, "Feasible", "Not feasible")
+md$feasible_factor <- factor(md$feasible_factor, levels = c("Not feasible", "Feasible"))
+str(md)
+# Base scatter: all (n, gamma) combos with color by feasibility ---------------
+fig <- plot_ly(
+  data  = md,
+  x     = ~n,
+  y     = ~gamma,
+  type  = "scatter",
+  mode  = "markers",
+  color = ~feasible_factor,
+  colors = c("Not feasible" = "red", "Feasible" = "green"),
+  text  = ~paste0(
+    "n = ", n,
+    "<br>gamma = ", gamma,
+    "<br>Type I error = ", round(type_1_error_hat, 3),
+    "<br>Power = ", round(power_hat, 3),
+    "<br>Feasible = ", feasible
+  ),
+  hoverinfo = "text",
+  name  = "Designs"
+) %>%
+  layout(
+    title = "Feasible vs Non-feasible Designs (berry, 2 cohorts)",
+    xaxis = list(title = "Sample size per cohort (n)"),
+    yaxis = list(title = "Evidence level (gamma)")
+  )
+
+# Add boundary curve: minimum n per gamma -------------------------------------
+if (nrow(min_n_per_gamma) > 0) {
+  fig <- fig %>%
+    add_trace(
+      data  = min_n_per_gamma,
+      x     = ~min_n,
+      y     = ~gamma,
+      type  = "scatter",
+      mode  = "lines+markers",
+      line  = list(width = 2),
+      marker = list(size = 8, symbol = "x"),
+      name  = "Min n per gamma",
+      hoverinfo = "text",
+      text = ~paste0(
+        "gamma = ", gamma,
+        "<br>min n = ", min_n,
+        "<br>Type I error = ", round(type_1_error, 3),
+        "<br>Power = ", round(power, 3)
+      )
+    )
+}
+
+# Add boundary curve: minimum gamma per n -------------------------------------
+if (nrow(min_gamma_per_n) > 0) {
+  fig <- fig %>%
+    add_trace(
+      data  = min_gamma_per_n,
+      x     = ~n,
+      y     = ~min_gamma,
+      type  = "scatter",
+      mode  = "lines+markers",
+      line  = list(dash = "dot", width = 2),
+      marker = list(size = 8, symbol = "triangle-up"),
+      name  = "Min gamma per n",
+      hoverinfo = "text",
+      text = ~paste0(
+        "n = ", n,
+        "<br>min gamma = ", min_gamma,
+        "<br>Type I error = ", round(type_1_error, 3),
+        "<br>Power = ", round(power, 3)
+      )
+    )
+}
+
+fig  # show interactive plot in RStudio / browser
