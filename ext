@@ -1,8 +1,41 @@
 md <- as.data.frame(oc_results)
+
 md$feasible_factor <- ifelse(md$feasible, "Feasible", "Not feasible")
-md$feasible_factor <- factor(md$feasible_factor, levels = c("Not feasible", "Feasible"))
-str(md)
-# Base scatter: all (n, gamma) combos with color by feasibility ---------------
+md$feasible_factor <- factor(md$feasible_factor,
+                             levels = c("Not feasible", "Feasible"))
+
+## --- Compute boundary: min n per gamma (among feasible designs) ------------
+feas_only <- md[md$feasible, , drop = FALSE]
+
+if (nrow(feas_only) > 0L) {
+  # For each gamma, pick the row with the smallest n
+  tmp_gamma <- aggregate(n ~ gamma, data = feas_only, FUN = min)
+  min_n_per_gamma <- merge(
+    tmp_gamma,
+    feas_only,
+    by = c("gamma", "n"),
+    all.x = TRUE,
+    sort = TRUE
+  )
+} else {
+  min_n_per_gamma <- md[FALSE, , drop = FALSE]  # empty df
+}
+
+## --- Compute boundary: min gamma per n (among feasible designs) ------------
+if (nrow(feas_only) > 0L) {
+  tmp_n <- aggregate(gamma ~ n, data = feas_only, FUN = min)
+  min_gamma_per_n <- merge(
+    tmp_n,
+    feas_only,
+    by = c("n", "gamma"),
+    all.x = TRUE,
+    sort = TRUE
+  )
+} else {
+  min_gamma_per_n <- md[FALSE, , drop = FALSE]
+}
+
+## --- Base scatter: all (n, gamma) combos -----------------------------------
 fig <- plot_ly(
   data  = md,
   x     = ~n,
@@ -13,7 +46,7 @@ fig <- plot_ly(
   colors = c("Not feasible" = "red", "Feasible" = "green"),
   text  = ~paste0(
     "n = ", n,
-    "<br>gamma = ", gamma,
+    "<br>gamma = ", round(gamma, 3),
     "<br>Type I error = ", round(type_1_error_hat, 3),
     "<br>Power = ", round(power_hat, 3),
     "<br>Feasible = ", feasible
@@ -27,48 +60,50 @@ fig <- plot_ly(
     yaxis = list(title = "Evidence level (gamma)")
   )
 
-# Add boundary curve: minimum n per gamma -------------------------------------
-if (nrow(min_n_per_gamma) > 0) {
+## --- Boundary curve: minimum n per gamma -----------------------------------
+if (nrow(min_n_per_gamma) > 0L) {
   fig <- fig %>%
     add_trace(
-      data  = min_n_per_gamma,
-      x     = ~min_n,
-      y     = ~gamma,
-      type  = "scatter",
-      mode  = "lines+markers",
-      line  = list(width = 2),
+      data   = min_n_per_gamma,
+      x      = ~n,          # 'n' is already the min n for that gamma
+      y      = ~gamma,
+      type   = "scatter",
+      mode   = "lines+markers",
+      inherit = FALSE,      # <--- do NOT inherit mappings from first trace
+      line   = list(width = 2),
       marker = list(size = 8, symbol = "x"),
-      name  = "Min n per gamma",
+      name   = "Min n per gamma",
       hoverinfo = "text",
       text = ~paste0(
-        "gamma = ", gamma,
-        "<br>min n = ", min_n,
-        "<br>Type I error = ", round(type_1_error, 3),
-        "<br>Power = ", round(power, 3)
+        "gamma = ", round(gamma, 3),
+        "<br>min n = ", n,
+        "<br>Type I error = ", round(type_1_error_hat, 3),
+        "<br>Power = ", round(power_hat, 3)
       )
     )
 }
 
-# Add boundary curve: minimum gamma per n -------------------------------------
-if (nrow(min_gamma_per_n) > 0) {
+## --- Boundary curve: minimum gamma per n -----------------------------------
+if (nrow(min_gamma_per_n) > 0L) {
   fig <- fig %>%
     add_trace(
-      data  = min_gamma_per_n,
-      x     = ~n,
-      y     = ~min_gamma,
-      type  = "scatter",
-      mode  = "lines+markers",
-      line  = list(dash = "dot", width = 2),
+      data   = min_gamma_per_n,
+      x      = ~n,
+      y      = ~gamma,      # gamma is already the min gamma for that n
+      type   = "scatter",
+      mode   = "lines+markers",
+      inherit = FALSE,
+      line   = list(dash = "dot", width = 2),
       marker = list(size = 8, symbol = "triangle-up"),
-      name  = "Min gamma per n",
+      name   = "Min gamma per n",
       hoverinfo = "text",
       text = ~paste0(
         "n = ", n,
-        "<br>min gamma = ", min_gamma,
-        "<br>Type I error = ", round(type_1_error, 3),
-        "<br>Power = ", round(power, 3)
+        "<br>min gamma = ", round(gamma, 3),
+        "<br>Type I error = ", round(type_1_error_hat, 3),
+        "<br>Power = ", round(power_hat, 3)
       )
     )
 }
 
-fig  # show interactive plot in RStudio / browser
+fig  # interactive plot
