@@ -24,8 +24,8 @@ go_prob_overall <- function(n,
   # Analyse with berry using p_beta_vec as target_rates
   analyses <- performAnalyses(
     scenario_list      = scen,
-    evidence_levels    = seq(0.3, 0.75, by = 0.05),  # stored quantiles
-    target_rates       = p_beta_vec,                 # boundary encoded as "target"
+    evidence_levels    = seq(0.5, 0.95, by = 0.05),  # stored quantiles
+    target_rates       = p_beta_vec,
     method_names       = method_name,
     n_mcmc_iterations  = 100,
     verbose            = FALSE
@@ -57,11 +57,10 @@ p1           <- c(0.45, 0.45)    # alternative true response rates
 p_beta_vec   <- c(0.40, 0.40)    # clinical boundary
 type_1_error <- 0.20             # allowed Type I error (alpha)
 power_min    <- 0.80             # required power
-n_trials_oc  <- 100             # simulated trials per (n, gamma) combination
+n_trials_oc  <- 100              # simulated trials per (n, gamma) combination
 
-# Search grid -----------------------------------------------------------------
-n_grid     <- c(20, 30)      # candidate sample sizes per cohort
-gamma_grid <- seq(0.5, 0.75, by = 0.15)           # candidate evidence levels
+n_grid     <- c(20, 30, 40)                 # candidate sample sizes per cohort
+gamma_grid <- seq(0.5, 0.95, by = 0.05)     # candidate evidence levels
 
 oc_results <- expand.grid(
   n     = n_grid,
@@ -106,7 +105,7 @@ oc_results  # full OC table
 
 
 
-# For each gamma: minimal n that is feasible -------------------------------
+# For each gamma: minimal n that is feasible -----------------------------------
 min_n_per_gamma <- oc_results |>
   filter(feasible) |>
   group_by(gamma) |>
@@ -127,7 +126,7 @@ min_n_per_gamma_full <- tibble(gamma = all_gammas) |>
 min_n_per_gamma_full
 
 
-# For each n: minimal gamma that is feasible -------------------------------
+# For each n: minimal gamma that is feasible -----------------------------------
 min_gamma_per_n <- oc_results |>
   filter(feasible) |>
   group_by(n) |>
@@ -141,7 +140,7 @@ min_gamma_per_n <- oc_results |>
 min_gamma_per_n
 
 
-# Plotly scatter: feasible vs non-feasible + boundary curves -------------------
+# Plotly scatter: feasible vs non-feasible -------------------------------------
 
 md <- as.data.frame(oc_results)
 
@@ -149,7 +148,7 @@ md$feasible_factor <- ifelse(md$feasible, "Feasible", "Not feasible")
 md$feasible_factor <- factor(md$feasible_factor,
                              levels = c("Not feasible", "Feasible"))
 
-# Compute boundary: min n per gamma (among feasible designs) ------------
+# Compute boundary: min n per gamma (among feasible designs) -------------------
 feas_only <- md[md$feasible, , drop = FALSE]
 
 if (nrow(feas_only) > 0L) {
@@ -166,7 +165,7 @@ if (nrow(feas_only) > 0L) {
   min_n_per_gamma <- md[FALSE, , drop = FALSE]  # empty df
 }
 
-# Compute boundary: min gamma per n (among feasible designs) ------------
+# Compute boundary: min gamma per n (among feasible designs) -------------------
 if (nrow(feas_only) > 0L) {
   tmp_n <- aggregate(gamma ~ n, data = feas_only, FUN = min)
   min_gamma_per_n <- merge(
@@ -180,7 +179,6 @@ if (nrow(feas_only) > 0L) {
   min_gamma_per_n <- md[FALSE, , drop = FALSE]
 }
 
-## --- Base scatter: all (n, gamma) combos -----------------------------------
 fig <- plot_ly(
   data  = md,
   x     = ~n,
@@ -205,7 +203,7 @@ fig <- plot_ly(
     yaxis = list(title = "Evidence level (gamma)", range = c(0.29,0.8))
   )
 
-## --- Boundary curve: minimum n per gamma -----------------------------------
+## Boundary curve: minimum n per gamma -----------------------------------------
 if (nrow(min_n_per_gamma) > 0L) {
   fig <- fig %>%
     add_trace(
@@ -227,7 +225,6 @@ if (nrow(min_n_per_gamma) > 0L) {
       )
     )
 }
-
 
 fig
 
