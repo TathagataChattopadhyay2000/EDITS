@@ -6,46 +6,38 @@
 <!-- badges: end -->
 
 
-# Workflow derived from https://github.com/r-lib/actions/tree/master/examples
-# Need help debugging build failures? Start at https://github.com/r-lib/actions#where-to-find-help
-on:
-  push:
-    branches: [test]
-  pull_request:
-    branches: [test]
-  workflow_dispatch:
+test-coverage
+succeeded 7 minutes ago in 1m 14s
+Search logs
+2s
+0s
+2s
+0s
+31s
+26s
+2s
+Run R CMD INSTALL --preclean .
+* installing to library ‘/home/runner/work/_temp/Library’
+* installing *source* package ‘bhmbasket’ ...
+** this is package ‘bhmbasket’ version ‘0.9.5.999’
+** using staged installation
+** R
+** inst
+** byte-compile and prepare package for lazy loading
+** help
+*** installing help indices
+** building package indices
+** installing vignettes
+** testing if installed package can be loaded from temporary location
+** testing if installed package can be loaded from final location
+** testing if installed package keeps a record of temporary installation path
+* DONE (bhmbasket)
+9s
+Run covr::codecov()
+Request failed [429]. Retrying in 1.7 seconds...
+Request failed [429]. Retrying in 3.4 seconds...
+$detail
+[1] "Rate limit reached. Please upload with the Codecov repository upload token to resolve issue. Expected time to availability: 1594s."
 
-name: test-coverage
 
-jobs:
-  test-coverage:
-    runs-on: ubuntu-latest
-    env:
-      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
-      RENV_CONFIG_SANDBOX_ENABLED: false
-
-    steps:
-      - uses: actions/checkout@v4
-      
-      - uses: r-lib/actions/setup-pandoc@v2
-        with:
-          pandoc-version: '3.1.11' # The pandoc version to download (if necessary) and use.
-      - run: echo "# Test" | pandoc -t html
-
-      - uses: r-lib/actions/setup-r@v2
-        with:
-          r-version: 'latest'
-          use-public-rspm: true
-          rtools-version: '42'
-
-      - uses: r-lib/actions/setup-r-dependencies@v2
-        with:
-          extra-packages: covr
-      
-      - name: Install bhmbasket
-        shell: bash
-        run: R CMD INSTALL --preclean .
-        
-      - name: Test coverage
-        run: covr::codecov()
-        shell: Rscript {0}
+this is what the output of my orkflow is, it completes but it looks like this is it okay?
