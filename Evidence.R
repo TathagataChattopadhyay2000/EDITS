@@ -1,0 +1,230 @@
+## Operating characteristics for a 2-cohort basket trial with berry
+
+doFuture::registerDoFuture()
+future::plan(future::multisession())
+
+library(dplyr)
+library(plotly)
+
+go_prob_overall <- function(n,
+                            p_true_vec,
+                            p_beta_vec,
+                            gamma,
+                            overall_min_gos = 1,
+                            n_trials,
+                            method_name = "berry") {
+  
+  # Simulate n_trials basket trials with 2 cohorts
+  scen <- simulateScenarios(
+    n_subjects_list     = list(c(n, n)),        # same n per cohort
+    response_rates_list = list(p_true_vec),     # true response rates
+    n_trials            = n_trials
+  )
+  
+  # Analyse with berry using p_beta_vec as target_rates
+  analyses <- performAnalyses(
+    scenario_list      = scen,
+    evidence_levels    = seq(0.5, 0.95, by = 0.05),  # stored quantiles
+    target_rates       = p_beta_vec,
+    method_names       = method_name,
+    n_mcmc_iterations  = 100,
+    verbose            = FALSE
+  )
+  
+  # Decision rule: P(p_j > p_beta_j | data) > gamma
+  # Implemented as q_{1-gamma} > p_beta_j via boundary_rules
+  decisions <- getGoDecisions(
+    analyses_list   = analyses,
+    cohort_names    = c("p_1", "p_2"),
+    evidence_levels = c(gamma, gamma),                
+    boundary_rules  = quote(c(x[1] > p_beta_vec[1],
+                              x[2] > p_beta_vec[2])),
+    overall_min_gos = overall_min_gos
+  )
+  
+  # Convert decisions to Go probabilities
+  go_probs_list <- getGoProbabilities(decisions)
+  go_mat        <- go_probs_list[[method_name]][["scenario_1"]]
+  
+  # Return overall Go probability (row "Go", column "overall")
+  go_mat["Go", "overall"]
+}
+
+
+# Design settings --------------------------------------------------------------
+p0           <- c(0.30, 0.30)    # null true response rates
+p1           <- c(0.45, 0.45)    # alternative true response rates
+p_beta_vec   <- c(0.40, 0.40)    # clinical boundary
+type_1_error <- 0.20             # allowed Type I error (alpha)
+power_min    <- 0.80             # required power
+n_trials_oc  <- 100              # simulated trials per (n, gamma) combination
+
+n_grid     <- c(20, 30, 40)                 # candidate sample sizes per cohort
+gamma_grid <- seq(0.5, 0.95, by = 0.05)     # candidate evidence levels
+
+oc_results <- expand.grid(
+  n     = n_grid,
+  gamma = gamma_grid
+)
+
+oc_results$type_1_error_hat <- NA_real_
+oc_results$power_hat        <- NA_real_
+
+set.seed(2026)
+
+for (i in seq_len(nrow(oc_results))) {
+  n_i     <- oc_results$n[i]
+  gamma_i <- oc_results$gamma[i]
+  
+  # Type I error under p0
+  oc_results$type_1_error_hat[i] <- go_prob_overall(
+    n            = n_i,
+    p_true_vec   = p0,
+    p_beta_vec   = p_beta_vec,
+    gamma        = gamma_i,
+    n_trials     = n_trials_oc
+  )
+  
+  # Power under p1
+  oc_results$power_hat[i] <- go_prob_overall(
+    n            = n_i,
+    p_true_vec   = p1,
+    p_beta_vec   = p_beta_vec,
+    gamma        = gamma_i,
+    n_trials     = n_trials_oc
+  )
+  
+}
+
+oc_results$feasible <- with(
+  oc_results,
+  type_1_error_hat <= type_1_error & power_hat >= power_min
+)
+
+oc_results  # full OC table
+
+
+
+# For each gamma: minimal n that is feasible -----------------------------------
+min_n_per_gamma <- oc_results |>
+  filter(feasible) |>
+  group_by(gamma) |>
+  summarise(
+    min_n        = min(n),
+    type_1_error = type_1_error_hat[which.min(n)],
+    power        = power_hat[which.min(n)],
+    .groups = "drop"
+  )
+
+min_n_per_gamma
+
+all_gammas <- sort(unique(oc_results$gamma))
+
+min_n_per_gamma_full <- tibble(gamma = all_gammas) |>
+  left_join(min_n_per_gamma, by = "gamma")
+
+min_n_per_gamma_full
+
+
+# For each n: minimal gamma that is feasible -----------------------------------
+min_gamma_per_n <- oc_results |>
+  filter(feasible) |>
+  group_by(n) |>
+  summarise(
+    min_gamma   = min(gamma),
+    type_1_error = type_1_error_hat[which.min(gamma)],
+    power        = power_hat[which.min(gamma)],
+    .groups = "drop"
+  )
+
+min_gamma_per_n
+
+
+# Plotly scatter: feasible vs non-feasible -------------------------------------
+
+md <- as.data.frame(oc_results)
+
+md$feasible_factor <- ifelse(md$feasible, "Feasible", "Not feasible")
+md$feasible_factor <- factor(md$feasible_factor,
+                             levels = c("Not feasible", "Feasible"))
+
+# Compute boundary: min n per gamma (among feasible designs) -------------------
+feas_only <- md[md$feasible, , drop = FALSE]
+
+if (nrow(feas_only) > 0L) {
+  # For each gamma, pick the row with the smallest n
+  tmp_gamma <- aggregate(n ~ gamma, data = feas_only, FUN = min)
+  min_n_per_gamma <- merge(
+    tmp_gamma,
+    feas_only,
+    by = c("gamma", "n"),
+    all.x = TRUE,
+    sort = TRUE
+  )
+} else {
+  min_n_per_gamma <- md[FALSE, , drop = FALSE]  # empty df
+}
+
+# Compute boundary: min gamma per n (among feasible designs) -------------------
+if (nrow(feas_only) > 0L) {
+  tmp_n <- aggregate(gamma ~ n, data = feas_only, FUN = min)
+  min_gamma_per_n <- merge(
+    tmp_n,
+    feas_only,
+    by = c("n", "gamma"),
+    all.x = TRUE,
+    sort = TRUE
+  )
+} else {
+  min_gamma_per_n <- md[FALSE, , drop = FALSE]
+}
+
+fig <- plot_ly(
+  data  = md,
+  x     = ~n,
+  y     = ~gamma,
+  type  = "scatter",
+  mode  = "markers",
+  color = ~feasible_factor,
+  colors = c("Not feasible" = "red", "Feasible" = "green"),
+  text  = ~paste0(
+    "n = ", n,
+    "<br>gamma = ", round(gamma, 3),
+    "<br>Type I error = ", round(type_1_error_hat, 3),
+    "<br>Power = ", round(power_hat, 3),
+    "<br>Feasible = ", feasible
+  ),
+  hoverinfo = "text",
+  name  = "Designs"
+) %>%
+  layout(
+    title = "Feasible vs Non-feasible Designs (berry, 2 cohorts)",
+    xaxis = list(title = "Sample size per cohort (n)"),
+    yaxis = list(title = "Evidence level (gamma)", range = c(0.29,0.8))
+  )
+
+## Boundary curve: minimum n per gamma -----------------------------------------
+if (nrow(min_n_per_gamma) > 0L) {
+  fig <- fig %>%
+    add_trace(
+      data   = min_n_per_gamma,
+      x      = ~n,
+      y      = ~gamma,
+      type   = "scatter",
+      mode   = "lines+markers",
+      inherit = FALSE,
+      line   = list(width = 2),
+      marker = list(size = 8, symbol = "x"),
+      name   = "Min n per gamma",
+      hoverinfo = "text",
+      text = ~paste0(
+        "gamma = ", round(gamma, 3),
+        "<br>min n = ", n,
+        "<br>Type I error = ", round(type_1_error_hat, 3),
+        "<br>Power = ", round(power_hat, 3)
+      )
+    )
+}
+
+fig
+
