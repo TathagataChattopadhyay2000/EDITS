@@ -1,43 +1,59 @@
-# Workflow derived from https://github.com/r-lib/actions/tree/master/examples
-# Need help debugging build failures? Start at https://github.com/r-lib/actions#where-to-find-help
-on:
-  push:
-    branches: [test]
-  pull_request:
-    branches: [test]
-  workflow_dispatch:
+Coverage Analytics
+Codecov analyzes your coverage reports
+ to help you identify untested code and improve test effectiveness. Before integrating with Codecov, ensure your project generates coverage reports, as Codecov relies on these reports for coverage analysis.
 
-name: test-coverage
+Select a setup option
 
-jobs:
-  test-coverage:
-    runs-on: ubuntu-latest
-    env:
-      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
-      RENV_CONFIG_SANDBOX_ENABLED: false
+Using GitHub Actions
 
-    steps:
-      - uses: actions/checkout@v4
-      
-      - uses: r-lib/actions/setup-pandoc@v2
-        with:
-          pandoc-version: '3.1.11' # The pandoc version to download (if necessary) and use.
-      - run: echo "# Test" | pandoc -t html
+Using Circle CI
 
-      - uses: r-lib/actions/setup-r@v2
-        with:
-          r-version: 'latest'
-          use-public-rspm: true
-          rtools-version: '42'
+Using Codecov's CLI
+Step 1: Output a Coverage report file in your CI
+Select your language below to generate your coverage reports. If your language isn't listed, visit our supported languages doc
+ for example repositories. Codecov generally supports XML and JSON formats.
 
-      - uses: r-lib/actions/setup-r-dependencies@v2
-        with:
-          extra-packages: covr
-      
-      - name: Install bhmbasket
-        shell: bash
-        run: R CMD INSTALL --preclean .
-        
-      - name: Test coverage
-        run: covr::codecov()
-        shell: Rscript {0}
+
+Jest
+Install requirements in your terminal:
+
+npm install --save-dev jest
+
+In a GitHub Action, run tests and generate a coverage report:
+
+npx jest --coverage
+
+Step 2: Select an upload token to add as a secret on GitHub-optional
+
+Repository token
+Use it for uploading coverage reports in the SPARKS-FOUNDATION-TASK-1 repository.
+
+Step 3: add token as repository secret
+Codecov requires a token to authenticate uploading your coverage reports. Organization admin required to access organization settings > secrets and variables > actions
+
+CODECOV_TOKEN
+
+cafc8da5-e6ea-4372-8210-f4f211c0f7a7
+
+
+Your organization secret in GitHub should look like this:
+
+Step 4: Add Codecov to your GitHub Actions workflow yaml file
+After tests run, this will upload your coverage report to Codecov:
+
+- name: Upload coverage reports to Codecov
+    uses: codecov/codecov-action@v5
+    with:
+      token: ${{ secrets.CODECOV_TOKEN }}
+
+
+Your final GitHub Actions workflow for a project using Jest could look something like this:
+
+Step 5: merge to main or your preferred feature branch
+Once merged to your default branch, subsequent pull requests will have Codecov checks and comments. Additionally, you'll find your repo coverage dashboard here. If you have merged, try reloading the page.
+
+How was your setup experience? Let us know in this issue
+
+Visit our guide to learn more
+ about coverage integration.
+
