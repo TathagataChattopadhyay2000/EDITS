@@ -1,23 +1,43 @@
-Run covr::codecov()
-$message
-[1] "Coverage reports upload successfully"
+# Workflow derived from https://github.com/r-lib/actions/tree/master/examples
+# Need help debugging build failures? Start at https://github.com/r-lib/actions#where-to-find-help
+on:
+  push:
+    branches: [test]
+  pull_request:
+    branches: [test]
+  workflow_dispatch:
 
-$uploaded
-[1] TRUE
+name: test-coverage
 
-$queued
-[1] TRUE
+jobs:
+  test-coverage:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+      RENV_CONFIG_SANDBOX_ENABLED: false
 
-$id
-[1] "87f21153-3fb7-4813-938a-db39b7da1728"
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: r-lib/actions/setup-pandoc@v2
+        with:
+          pandoc-version: '3.1.11' # The pandoc version to download (if necessary) and use.
+      - run: echo "# Test" | pandoc -t html
 
-$url
-[1] "https://app.codecov.io/github/Boehringer-Ingelheim/bhmbasket/commit/94151409176aea46b3629eebe510e211cb165bc0"
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: 'latest'
+          use-public-rspm: true
+          rtools-version: '42'
 
-
-35s
-Run covr::codecov()
-Request failed [429]. Retrying in 1 seconds...
-Request failed [429]. Retrying in 1.1 seconds...
-$detail
-[1] "Rate limit reached. Please upload with the Codecov repository upload token to resolve issue. Expected time to availability: 419s."
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: covr
+      
+      - name: Install bhmbasket
+        shell: bash
+        run: R CMD INSTALL --preclean .
+        
+      - name: Test coverage
+        run: covr::codecov()
+        shell: Rscript {0}
