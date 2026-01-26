@@ -5,49 +5,19 @@
 [![Codecov test coverage](https://codecov.io/gh/Boehringer-Ingelheim/bhmbasket/branch/test/graph/badge.svg)](https://app.codecov.io/gh/Boehringer-Ingelheim/bhmbasket?branch=test)
 <!-- badges: end -->
 
+source("/fsx/home/chattota/github/bhmbasket/tests/testthat/helpur-setup.R")
 
-## helper-setup.R
-## This file is sourced automatically by testthat before all tests.
+# Tests for applicablePreviousTrials -------------------------------------------
 
-set.seed(1234)
+app_prev <- setup_applicable_prev_trials()
 
-## ------------------------------------------------------------------
-## 1. Helper scenario_list and analysis_list for decision tests
-## ------------------------------------------------------------------
-
-# Simple 2-cohort basket, small n, one scenario
-helper_n_subjects <- c(10, 10)
-helper_rr         <- c(0.5, 0.5)  # true response rates
-
-helper_scenarios <- simulateScenarios(
-  n_subjects_list     = list(helper_n_subjects),
-  response_rates_list = list(helper_rr),
-  scenario_numbers    = 1L,
-  n_trials            = 5L
-)
-
-helper_analyses <- performAnalyses(
-  scenario_list     = helper_scenarios,
-  target_rates      = c(0.5, 0.5),   # same as p_beta for simplicity
-  method_names      = "berry",
-  n_mcmc_iterations = 100,
-  verbose           = FALSE
-)
-
-## ------------------------------------------------------------------
-## 2. Global decision_list objects used in continueRecruitment tests
-## ------------------------------------------------------------------
-
-# Basic decision_list for one scenario / one method
-decisions <- getGoDecisions(
-  analyses_list   = helper_analyses,
-  cohort_names    = c("p_1", "p_2"),
-  evidence_levels = c(0.5, 0.5),
-  # Simple always-true rule: just to get a valid structure
-  boundary_rules  = quote(c(TRUE, TRUE)),
-  overall_min_gos = 1L
-)
-
-# A second reference used in the "length mismatch" test:
-# n_subjects_add_list has length 2, this has length 1 -> error expected
-decisions_list <- decisions
+scen_initial       <- app_prev$scen_initial
+analysis_initial   <- app_prev$analysis_initial
+go_initial         <- app_prev$go_initial
+scen_next          <- app_prev$scen_next
+analysis_with_diff <- app_prev$analysis_with_diff
+go_with_diff       <- app_prev$go_with_diff
+scen_next_diff     <- app_prev$scen_next_diff
+method_names_prev  <- app_prev$method_names_prev
+quantiles_prev     <- app_prev$quantiles_prev
+n_coh_prev         <- app_prev$n_coh_prev
