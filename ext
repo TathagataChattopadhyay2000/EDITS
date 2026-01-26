@@ -1,23 +1,120 @@
-> devtools::test()
-ℹ Testing bhmbasket
-✔ | F W  S  OK | Context
-✔ |        171 | AnalysisFunctions [2.8s]                                                                                                                                                     
-✔ |          6 | CheckingFunctions                                                                                                                                                            
-✔ |         75 | DataFunctions [1.0s]                                                                                                                                                         
-✔ |        138 | OCFunctions [13.5s]                                                                                                                                                          
-✔ |         96 | PriorFunctions                                                                                                                                                               
+1m 0s
+Run r-lib/actions/check-r-package@v2
+Run ## --------------------------------------------------------------------
+── R CMD build ─────────────────────────────────────────────────────────────────
+* checking for file ‘.../DESCRIPTION’ ... OK
+* preparing ‘bhmbasket’:
+* checking DESCRIPTION meta-information ... OK
+* installing the package to build vignettes
+* creating vignettes ... OK
+* checking for LF line-endings in source and make files and shell scripts
+* checking for empty or unneeded directories
+* building ‘bhmbasket_0.9.5.999.tar.gz’
 
-══ Results ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
-Duration: 17.6 s
+── R CMD check ─────────────────────────────────────────────────────────────────
+* using log directory ‘/home/runner/work/bhmbasket/bhmbasket/check/bhmbasket.Rcheck’
+* using R version 4.5.2 (2025-10-31)
+* using platform: x86_64-pc-linux-gnu
+* R was compiled by
+    gcc (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0
+    GNU Fortran (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0
+* running under: Ubuntu 24.04.3 LTS
+* using session charset: UTF-8
+* using options ‘--no-manual --as-cran’
+* checking for file ‘bhmbasket/DESCRIPTION’ ... OK
+* this is package ‘bhmbasket’ version ‘0.9.5.999’
+* package encoding: UTF-8
+* checking package namespace information ... OK
+* checking package dependencies ... OK
+* checking if this is a source package ... OK
+* checking if there is a namespace ... OK
+* checking for executable files ... OK
+* checking for hidden files and directories ... OK
+* checking for portable file names ... OK
+* checking for sufficient/correct file permissions ... OK
+* checking whether package ‘bhmbasket’ can be installed ... OK
+* checking installed package size ... OK
+* checking package directory ... OK
+* checking for future file timestamps ... OK
+* checking ‘build’ directory ... OK
+* checking DESCRIPTION meta-information ... OK
+* checking top-level files ... NOTE
+Non-standard file/directory found at top level:
+  ‘OcResults’
+* checking for left-over files ... OK
+* checking index information ... OK
+* checking package subdirectories ... OK
+* checking code files for non-ASCII characters ... OK
+* checking R files for syntax errors ... OK
+* checking whether the package can be loaded ... OK
+* checking whether the package can be loaded with stated dependencies ... OK
+* checking whether the package can be unloaded cleanly ... OK
+* checking whether the namespace can be loaded with stated dependencies ... OK
+* checking whether the namespace can be unloaded cleanly ... OK
+* checking loading without being on the library search path ... OK
+* checking dependencies in R code ... OK
+* checking S3 generic/method consistency ... OK
+* checking replacement functions ... OK
+* checking foreign function calls ... OK
+* checking R code for possible problems ... OK
+* checking Rd files ... OK
+* checking Rd metadata ... OK
+* checking Rd line widths ... OK
+* checking Rd cross-references ... OK
+* checking for missing documentation entries ... OK
+* checking for code/documentation mismatches ... OK
+* checking Rd \usage sections ... OK
+* checking Rd contents ... OK
+* checking for unstated dependencies in examples ... OK
+* checking installed files from ‘inst/doc’ ... OK
+* checking files in ‘vignettes’ ... OK
+* checking examples ... OK
+* checking for unstated dependencies in ‘tests’ ... WARNING
+Warning: '::' or ':::' imports not declared from:
+  ‘covr’ ‘devtools’
+'library' or 'require' call not declared from: ‘covr’
+* checking tests ...
+  Running ‘testthat.R’ [25s/25s]
+ [26s/25s] OK
+* checking for unstated dependencies in vignettes ... OK
+* checking package vignettes ... OK
+* checking re-building of vignette outputs ... OK
+* checking for non-standard things in the check directory ... OK
+* checking for detritus in the temp directory ... OK
+* DONE
+Status: 1 WARNING, 1 NOTE
+See
+  ‘/home/runner/work/bhmbasket/bhmbasket/check/bhmbasket.Rcheck/00check.log’
+for details.
+── R CMD check results ──────────────────────────────── bhmbasket 0.9.5.999 ────
+Duration: 51.2s
 
-[ FAIL 0 | WARN 0 | SKIP 0 | PASS 486 ]
+❯ checking for unstated dependencies in ‘tests’ ... WARNING
+  '::' or ':::' imports not declared from:
+    ‘covr’ ‘devtools’
+  'library' or 'require' call not declared from: ‘covr’
 
-🎯 Your tests hit the mark 🎯
-> covr::package_coverage(type = "tests")
-bhmbasket Coverage: 0.00%
-R/AnalysisFunctions.R: 0.00%
-R/CheckingFunctions.R: 0.00%
-R/DataFunctions.R: 0.00%
-R/Misc.R: 0.00%
-R/OCFunctions.R: 0.00%
-R/PriorFunctions.R: 0.00%
+❯ checking top-level files ... NOTE
+  Non-standard file/directory found at top level:
+    ‘OcResults’
+
+0 errors ✔ | 1 warning ✖ | 1 note ✖
+Error: Error: R CMD check found WARNINGs
+Execution halted
+Error: Process completed with exit code 1.
+Run ## --------------------------------------------------------------------
+Show testthat output
+Run actions/upload-artifact@v4
+With the provided path, there will be 114 files uploaded
+Artifact name is valid!
+Root directory input is valid!
+Beginning upload of artifact content to blob storage
+Uploaded bytes 1719944
+Finished uploading artifact content to blob storage!
+SHA256 digest of uploaded artifact zip is f63c63e40413c7fe4c06e67bf56a35c684da8d4f91c8626bb2ac8763da46d46c
+Finalizing artifact upload
+Artifact Linux-X64-rrelease-0-results.zip successfully finalized. Artifact ID 5259500152
+Artifact Linux-X64-rrelease-0-results has been successfully uploaded! Final size is 1719944 bytes. Artifact ID is 5259500152
+Artifact download URL: https://github.com/Boehringer-Ingelheim/bhmbasket/actions/runs/21364934523/artifacts/5259500152
+Run actions/upload-artifact@v4
+No files were found with the provided path: /home/runner/work/bhmbasket/bhmbasket/check/**/tests*/testthat/_snaps. No artifacts will be uploaded.
