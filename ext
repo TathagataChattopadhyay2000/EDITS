@@ -1,23 +1,23 @@
-<!-- badges: start -->
-[![Linux](https://github.com/Boehringer-Ingelheim/bhmbasket/actions/workflows/linux.yml/badge.svg?branch=test)](https://github.com/Boehringer-Ingelheim/bhmbasket/actions/workflows/linux.yml)
-[![Windows](https://github.com/Boehringer-Ingelheim/bhmbasket/actions/workflows/windows.yml/badge.svg?branch=test)](https://github.com/Boehringer-Ingelheim/bhmbasket/actions/workflows/windows.yml)
-[![macOS](https://github.com/Boehringer-Ingelheim/bhmbasket/actions/workflows/macos.yml/badge.svg?branch=test)](https://github.com/Boehringer-Ingelheim/bhmbasket/actions/workflows/macos.yml)
-[![Codecov test coverage](https://codecov.io/gh/Boehringer-Ingelheim/bhmbasket/branch/test/graph/badge.svg)](https://app.codecov.io/gh/Boehringer-Ingelheim/bhmbasket?branch=test)
-<!-- badges: end -->
+> devtools::test()
+ℹ Testing bhmbasket
+✔ | F W  S  OK | Context
+✔ |        171 | AnalysisFunctions [2.8s]                                                                                                                                                     
+✔ |          6 | CheckingFunctions                                                                                                                                                            
+✔ |         75 | DataFunctions [1.0s]                                                                                                                                                         
+✔ |        138 | OCFunctions [13.5s]                                                                                                                                                          
+✔ |         96 | PriorFunctions                                                                                                                                                               
 
-source("/fsx/home/chattota/github/bhmbasket/tests/testthat/helpur-setup.R")
+══ Results ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+Duration: 17.6 s
 
-# Tests for applicablePreviousTrials -------------------------------------------
+[ FAIL 0 | WARN 0 | SKIP 0 | PASS 486 ]
 
-app_prev <- setup_applicable_prev_trials()
-
-scen_initial       <- app_prev$scen_initial
-analysis_initial   <- app_prev$analysis_initial
-go_initial         <- app_prev$go_initial
-scen_next          <- app_prev$scen_next
-analysis_with_diff <- app_prev$analysis_with_diff
-go_with_diff       <- app_prev$go_with_diff
-scen_next_diff     <- app_prev$scen_next_diff
-method_names_prev  <- app_prev$method_names_prev
-quantiles_prev     <- app_prev$quantiles_prev
-n_coh_prev         <- app_prev$n_coh_prev
+🎯 Your tests hit the mark 🎯
+> covr::package_coverage(type = "tests")
+bhmbasket Coverage: 0.00%
+R/AnalysisFunctions.R: 0.00%
+R/CheckingFunctions.R: 0.00%
+R/DataFunctions.R: 0.00%
+R/Misc.R: 0.00%
+R/OCFunctions.R: 0.00%
+R/PriorFunctions.R: 0.00%
