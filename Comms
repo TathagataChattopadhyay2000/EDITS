@@ -1,922 +1,1467 @@
-# Tests for getMuVar -----------------------------------------------------------
+# Tests for applicablePreviousTrials -------------------------------------------
 
-# ------------------------------------------------------------------
-# Test: correct mu_var for simple reference case
-# Input:
-#   - response_rate = 0.5, tau_scale = 1, n_worth = 2
-# Behaviour:
-#   - getMuVar() implements: mu_var = (n_worth * p * (1 - p))^-1 - tau_scale^2
-# Expectations:
-#   - Result equals manual calculation, is a finite double.
-# Why:
-#   - Sanity-checks the core formula and numeric type for a simple case.
-# ------------------------------------------------------------------
-test_that("mu_var calculation is correct for simple case", {
-  expected <- (2 * 0.5 * (1 - 0.5))^-1 - 1^2
+app_prev <- setup_applicable_prev_trials()
 
-  result <- getMuVar(response_rate = 0.5, tau_scale = 1, n_worth = 2)
+scen_initial       <- app_prev$scen_initial
+analysis_initial   <- app_prev$analysis_initial
+go_initial         <- app_prev$go_initial
+scen_next          <- app_prev$scen_next
+analysis_with_diff <- app_prev$analysis_with_diff
+go_with_diff       <- app_prev$go_with_diff
+scen_next_diff     <- app_prev$scen_next_diff
+method_names_prev  <- app_prev$method_names_prev
+quantiles_prev     <- app_prev$quantiles_prev
+n_coh_prev         <- app_prev$n_coh_prev
 
-  expect_equal(result, expected)
-  expect_type(result, "double")
-  expect_true(is.finite(result))
-})
-
-# ------------------------------------------------------------------
-# Test: response_rate must lie strictly between 0 and 1
-# Input:
-#   - response_rate = -0.1 and 1.5, tau_scale = 1
-# Behaviour:
-#   - Function should reject probabilities outside (0,1).
-# Expectations:
-#   - Errors for each invalid response_rate.
-# Why:
-#   - The variance formula assumes a valid Bernoulli probability.
-# ------------------------------------------------------------------
-test_that("error if response_rate out of bounds", {
-  expect_error(getMuVar(response_rate = -0.1, tau_scale = 1))
-  expect_error(getMuVar(response_rate = 1.5, tau_scale = 1))
-})
-
-# ------------------------------------------------------------------
-# Test: tau_scale must be non-negative
-# Input:
-#   - response_rate = 0.5, tau_scale = -1
-# Behaviour:
-#   - Negative scale parameter is invalid and must trigger an error.
-# Expectations:
-#   - Error for tau_scale < 0.
-# Why:
-#   - tau_scale represents a scale for a prior; negative values are not meaningful.
-# ------------------------------------------------------------------
-test_that("error if tau_scale negative", {
-  expect_error(getMuVar(response_rate = 0.5, tau_scale = -1))
-})
-
-# ------------------------------------------------------------------
-# Test: n_worth must be a positive integer
-# Input:
-#   - n_worth = 0 and 1.5
-# Behaviour:
-#   - Non-positive or non-integer n_worth should fail validation.
-# Expectations:
-#   - Errors in both cases.
-# Why:
-#   - n_worth describes an “effective sample size”; must be >= 1 and integer.
-# ------------------------------------------------------------------
-test_that("error if n_worth not positive integer", {
-  expect_error(getMuVar(response_rate = 0.5, tau_scale = 1, n_worth = 0))
-  expect_error(getMuVar(response_rate = 0.5, tau_scale = 1, n_worth = 1.5))
-})
-
-
-# Tests for getPriorParametersBerry --------------------------------------------
-
-# ------------------------------------------------------------------
-# Test: getPriorParametersBerry returns correctly structured object
-# Input:
-#   - target_rates = c(0.2, 0.8), tau_scale = 1, n_worth = 2
-# Behaviour:
-#   - Function builds a prior_parameters_list for "berry" with fields
-#     mu_mean, mu_sd, tau_scale.
-# Expectations:
-#   - Class "prior_parameters_list", name "berry", inner list with
-#     mu_mean, mu_sd, tau_scale.
-# Why:
-#   - Verifies the returned container type and its internal naming.
-# ------------------------------------------------------------------
-test_that("valid input returns prior_parameters_list with correct structure", {
-  result <- getPriorParametersBerry(target_rates = c(0.2, 0.8), tau_scale = 1, n_worth = 2)
-
-  expect_s3_class(result, "prior_parameters_list")
-  expect_named(result, "berry")
-
-  expect_true(is.list(result$berry))
-  expect_named(result$berry, c("mu_mean", "mu_sd", "tau_scale"))
-})
-
-# ------------------------------------------------------------------
-# Test: mu_sd is computed from mu_var as defined by max-variance target rate
-# Input:
-#   - target_rates = c(0.2, 0.8), tau_scale = 1, n_worth = 2
-# Behaviour:
-#   - Pick target_rate furthest from 0.5, compute
-#     mu_var = (n_worth * p * (1 - p))^-1 - tau_scale^2, then mu_sd = sqrt(mu_var).
-# Expectations:
-#   - result$berry$mu_sd equals the manually computed value.
-# Why:
-#   - Confirms the link between target_rates, mu_var and mu_sd.
-# ------------------------------------------------------------------
-test_that("mu_sd is computed correctly for simple case", {
-  target_rates <- c(0.2, 0.8)
-  tau_scale <- 1
-  n_worth <- 2
-
-  target_rate_max_var <- target_rates[abs(target_rates - 0.5) == max(abs(target_rates - 0.5))][1]
-  expected_mu_var <- (n_worth * target_rate_max_var * (1 - target_rate_max_var))^-1 - tau_scale^2
-  expected_mu_sd <- sqrt(expected_mu_var)
-
-  result <- getPriorParametersBerry(target_rates, tau_scale, n_worth)
-  expect_equal(result$berry$mu_sd, expected_mu_sd)
-})
-
-# ------------------------------------------------------------------
-# Test: getPriorParametersBerry errors if mu_var <= 0
-# Input:
-#   - target_rates = 0.5, tau_scale = 100, n_worth = 1
-# Behaviour:
-#   - Very large tau_scale leads to mu_var <= 0, which is invalid.
-# Expectations:
-#   - Error is thrown.
-# Why:
-#   - A non-positive mu_var cannot produce a real standard deviation.
-# ------------------------------------------------------------------
-test_that("error if mu_var <= 0", {
-  expect_error(
-    getPriorParametersBerry(target_rates = c(0.5), tau_scale = 100, n_worth = 1)
+test_that("applicablePreviousTrials returns TRUE when all conditions are met (no differences)", {
+  res <- applicablePreviousTrials(
+    scenario_list    = scen_next,
+    method_names     = method_names_prev,  # "pooled"
+    quantiles        = quantiles_prev,
+    n_cohorts        = n_coh_prev,
+    calc_differences = NULL
   )
+  
+  expect_true(is.logical(res))
+  expect_length(res, 1L)
+  expect_true(res)
 })
 
-# ------------------------------------------------------------------
-# Test: single target_rate works and returns a berry prior
-# Input:
-#   - target_rates = 0.5, tau_scale = 1, n_worth = 1
-# Behaviour:
-#   - Function should still construct a valid prior_parameters_list.
-# Expectations:
-#   - Class "prior_parameters_list", name "berry".
-# Why:
-#   - Ensures single-cohort use is supported.
-# ------------------------------------------------------------------
-test_that("single target_rate works", {
-  result <- getPriorParametersBerry(target_rates = c(0.5), tau_scale = 1, n_worth = 1)
-  expect_s3_class(result, "prior_parameters_list")
-  expect_named(result, "berry")
-})
-
-
-# Tests for setPriorParametersBerry --------------------------------------------
-
-# ------------------------------------------------------------------
-# Test: setPriorParametersBerry creates correct structure
-# Input:
-#   - mu_mean = 0.1, mu_sd = 0.5, tau_scale = 1
-# Behaviour:
-#   - Function wraps values into a "berry" prior_parameters_list.
-# Expectations:
-#   - Class "prior_parameters_list", name "berry",
-#     berry list contains mu_mean, mu_sd, tau_scale.
-# Why:
-#   - Tests manual prior specification path for Berry.
-# ------------------------------------------------------------------
-test_that("valid input returns prior_parameters_list with correct structure", {
-  result <- setPriorParametersBerry(
-    mu_mean = 0.1,
-    mu_sd   = 0.5,
-    tau_scale = 1
+test_that("applicablePreviousTrials returns TRUE when required diff columns exist", {
+  quantiles_diff <- analysis_with_diff[[1]]$analysis_parameters$quantiles
+  calc_diff      <- matrix(c(3, 2), ncol = 2)   # corresponds to "p_diff_32"
+  
+  res <- applicablePreviousTrials(
+    scenario_list    = scen_next_diff,
+    method_names     = method_names_prev,
+    quantiles        = quantiles_diff,
+    n_cohorts        = n_coh_prev,
+    calc_differences = calc_diff
   )
-
-  expect_s3_class(result, "prior_parameters_list")
-  expect_named(result, "berry")
-  expect_true(is.list(result$berry))
-  expect_named(result$berry, c("mu_mean", "mu_sd", "tau_scale"))
+  
+  expect_true(is.logical(res))
+  expect_length(res, 1L)
+  expect_true(res)
 })
 
-# ------------------------------------------------------------------
-# Test: mu_sd must be strictly positive
-# Input:
-#   - mu_sd = 0
-# Behaviour:
-#   - Function should reject non-positive standard deviations.
-# Expectations:
-#   - Error mentioning "mu_sd".
-# Why:
-#   - Standard deviations must be > 0.
-# ------------------------------------------------------------------
-test_that("error if mu_sd is non-positive", {
-  expect_error(
-    setPriorParametersBerry(mu_mean = 0.1, mu_sd = 0, tau_scale = 1),
-    "mu_sd"
+test_that("applicablePreviousTrials returns FALSE when required diff columns are missing", {
+  scen_broken <- scen_next_diff
+  
+  # Remove the diff column from the first method's first trial matrix
+  pq      <- scen_broken[[1]]$previous_analyses$post_quantiles
+  method1 <- names(pq)[1]
+  mat1    <- pq[[method1]][[1]]
+  diff_cols <- grepl("^p_diff_", colnames(mat1))
+  
+  if (any(diff_cols)) {
+    mat1 <- mat1[, !diff_cols, drop = FALSE]
+    pq[[method1]][[1]] <- mat1
+    scen_broken[[1]]$previous_analyses$post_quantiles <- pq
+  } else {
+    skip("No p_diff_* column to remove")
+  }
+  
+  quantiles_diff <- analysis_with_diff[[1]]$analysis_parameters$quantiles
+  calc_diff      <- matrix(c(3, 2), ncol = 2)   # still asking for p_diff_32
+  
+  res <- applicablePreviousTrials(
+    scenario_list    = scen_broken,
+    method_names     = method_names_prev,
+    quantiles        = quantiles_diff,
+    n_cohorts        = n_coh_prev,
+    calc_differences = calc_diff
   )
+  
+  expect_true(is.logical(res))
+  expect_length(res, 1L)
+  expect_false(res)
 })
 
-# ------------------------------------------------------------------
-# Test: tau_scale must be strictly positive
-# Input:
-#   - tau_scale = 0
-# Behaviour:
-#   - Function should reject non-positive scale values.
-# Expectations:
-#   - Error mentioning "tau_scale".
-# Why:
-#   - Scale parameter for tau must be > 0.
-# ------------------------------------------------------------------
-test_that("error if tau_scale is non-positive", {
-  expect_error(
-    setPriorParametersBerry(mu_mean = 0.1, mu_sd = 0.5, tau_scale = 0),
-    "tau_scale"
+test_that("applicablePreviousTrials returns FALSE when method_names differ across scenarios", {
+  # Copy scen_next to two scenarios, then break method-name consistency in scenario_2
+  scen_multi <- scen_next
+  scen_multi$scenario_2 <- scen_multi$scenario_1
+  names(scen_multi) <- c("scenario_1", "scenario_2")
+  class(scen_multi) <- "scenario_list"
+  
+  names(scen_multi$scenario_2$previous_analyses$post_quantiles) <-
+    paste0("alt_", names(scen_multi$scenario_2$previous_analyses$post_quantiles))
+  
+  res <- applicablePreviousTrials(
+    scenario_list    = scen_multi,
+    method_names     = method_names_prev,
+    quantiles        = quantiles_prev,
+    n_cohorts        = n_coh_prev,
+    calc_differences = NULL
   )
+  
+  expect_true(is.logical(res))
+  expect_length(res, 1L)
+  expect_false(res)
 })
 
-# ------------------------------------------------------------------
-# Test: mu_mean must be numeric
-# Input:
-#   - mu_mean = "a" (character)
-# Behaviour:
-#   - Non-numeric mu_mean should be rejected.
-# Expectations:
-#   - Error mentioning "mu_mean".
-# Why:
-#   - Prior mean is a numeric parameter on the link scale.
-# ------------------------------------------------------------------
-test_that("error if mu_mean is not numeric", {
-  expect_error(
-    setPriorParametersBerry(mu_mean = "a", mu_sd = 0.5, tau_scale = 1),
-    "mu_mean"
+# Tests for calcDiffsMCMC ------------------------------------------------------
+
+test_that("calcDiffsMCMC: adds correctly named difference columns with correct values", {
+  posterior_samples <- cbind(
+    p_1 = c(0.1, 0.2),
+    p_2 = c(0.5, 0.6),
+    p_3 = c(0.8, 0.9),
+    mu  = c(1.0, 2.0)
   )
-})
-
-
-# Tests for getPriorParametersExNeX --------------------------------------------
-
-# ------------------------------------------------------------------
-# Test: getPriorParametersExNex returns correctly structured object
-# Input:
-#   - target_rates = c(0.3, 0.9), tau_scale = 1, n_worth = 2, w_j = 0.5
-# Behaviour:
-#   - Builds an "exnex" prior with fields mu_mean, mu_sd, tau_scale,
-#     mu_j, tau_j, w_j.
-# Expectations:
-#   - Class "prior_parameters_list", name "exnex",
-#     exnex list has all expected fields.
-# Why:
-#   - Checks the container structure for the ExNex prior definition.
-# ------------------------------------------------------------------
-test_that("valid input returns prior_parameters_list with correct structure", {
-  result <- getPriorParametersExNex(target_rates = c(0.3, 0.9), tau_scale = 1, n_worth = 2, w_j = 0.5)
-
-  expect_s3_class(result, "prior_parameters_list")
-  expect_named(result, "exnex")
-
-  expect_true(is.list(result$exnex))
-  expect_named(result$exnex, c("mu_mean", "mu_sd", "tau_scale", "mu_j", "tau_j", "w_j"))
-})
-
-# ------------------------------------------------------------------
-# Test: ExNex prior uses logit transform for mu_mean and mu_j
-# Input:
-#   - target_rates = 0.8, tau_scale = 1, n_worth = 2, w_j = 0.5
-# Behaviour:
-#   - mu_mean = logit(p_max_var), mu_j = logit(target_rates).
-# Expectations:
-#   - result$exnex$mu_mean and mu_j match manual logit calculations.
-# Why:
-#   - Confirms link-scale parameterisation is correctly applied.
-# ------------------------------------------------------------------
-test_that("mu_mean and mu_j use logit transform", {
-  target_rates <- 0.8
-  tau_scale <- 1
-  n_worth <- 2
-  w_j <- 0.5
-
-  target_rate_max_var <- target_rates[abs(target_rates - 0.5) == max(abs(target_rates - 0.5))][1]
-  expected_mu_mean <- logit(target_rate_max_var)
-  expected_mu_j <- logit(target_rates)
-  result <- getPriorParametersExNex(target_rates, tau_scale, n_worth, w_j)
-
-  expect_equal(result$exnex$mu_mean, expected_mu_mean)
-  expect_equal(result$exnex$mu_j, expected_mu_j)
-})
-
-# ------------------------------------------------------------------
-# Test: getPriorParametersExNex errors if mu_var <= 0
-# Input:
-#   - target_rates = 0.5, tau_scale = 100, n_worth = 1
-# Behaviour:
-#   - Large tau_scale makes mu_var non-positive.
-# Expectations:
-#   - Error thrown.
-# Why:
-#   - Same reason as Berry: must have positive variance for mu.
-# ------------------------------------------------------------------
-test_that("error if mu_var <= 0", {
-  expect_error(
-    getPriorParametersExNex(target_rates = c(0.5), tau_scale = 100, n_worth = 1)
+  
+  calc_differences <- rbind(
+    c(1, 2),
+    c(3, 1)
   )
-})
-
-# ------------------------------------------------------------------
-# Test: mu_sd and tau_j computations follow theoretical formulas
-# Input:
-#   - target_rates = 0.8, tau_scale = 1, n_worth = 2
-# Behaviour:
-#   - mu_sd from max-variance target, tau_j from per-cohort variance formula.
-# Expectations:
-#   - result$exnex$mu_sd and tau_j match manual calculations.
-# Why:
-#   - Ensures ExNex prior scale parameters are derived correctly.
-# ------------------------------------------------------------------
-test_that("mu_sd and tau_j are computed correctly", {
-  target_rates <- 0.8
-  tau_scale <- 1
-  n_worth <- 2
-
-  target_rate_max_var <- target_rates[abs(target_rates - 0.5) == max(abs(target_rates - 0.5))][1]
-  expected_mu_var <- (n_worth * target_rate_max_var * (1 - target_rate_max_var))^-1 - tau_scale^2
-  expected_mu_sd <- sqrt(expected_mu_var)
-
-  expected_tau_j <- sqrt((n_worth * target_rates * (1 - target_rates))^-1)
-
-  result <- getPriorParametersExNex(target_rates, tau_scale, n_worth, w_j = 0.5)
-
-  expect_equal(result$exnex$mu_sd, expected_mu_sd)
-  expect_equal(result$exnex$tau_j, expected_tau_j)
-})
-
-
-# Tests for setPriorParametersExNeX --------------------------------------------
-
-# ------------------------------------------------------------------
-# Test: setPriorParametersExNeX creates full exnex structure
-# Input:
-#   - Vectors for mu_mean, mu_sd, tau_scale, mu_j, tau_j, w_j.
-# Behaviour:
-#   - Returns a prior_parameters_list named "exnex" with all components.
-# Expectations:
-#   - Class "prior_parameters_list", name "exnex",
-#     exnex element has mu_mean, mu_sd, tau_scale, mu_j, tau_j, w_j.
-# Why:
-#   - Validates the manual ExNex prior construction path.
-# ------------------------------------------------------------------
-test_that("valid input returns prior_parameters_list with correct structure", {
-  result <- setPriorParametersExNeX(
-    mu_mean   = c(0.1, 0.2),
-    mu_sd     = c(0.5, 0.6),
-    tau_scale = 1,
-    mu_j      = c(0.1, 0.2),
-    tau_j     = c(0.3, 0.4),
-    w_j       = c(0.3, 0.3, 0.4)
+  
+  out <- calcDiffsMCMC(
+    posterior_samples = posterior_samples,
+    calc_differences  = calc_differences
   )
-
-  expect_s3_class(result, "prior_parameters_list")
-  expect_named(result, "exnex")
-  expect_true(is.list(result$exnex))
-  expect_named(result$exnex, c("mu_mean", "mu_sd", "tau_scale", "mu_j", "tau_j", "w_j"))
+  
+  expect_true(all(c("p_1", "p_2", "p_3", "mu") %in% colnames(out)))
+  
+  expect_true(all(c("p_diff_12", "p_diff_31") %in% colnames(out)))
+  
+  expected_diff_12 <- posterior_samples[, "p_1"] - posterior_samples[, "p_2"]
+  expected_diff_31 <- posterior_samples[, "p_3"] - posterior_samples[, "p_1"]
+  
+  expect_equal(out[, "p_diff_12"], expected_diff_12)
+  expect_equal(out[, "p_diff_31"], expected_diff_31)
 })
 
-# ------------------------------------------------------------------
-# Test: w_j length rules when mu_mean length = 1
-# Input:
-#   - mu_mean length 1, w_j length 3
-# Behaviour:
-#   - For a single mu_mean, w_j length 3 is not allowed.
-# Expectations:
-#   - Error.
-# Why:
-#   - Tests internal consistency checks between mixing weights and mean length.
-# ------------------------------------------------------------------
-test_that("error if w_j length is invalid when mu_mean length = 1", {
-  expect_error(
-    setPriorParametersExNeX(
-      mu_mean   = c(0.1),
-      mu_sd     = c(0.5),
-      tau_scale = 1,
-      mu_j      = c(0.1),
-      tau_j     = c(0.3),
-      w_j       = c(0.3, 0.3, 0.4)
+# Tests for performJags --------------------------------------------------------
+
+model_file <- tempfile(fileext = ".bug")
+writeLines(
+  c(
+    "model {",
+    "  theta ~ dbeta(1, 1)",
+    "  for (i in 1:N) {",
+    "    y[i] ~ dbern(theta)",
+    "  }",
+    "}"
+  ),
+  con = model_file
+)
+
+data_list <- list(
+  N = 20L,
+  y = c(rep(1L, 14), rep(0L, 6))
+)
+
+test_that("performJags runs a simple Bernoulli model and returns a sensible sample matrix", {
+  skip_if_not_installed("rjags")
+  
+  n_chains <- 2L
+  n_iter   <- 1000L
+  n_burnin <- 100L
+  
+  samples <- performJags(
+    data               = data_list,
+    parameters_to_save = "theta",
+    model_file         = model_file,
+    n_chains           = n_chains,
+    n_iter             = n_iter,
+    n_burnin           = n_burnin
+  )
+  
+  expect_true(is.matrix(samples))
+  expect_identical(colnames(samples), "theta")
+  
+  expected_rows <- n_chains * (n_iter - n_burnin)
+  expect_equal(nrow(samples), expected_rows)
+  
+  post_mean <- mean(samples[, "theta"])
+  
+  #Given 14 successes and 6 failures with a Beta(1,1) prior, the posterior is Beta(15, 7).
+  # The analytic posterior mean is 15 / (15 + 7) = 15/22.
+  
+  expect_equal(mean(samples[, "theta"]), 15/22, tolerance = 0.01)
+  
+})
+
+test_that("performJags handles n_burning equals 0 correctly", {
+  skip_if_not_installed("rjags")
+  
+  n_chains <- 2L
+  n_iter   <- 1000L
+  n_burnin <- 0
+  
+  samples <- performJags(
+    data               = data_list,
+    parameters_to_save = "theta",
+    model_file         = model_file,
+    n_chains           = n_chains,
+    n_iter             = n_iter,
+    n_burnin           = n_burnin
+  )
+  
+  expect_true(is.matrix(samples))
+  expect_identical(colnames(samples), "theta")
+  
+  expected_rows <- n_chains * (n_iter - n_burnin)
+  expect_equal(nrow(samples), expected_rows)
+  
+  post_mean <- mean(samples[, "theta"])
+  
+  #Given 14 successes and 6 failures with a Beta(1,1) prior, the posterior is Beta(15, 7).
+  # The analytic posterior mean is 15 / (15 + 7) = 15/22.
+  expect_equal(mean(samples[, "theta"]), 15/22, tolerance = 0.01)
+  
+})
+
+# Tests for getPosteriors ------------------------------------------------------
+
+test_that("getPosteriors: basic posterior sampling and name cleaning (no exch weights)", {
+  skip_if_not_installed("rjags")
+  
+  set.seed(123)
+  
+  scen_list <- simulateScenarios(
+    n_subjects_list     = list(c(10, 20)),
+    response_rates_list = list(c(0.5, 0.6)),
+    n_trials            = 1
+  )
+  scen1 <- scen_list$scenario_1
+  
+  target_rates <- c(0.5, 0.5)
+  priors       <- getPriorParameters(
+    method_names = "berry",
+    target_rates = target_rates
+  )
+  
+  prep <- prepareAnalysis(
+    method_name      = "berry",
+    target_rates     = target_rates,
+    prior_parameters = priors[["berry"]]
+  )
+  
+  j_data <- prep$j_data
+  j_data$r <- as.numeric(scen1$n_responders[1, ])
+  j_data$n <- as.numeric(scen1$n_subjects[1, ])
+  
+  post <- getPosteriors(
+    j_parameters      = prep$j_parameters,
+    j_model_file      = prep$j_model_file,
+    j_data            = j_data,
+    n_mcmc_iterations = 200
+  )
+  
+  expect_true(is.matrix(post))
+  expect_gt(nrow(post), 0)
+  expect_true(all(is.finite(post)))
+  
+  expect_false(any(grepl("\\[", colnames(post))))
+  expect_false(any(grepl("\\]", colnames(post))))
+  
+  expect_false(any(grepl("^w_", colnames(post))))
+  expect_false(any(grepl("exch", colnames(post))))
+})
+
+test_that("getPosteriors: exNEX exchangeability weights are renamed to w_j and extras dropped", {
+  skip_if_not_installed("rjags")
+  
+  set.seed(456)
+  
+  scen_list <- simulateScenarios(
+    n_subjects_list     = list(c(10, 20)),
+    response_rates_list = list(c(0.6, 0.7)),
+    n_trials            = 1
+  )
+  scen1 <- scen_list$scenario_1
+  
+  target_rates <- c(0.5, 0.5)
+  priors       <- getPriorParameters(
+    method_names = "exnex",
+    target_rates = target_rates
+  )
+  
+  prep <- prepareAnalysis(
+    method_name      = "exnex",
+    target_rates     = target_rates,
+    prior_parameters = priors[["exnex"]]
+  )
+  
+  j_data <- prep$j_data
+  j_data$r <- as.numeric(scen1$n_responders[1, ])
+  j_data$n <- as.numeric(scen1$n_subjects[1, ])
+  
+  post <- getPosteriors(
+    j_parameters      = prep$j_parameters,
+    j_model_file      = prep$j_model_file,
+    j_data            = j_data,
+    n_mcmc_iterations = 300
+  )
+  
+  expect_true(is.matrix(post))
+  expect_gt(nrow(post), 0)
+  expect_true(all(is.finite(post)))
+  
+  expect_false(any(grepl("exch", colnames(post))))
+  
+  w_cols <- grep("^w_", colnames(post))
+  expect_equal(length(w_cols), length(j_data$n))
+  
+  expect_false(any(grepl(",1", colnames(post))))
+})
+
+# Tests for getPostQuantiles ---------------------------------------------------
+
+test_that("getPostQuantiles (pooled): calc_differences adds zero columns with correct names and shapes", {
+  n_subjects_mat   <- matrix(c(10, 20), nrow = 1)
+  n_responders_mat <- matrix(c(3,  5),  nrow = 1)
+  
+  scenario_data <- list(
+    n_subjects   = n_subjects_mat,
+    n_responders = n_responders_mat
+  )
+  
+  j_data    <- list(a = 1, b = 1)
+  quantiles <- c(0.025, 0.5, 0.975)
+  
+  # Differences to compute (pooled backend fills them with zeros)
+  calc_differences <- rbind(c(1, 2), c(2, 1))
+  
+  out <- getPostQuantiles(
+    method_name       = "pooled",
+    quantiles         = quantiles,
+    scenario_data     = scenario_data,
+    calc_differences  = calc_differences,
+    j_parameters      = NULL,
+    j_model_file      = NULL,
+    j_data            = j_data,
+    n_mcmc_iterations = 1000,
+    save_path         = NULL,
+    save_trial        = NULL
+  )
+  
+  expect_type(out, "list")
+  expect_length(out, 1)
+  
+  mat <- out[[1]]
+  expect_true(is.matrix(mat))
+  
+  # Exact names and ordering
+  expect_identical(
+    colnames(mat),
+    c("p_1", "p_2", "p_diff_12", "p_diff_21")
+  )
+  expect_identical(
+    rownames(mat),
+    c("2.5%", "50%", "97.5%", "Mean", "SD")
+  )
+  
+  # Diff columns are all zeros with correct length
+  expect_true(all(mat[, c("p_diff_12", "p_diff_21")] == 0))
+  
+  # Original pooled posterior columns remain correct
+  r_tot   <- sum(n_responders_mat[1, ])
+  n_tot   <- sum(n_subjects_mat[1, ])
+  shape_1 <- j_data$a + r_tot
+  shape_2 <- j_data$b + (n_tot - r_tot)
+  
+  expected_q  <- stats::qbeta(quantiles, shape1 = shape_1, shape2 = shape_2)
+  expected_mu <- shape_1 / (shape_1 + shape_2)
+  expected_sd <- sqrt((shape_1 * shape_2) / ((shape_1 + shape_2)^2 * (shape_1 + shape_2 + 1)))
+  
+  expect_equal(unname(mat[c("2.5%", "50%", "97.5%"), "p_1"]), expected_q, tolerance = 1e-12)
+  expect_equal(unname(mat[c("2.5%", "50%", "97.5%"), "p_2"]), expected_q, tolerance = 1e-12)
+  expect_equal(unname(mat["Mean", c("p_1", "p_2")]), rep(expected_mu, 2), tolerance = 1e-12)
+  expect_equal(unname(mat["SD",   c("p_1", "p_2")]), rep(expected_sd, 2), tolerance = 1e-12)
+})
+
+
+test_that("getPostQuantiles (stratified): multiple trials and calc_differences produce p_j and p_diff_*", {
+  skip_if_not_installed("foreach")
+  skip_if_not_installed("doRNG")
+  
+  foreach::registerDoSEQ()
+  
+  n_subjects_mat <- rbind(
+    c(10, 10),
+    c(20, 20)
+  )
+  n_responders_mat <- rbind(
+    c(3, 5),
+    c(6, 10)
+  )
+  
+  scenario_data <- list(
+    n_subjects   = n_subjects_mat,
+    n_responders = n_responders_mat
+  )
+  
+  j_data <- list(
+    a_j = c(1, 1),
+    b_j = c(1, 1)
+  )
+  
+  quantiles        <- c(0.25, 0.5, 0.75)
+  calc_differences <- matrix(c(1, 2), ncol = 2)
+  
+  out <- getPostQuantiles(
+    method_name       = "stratified",
+    quantiles         = quantiles,
+    scenario_data     = scenario_data,
+    calc_differences  = calc_differences,
+    j_parameters      = NULL,
+    j_model_file      = NULL,
+    j_data            = j_data,
+    n_mcmc_iterations = 1000,
+    save_path         = NULL,
+    save_trial        = NULL
+  )
+  
+  expect_type(out, "list")
+  expect_length(out, 2)
+  
+  for (mat in out) {
+    expect_true(is.matrix(mat))
+    
+    expect_setequal(
+      colnames(mat),
+      c("p_1", "p_2", "p_diff_12")
     )
-  )
-})
-
-
-# Tests for getPriorParametersExNeXAdj -----------------------------------------
-
-# ------------------------------------------------------------------
-# Test: getPriorParametersExNeXAdj returns exnex_adj with centered mu's
-# Input:
-#   - target_rates = c(0.2, 0.3), tau_scale = 1, n_worth = 2, w_j = 0.5
-# Behaviour:
-#   - Returns "exnex_adj" prior with mu_mean and mu_j shifted to 0.
-# Expectations:
-#   - Class "prior_parameters_list", name "exnex_adj",
-#     mu_mean = 0, mu_j = 0-vector.
-# Why:
-#   - Confirms adjusted ExNex prior is properly centered.
-# ------------------------------------------------------------------
-test_that("valid input returns prior_parameters_list with correct structure", {
-  result <- getPriorParametersExNexAdj(
-    target_rates = c(0.2, 0.3),
-    tau_scale    = 1,
-    n_worth      = 2,
-    w_j          = 0.5
-  )
-
-  expect_s3_class(result, "prior_parameters_list")
-  expect_named(result, "exnex_adj")
-  expect_true(is.list(result$exnex_adj))
-  expect_named(result$exnex_adj, c("mu_mean", "mu_sd", "tau_scale", "mu_j", "tau_j", "w_j"))
-
-  expect_equal(result$exnex_adj$mu_mean, 0)
-  expect_equal(result$exnex_adj$mu_j, rep(0, length(c(0.2, 0.3))))
-})
-
-
-# Tests for setPriorParametersExNeXAdj -----------------------------------------
-
-# ------------------------------------------------------------------
-# Test: setPriorParametersExNeXAdj creates correct exnex_adj structure
-# Input:
-#   - Vectors for mu_mean, mu_sd, tau_scale, mu_j, tau_j, w_j.
-# Behaviour:
-#   - Returns "exnex_adj" prior_parameters_list with all fields.
-# Expectations:
-#   - Class "prior_parameters_list", name "exnex_adj",
-#     exnex_adj has mu_mean, mu_sd, tau_scale, mu_j, tau_j, w_j.
-# Why:
-#   - Checks manual specification of adjusted ExNex prior.
-# ------------------------------------------------------------------
-test_that("valid input returns prior_parameters_list with correct structure", {
-  result <- setPriorParametersExNeXAdj(
-    mu_mean   = c(0.1, 0.2),
-    mu_sd     = c(0.5, 0.6),
-    tau_scale = 1,
-    mu_j      = c(0.1, 0.2),
-    tau_j     = c(0.3, 0.4),
-    w_j       = c(0.3, 0.3, 0.4)
-  )
-
-  expect_s3_class(result, "prior_parameters_list")
-  expect_named(result, "exnex_adj")
-  expect_true(is.list(result$exnex_adj))
-  expect_named(result$exnex_adj, c("mu_mean", "mu_sd", "tau_scale", "mu_j", "tau_j", "w_j"))
-})
-
-# ------------------------------------------------------------------
-# Test: acceptable w_j lengths when mu_mean length = 1
-# Input:
-#   - mu_mean length 1, w_j length 1 (valid).
-# Behaviour:
-#   - Function should accept such configuration silently.
-# Expectations:
-#   - No error raised.
-# Why:
-#   - Sanity-checks "short" w_j is allowed in simple case.
-# ------------------------------------------------------------------
-test_that("'w_j' length rule works when mu_mean length = 1", {
-  expect_silent(
-    setPriorParametersExNeXAdj(
-      mu_mean   = 0.1,
-      mu_sd     = 0.5,
-      tau_scale = 1,
-      mu_j      = c(0.1),
-      tau_j     = c(0.3),
-      w_j       = c(0.5)
+    
+    expect_setequal(
+      rownames(mat),
+      c(paste0(quantiles * 100, "%"), "Mean", "SD")
     )
+    
+    expect_true(all(is.finite(mat[, c("p_1", "p_2")])))
+    
+    diff_col <- mat[, "p_diff_12"]
+    expect_true(is.numeric(diff_col))
+  }
+})
+
+
+# Tests for prepareAnalysis ----------------------------------------------------
+
+test_that("prepareAnalysis: berry branch builds correct j_data and parameters", {
+  target_rates <- c(0.5, 0.7)
+  priors_list  <- getPriorParameters(method_names = "berry", target_rates = target_rates)
+  priors_berry <- priors_list[["berry"]]
+  
+  prep <- prepareAnalysis(
+    method_name      = "berry",
+    prior_parameters = priors_berry,
+    target_rates     = target_rates
   )
+  
+  j_data <- prep$j_data
+  
+  expect_equal(j_data$mean_mu,      priors_berry$mu_mean)
+  expect_equal(j_data$precision_mu, priors_berry$mu_sd^-2)
+  expect_equal(j_data$precision_tau, priors_berry$tau_scale^-2)
+  expect_equal(j_data$p_t,          target_rates)
+  expect_equal(j_data$J,            length(target_rates))
+  
+  expect_equal(prep$j_parameters, c("p", "mu", "tau"))
+  expect_true(is.character(prep$j_model_file))
+  expect_true(file.exists(prep$j_model_file))
 })
 
-
-# Tests for getPriorParametersPooled -------------------------------------------
-
-# ------------------------------------------------------------------
-# Test: getPriorParametersPooled returns pooled Beta parameters
-# Input:
-#   - target_rates = c(0.2, 0.4, 0.6), n_worth = 2
-# Behaviour:
-#   - Selects a target_rate (internally defined rule) and computes
-#     a = p * n_worth, b = (1 - p) * n_worth.
-# Expectations:
-#   - Class "prior_parameters_list", name "pooled", with positive a,b.
-# Why:
-#   - Validates the pooled Beta( a, b ) construction.
-# ------------------------------------------------------------------
-test_that("valid input returns prior_parameters_list with correct structure", {
-  result <- getPriorParametersPooled(
-    target_rates = c(0.2, 0.4, 0.6),
-    n_worth      = 2
+test_that("prepareAnalysis: exnex branch builds mixture priors and pMix", {
+  target_rates <- c(0.4, 0.6, 0.8)
+  priors_list  <- getPriorParameters(method_names = "exnex", target_rates = target_rates)
+  priors_exnex <- priors_list[["exnex"]]
+  
+  prep <- prepareAnalysis(
+    method_name      = "exnex",
+    prior_parameters = priors_exnex,
+    target_rates     = target_rates
   )
-
-  expect_s3_class(result, "prior_parameters_list")
-  expect_named(result, "pooled")
-  expect_true(is.list(result$pooled))
-  expect_named(result$pooled, c("a", "b"))
-  expect_true(result$pooled$a > 0)
-  expect_true(result$pooled$b > 0)
+  
+  j_data <- prep$j_data
+  
+  Nexch   <- length(priors_exnex$mu_mean)
+  Nstrata <- length(priors_exnex$mu_j)
+  
+  expect_equal(j_data$Nexch,   Nexch)
+  expect_equal(j_data$Nmix,    Nexch + 1L)
+  expect_equal(j_data$Nstrata, Nstrata)
+  
+  expect_equal(j_data$mu_mean, priors_exnex$mu_mean)
+  expect_equal(j_data$mu_prec, priors_exnex$mu_sd^-2)
+  
+  expect_equal(j_data$tau_HN_scale,
+               rep(priors_exnex$tau_scale, Nexch))
+  
+  expect_equal(j_data$nex_mean, priors_exnex$mu_j)
+  expect_equal(j_data$nex_prec, priors_exnex$tau_j^-2)
+  
+  expect_length(j_data$pMix, Nexch + 1L)
+  expect_equal(sum(j_data$pMix), 1, tolerance = 1e-8)
+  
+  expect_equal(prep$j_parameters, c("p", "mu", "tau", "exch"))
+  expect_true(file.exists(prep$j_model_file))
 })
 
-# ------------------------------------------------------------------
-# Test: pooled prior requires valid target_rates in (0,1)
-# Input:
-#   - target_rates including 0 or 1.
-# Behaviour:
-#   - Must error on invalid probabilities.
-# Expectations:
-#   - Errors mentioning "target_rates".
-# Why:
-#   - Beta prior requires positive support away from 0 and 1.
-# ------------------------------------------------------------------
-test_that("error if target_rates contains invalid values", {
-  expect_error(getPriorParametersPooled(target_rates = c(0, 0.5), n_worth = 1), "target_rates")
-  expect_error(getPriorParametersPooled(target_rates = c(1, 0.5), n_worth = 1), "target_rates")
-})
-
-# ------------------------------------------------------------------
-# Test: n_worth must be positive for pooled prior
-# Input:
-#   - n_worth = 0
-# Behaviour:
-#   - Function should reject non-positive n_worth.
-# Expectations:
-#   - Error mentioning "n_worth".
-# Why:
-#   - n_worth again represents effective sample size.
-# ------------------------------------------------------------------
-test_that("error if n_worth is non-positive", {
-  expect_error(getPriorParametersPooled(target_rates = c(0.3, 0.4), n_worth = 0), "n_worth")
-})
-
-# ------------------------------------------------------------------
-# Test: pooled prior selects target_rate closest to 0.5
-# Input:
-#   - target_rates = c(0.1, 0.4, 0.8), n_worth = 3
-# Behaviour:
-#   - Among candidates, p = 0.4 is closest to 0.5, so a = 0.4*3, b = 0.6*3.
-# Expectations:
-#   - result$pooled$a == 0.4*3, result$pooled$b == 0.6*3.
-# Why:
-#   - Checks selection logic for the central rate.
-# ------------------------------------------------------------------
-test_that("selects target_rate closest to 0.5", {
-  result <- getPriorParametersPooled(target_rates = c(0.1, 0.4, 0.8), n_worth = 3)
-  expect_equal(result$pooled$a, 0.4 * 3)
-  expect_equal(result$pooled$b, (1 - 0.4) * 3)
-})
-
-
-# Tests for setPriorParametersPooled -------------------------------------------
-
-# ------------------------------------------------------------------
-# Test: setPriorParametersPooled builds pooled Beta structure
-# Input:
-#   - a = 2, b = 3
-# Behaviour:
-#   - Wraps into "pooled" prior_parameters_list.
-# Expectations:
-#   - Class "prior_parameters_list", name "pooled", a and b preserved.
-# Why:
-#   - Tests manual specification path for pooled prior.
-# ------------------------------------------------------------------
-test_that("valid input returns prior_parameters_list with correct structure", {
-  result <- setPriorParametersPooled(a = 2, b = 3)
-
-  expect_s3_class(result, "prior_parameters_list")
-  expect_named(result, "pooled")
-  expect_true(is.list(result$pooled))
-  expect_named(result$pooled, c("a", "b"))
-  expect_equal(result$pooled$a, 2)
-  expect_equal(result$pooled$b, 3)
-})
-
-
-# Tests for getPriorParametersStratified ---------------------------------------
-
-# ------------------------------------------------------------------
-# Test: stratified prior computes a_j and b_j per target rate
-# Input:
-#   - target_rates = c(0.2, 0.4, 0.6), n_worth = 2
-# Behaviour:
-#   - a_j = p * n_worth, b_j = (1 - p) * n_worth elementwise.
-# Expectations:
-#   - result$stratified$a_j and b_j match manual multiplication.
-# Why:
-#   - Verifies Beta-prior parameters for each stratum.
-# ------------------------------------------------------------------
-test_that("computes a_j and b_j correctly for multiple target rates", {
-  target_rates <- c(0.2, 0.4, 0.6)
-  n_worth <- 2
-  result <- getPriorParametersStratified(target_rates, n_worth)
-
-  expect_equal(result$stratified$a_j, target_rates * n_worth)
-  expect_equal(result$stratified$b_j, (1 - target_rates) * n_worth)
-})
-
-# ------------------------------------------------------------------
-# Test: stratified prior handles a single target rate
-# Input:
-#   - target_rates = 0.3, n_worth = 5
-# Behaviour:
-#   - Computes scalar a_j and b_j.
-# Expectations:
-#   - a_j = 0.3*5, b_j = 0.7*5.
-# Why:
-#   - Ensures single-stratum usage is supported.
-# ------------------------------------------------------------------
-test_that("handles single target rate correctly", {
-  result <- getPriorParametersStratified(target_rates = 0.3, n_worth = 5)
-  expect_equal(result$stratified$a_j, 0.3 * 5)
-  expect_equal(result$stratified$b_j, (1 - 0.3) * 5)
-})
-
-# ------------------------------------------------------------------
-# Test: stratified result has stable structure
-# Input:
-#   - target_rates = c(0.25, 0.75), n_worth = 3
-# Behaviour:
-#   - Returns "stratified" prior with a_j and b_j fields.
-# Expectations:
-#   - Class "prior_parameters_list", name "stratified", fields a_j,b_j.
-# Why:
-#   - Confirms naming and type are consistent.
-# ------------------------------------------------------------------
-test_that("result structure is consistent", {
-  result <- getPriorParametersStratified(c(0.25, 0.75), 3)
-  expect_s3_class(result, "prior_parameters_list")
-  expect_named(result, "stratified")
-  expect_named(result$stratified, c("a_j", "b_j"))
-})
-
-
-# Tests for setPriorParametersStratified ---------------------------------------
-
-# ------------------------------------------------------------------
-# Test: setPriorParametersStratified preserves a_j,b_j and structure
-# Input:
-#   - a_j = c(1,2,3), b_j = c(4,5,6)
-# Behaviour:
-#   - Returns "stratified" prior with these vectors.
-# Expectations:
-#   - a_j,b_j unchanged; class prior_parameters_list.
-# Why:
-#   - Checks manual specification path for stratified Beta priors.
-# ------------------------------------------------------------------
-test_that("returns correct structure and preserves input values", {
-  a_j <- c(1, 2, 3)
-  b_j <- c(4, 5, 6)
-  result <- setPriorParametersStratified(a_j, b_j)
-
-  expect_equal(result$stratified$a_j, a_j)
-  expect_equal(result$stratified$b_j, b_j)
-  expect_s3_class(result, "prior_parameters_list")
-})
-
-# ------------------------------------------------------------------
-# Test: setPriorParametersStratified works with single-element vectors
-# Input:
-#   - a_j = 10, b_j = 20
-# Behaviour:
-#   - Returns scalar a_j,b_j under "stratified".
-# Expectations:
-#   - Values preserved.
-# Why:
-#   - Confirms scalar case is supported smoothly.
-# ------------------------------------------------------------------
-test_that("works with single-element vectors", {
-  result <- setPriorParametersStratified(a_j = 10, b_j = 20)
-  expect_equal(result$stratified$a_j, 10)
-  expect_equal(result$stratified$b_j, 20)
-})
-
-# ------------------------------------------------------------------
-# Test: length consistency for a_j and b_j
-# Input:
-#   - a_j length 2, b_j length 1
-# Behaviour:
-#   - Function should error on mismatched lengths.
-# Expectations:
-#   - Error mentioning "a_j and b_j".
-# Why:
-#   - Each stratum must have both a and b.
-# ------------------------------------------------------------------
-test_that("length consistency check works", {
-  expect_error(setPriorParametersStratified(a_j = c(1, 2), b_j = c(3)), "a_j and b_j")
-})
-
-
-# Tests for getPriorParameters -------------------------------------------------
-
-# ------------------------------------------------------------------
-# Test: getPriorParameters returns combined prior_parameters_list
-# Input:
-#   - method_names = c("berry", "pooled", "stratified", "exnex", "exnex_adj"),
-#     plus reasonable target_rates, n_worth, tau_scale, w_j.
-# Behaviour:
-#   - Constructs all requested method priors and merges them.
-# Expectations:
-#   - Class "prior_parameters_list", 5 elements, names sorted as in implementation.
-# Why:
-#   - Validates the high-level prior factory for multiple methods.
-# ------------------------------------------------------------------
-test_that("valid input returns a prior_parameters_list with correct names and class", {
-  result <- getPriorParameters(
-    method_names = c("berry", "pooled", "stratified", "exnex", "exnex_adj"),
-    target_rates = c(0.2, 0.1, 0.3, 0.2, 0.4, 0.6),
-    n_worth      = 2,
-    tau_scale    = 1,
-    w_j          = 0.5
+test_that("prepareAnalysis: exnex_adj branch includes p_target and uses exnex_adj model", {
+  target_rates <- c(0.5, 0.6)
+  priors_list  <- getPriorParameters(method_names = "exnex_adj", target_rates = target_rates)
+  priors       <- priors_list[["exnex_adj"]]
+  
+  prep <- prepareAnalysis(
+    method_name      = "exnex_adj",
+    prior_parameters = priors,
+    target_rates     = target_rates
   )
-  expect_s3_class(result, "prior_parameters_list")
-  expect_named(result, c("berry", "exnex", "exnex_adj", "pooled", "stratified"))
-  expect_type(result, "list")
-  expect_length(result, 5)
+  
+  j_data <- prep$j_data
+  
+  expect_equal(j_data$p_target, target_rates)
+  expect_equal(prep$j_parameters, c("p", "mu", "tau", "exch"))
+  expect_true(grepl("exnex_adj", prep$j_model_file))
+  expect_true(file.exists(prep$j_model_file))
 })
 
-# ------------------------------------------------------------------
-# Test: getPriorParameters errors on invalid method_names
-# Input:
-#   - method_names = "invalid"
-# Behaviour:
-#   - Function must reject unknown methods.
-# Expectations:
-#   - Error.
-# Why:
-#   - Guards against typos or unsupported priors.
-# ------------------------------------------------------------------
-test_that("invalid method_names throws error", {
-  expect_error(getPriorParameters(
-    method_names = "invalid",
-    target_rates = c(0.2, 0.3)
-  ))
+test_that("prepareAnalysis: stratified and pooled use dummy JAGS info and pass priors through", {
+  target_rates <- c(0.5, 0.5)
+  priors_list  <- getPriorParameters(
+    method_names = c("stratified", "pooled"),
+    target_rates = target_rates
+  )
+  
+  prep_strat <- prepareAnalysis(
+    method_name      = "stratified",
+    prior_parameters = priors_list[["stratified"]],
+    target_rates     = target_rates
+  )
+  expect_equal(prep_strat$j_model_file, "dummy path to JAGS model")
+  expect_equal(prep_strat$j_parameters, "dummy JAGS parameters")
+  expect_identical(prep_strat$j_data, priors_list[["stratified"]])
+  
+  prep_pooled <- prepareAnalysis(
+    method_name      = "pooled",
+    prior_parameters = priors_list[["pooled"]],
+    target_rates     = target_rates
+  )
+  expect_equal(prep_pooled$j_model_file, "dummy path to JAGS model")
+  expect_equal(prep_pooled$j_parameters, "dummy JAGS parameters")
+  expect_identical(prep_pooled$j_data, priors_list[["pooled"]])
 })
 
-# ------------------------------------------------------------------
-# Test: getPriorParameters errors on invalid target_rates
-# Input:
-#   - target_rates outside [0,1]
-# Behaviour:
-#   - Should reject probabilities <=0 or >=1.
-# Expectations:
-#   - Error.
-# Why:
-#   - All underlying constructions assume valid rates.
-# ------------------------------------------------------------------
-test_that("invalid target_rates throws error", {
-  expect_error(getPriorParameters(
-    method_names  = "berry",
-    target_rates  = c(-0.1, 1.2)
-  ))
-})
-
-# ------------------------------------------------------------------
-# Test: getPriorParameters errors on invalid tau_scale
-# Input:
-#   - tau_scale = -1
-# Behaviour:
-#   - Negative tau_scale should fail.
-# Expectations:
-#   - Error.
-# Why:
-#   - Same constraint as lower-level prior builders.
-# ------------------------------------------------------------------
-test_that("invalid tau_scale throws error", {
-  expect_error(getPriorParameters(
-    method_names = "berry",
-    target_rates = c(0.2, 0.3),
-    tau_scale    = -1
-  ))
-})
-
-# ------------------------------------------------------------------
-# Test: getPriorParameters errors on invalid n_worth
-# Input:
-#   - n_worth = 0
-# Behaviour:
-#   - Must reject non-positive effective sample size.
-# Expectations:
-#   - Error.
-# Why:
-#   - Consistency with other n_worth checks.
-# ------------------------------------------------------------------
-test_that("invalid n_worth throws error", {
-  expect_error(getPriorParameters(
-    method_names = "berry",
-    target_rates = c(0.2, 0.3),
-    n_worth      = 0
-  ))
-})
-
-# ------------------------------------------------------------------
-# Test: getPriorParameters errors on invalid w_j
-# Input:
-#   - w_j = 2 (outside [0,1] or invalid)
-# Behaviour:
-#   - Weight must be in acceptable range.
-# Expectations:
-#   - Error.
-# Why:
-#   - Mixture weights need to be interpretable probabilities.
-# ------------------------------------------------------------------
-test_that("invalid w_j throws error", {
-  expect_error(getPriorParameters(
-    method_names = "berry",
-    target_rates = c(0.2, 0.3),
-    w_j          = 2
-  ))
-})
-
-
-# Tests for combinePriorParameters ---------------------------------------------
-
-# ------------------------------------------------------------------
-# Test: combinePriorParameters merges multiple prior_parameter objects
-# Input:
-#   - prior_parameters_stratified + prior_parameters_berry
-# Behaviour:
-#   - Flattens and merges, returning a single prior_parameters_list.
-# Expectations:
-#   - Class "prior_parameters_list", length 2, names are union of input names,
-#     each element is a list.
-# Why:
-#   - Confirms high-level combination for multi-method priors.
-# ------------------------------------------------------------------
-test_that("combinePriorParameters returns correct structure with real objects", {
-  prior_parameters_stratified <- setPriorParametersStratified(c(1, 2), c(3, 4))
-  prior_parameters_berry      <- setPriorParametersBerry(1, 1, 2)
-
-  result <- combinePriorParameters(list(prior_parameters_berry, prior_parameters_stratified))
-
-  expect_s3_class(result, "prior_parameters_list")
-  expect_type(result, "list")
-
-  expect_named(result, sort(c(
-    names(prior_parameters_berry),
-    names(prior_parameters_stratified)
-  )))
-
-  expect_length(result, 2)
-  expect_true(all(vapply(result, is.list, logical(1))))
-})
-
-# ------------------------------------------------------------------
-# Test: combinePriorParameters sorts method names alphabetically
-# Input:
-#   - [stratified, berry] in that order
-# Behaviour:
-#   - Resulting list names should be sorted.
-# Expectations:
-#   - names(result) == sort of input method names.
-# Why:
-#   - Ensures deterministic ordering in combined prior.
-# ------------------------------------------------------------------
-test_that("combinePriorParameters sorts names alphabetically", {
-  prior_parameters_stratified <- setPriorParametersStratified(c(1, 2), c(3, 4))
-  prior_parameters_berry      <- setPriorParametersBerry(0, 1, 2)
-
-  result <- combinePriorParameters(list(prior_parameters_stratified, prior_parameters_berry))
-
-  expect_equal(names(result), sort(c(
-    names(prior_parameters_stratified),
-    names(prior_parameters_berry)
-  )))
-})
-
-# ------------------------------------------------------------------
-# Test: combinePriorParameters errors on duplicate method names
-# Input:
-#   - Two separate prior_parameters_berry objects.
-# Behaviour:
-#   - Duplicate "berry" name should be rejected.
-# Expectations:
-#   - Error.
-# Why:
-#   - Each method may appear only once in the combined object.
-# ------------------------------------------------------------------
-test_that("combinePriorParameters errors on duplicate method names", {
-  prior_parameters_berry1 <- setPriorParametersBerry(0, 1, 2)
-  prior_parameters_berry2 <- setPriorParametersBerry(0, 1, 2)
-
+test_that("prepareAnalysis: invalid method_name throws an error", {
   expect_error(
-    combinePriorParameters(list(prior_parameters_berry1, prior_parameters_berry2))
+    prepareAnalysis(method_name = "invalid_method"),
+    "method_name must be one of"
   )
 })
 
-# ------------------------------------------------------------------
-# Test: combinePriorParameters errors when input is not a list
-# Input:
-#   - "not_a_list"
-# Behaviour:
-#   - Type check should fail for non-list input.
-# Expectations:
-#   - Error.
-# Why:
-#   - Enforces input contract: a list of prior_parameters_list objects.
-# ------------------------------------------------------------------
-test_that("combinePriorParameters errors if input is not a list", {
-  expect_error(combinePriorParameters("not_a_list"))
+# Tests for getUniqueRows ------------------------------------------------------
+
+test_that("getUniqueRows: returns unique row combinations with correct columns", {
+  mat <- rbind(
+    c(1, 2),
+    c(1, 2),
+    c(2, 3),
+    c(2, 3),
+    c(4, 5)
+  )
+  
+  out <- getUniqueRows(mat)
+  
+  expect_equal(ncol(out), ncol(mat))
+  
+  out_df <- as.data.frame(out)
+  expect_equal(nrow(out_df), nrow(unique(out_df)))
+  
+  exp_df <- as.data.frame(unique(mat))
+  
+  out_ord <- out_df[do.call(order, out_df), , drop = FALSE]
+  exp_ord <- exp_df[do.call(order, exp_df), , drop = FALSE]
+  
+  expect_equal(unname(out_ord), unname(exp_ord))
 })
 
-# ------------------------------------------------------------------
-# Test: combinePriorParameters errors if any element has wrong class
-# Input:
-#   - One prior_parameters_berry, one plain list(dummy = TRUE)
-# Behaviour:
-#   - Mixed-class list must be rejected.
-# Expectations:
-#   - Error.
-# Why:
-#   - Every element must be a proper prior_parameters_list.
-# ------------------------------------------------------------------
-test_that("combinePriorParameters errors if any element is not prior_parameters_list", {
-  prior_parameters_berry <- setPriorParametersBerry(0, 1, 2)
-  bad_input <- list(prior_parameters_berry, list(dummy = TRUE))
+# Tests for getUniqueTrials ----------------------------------------------------
 
-  expect_error(combinePriorParameters(bad_input))
+test_that("getUniqueTrials: combines scenarios and returns unique responder/subject/go rows", {
+  set.seed(123)
+  
+  # Start from a real scenario_list produced by simulateScenarios
+  # (this gives us proper structure + scenario_number etc.)
+  scenario_list <- simulateScenarios(
+    n_subjects_list     = list(c(10, 10),
+                               c(10, 10)),
+    response_rates_list = list(c(0.1, 0.2),
+                               c(0.1, 0.2)),
+    n_trials            = 2
+  )
+  
+  ## Overwrite n_responders / n_subjects to enforce the specific pattern
+  # scenario_1: two identical trials (1,2 | 10,10)
+  scenario_list$scenario_1$n_responders <- rbind(
+    c(1, 2),
+    c(1, 2)
+  )
+  scenario_list$scenario_1$n_subjects <- rbind(
+    c(10, 10),
+    c(10, 10)
+  )
+  
+  # scenario_2: one duplicate row (1,2 | 10,10) and one distinct row (2,1 | 10,10)
+  scenario_list$scenario_2$n_responders <- rbind(
+    c(1, 2),
+    c(2, 1)
+  )
+  scenario_list$scenario_2$n_subjects <- rbind(
+    c(10, 10),
+    c(10, 10)
+  )
+  
+  ## Minimal previous_analyses: we only need go_decisions for getUniqueTrials()
+  scenario_list$scenario_1$previous_analyses <- list(
+    go_decisions = cbind(c(1, 0))
+  )
+  scenario_list$scenario_2$previous_analyses <- list(
+    go_decisions = cbind(c(1, 1))
+  )
+  
+  # Make sure class is correct (simulateScenarios already sets this,
+  # but we enforce it explicitly in case of future changes)
+  class(scenario_list) <- "scenario_list"
+  
+  out <- getUniqueTrials(scenario_list)
+  
+  # Columns: responders (2) + subjects (2) + go_flag (1) = 5 columns
+  expect_equal(ncol(out), 5)
+  
+  # No duplicate rows in the result
+  out_df <- as.data.frame(out)
+  expect_equal(nrow(out_df), nrow(unique(out_df)))
+  
+  # Build the "raw" combined matrix exactly as getUniqueTrials does
+  all_resp <- do.call(rbind, lapply(scenario_list, function(x) x$n_responders))
+  all_subj <- do.call(rbind, lapply(scenario_list, function(x) x$n_subjects))
+  all_go   <- do.call(
+    rbind,
+    lapply(scenario_list, function(x) x$previous_analyses$go_decisions)
+  )[, 1]
+  
+  combined <- cbind(all_resp, all_subj, go_flag = all_go)
+  
+  # Unique rows from the raw combined matrix
+  exp_df <- as.data.frame(unique(combined))
+  
+  # Sort both sets of rows in a reproducible way and compare values, ignoring names
+  out_ord <- out_df[do.call(order, out_df), , drop = FALSE]
+  exp_ord <- exp_df[do.call(order, exp_df), , drop = FALSE]
+  
+  expect_equal(
+    unname(as.matrix(out_ord)),
+    unname(as.matrix(exp_ord))
+  )
+})
+
+# Tests for mapUniqueTrials ----------------------------------------------------
+
+set.seed(123)
+
+trial_data <- createTrial(
+  n_subjects   = c(10, 10),
+  n_responders = c(1, 1))
+
+analysis_list <- performAnalyses(
+  scenario_list      = trial_data,
+  target_rates       = rep(0.5, 2),
+  method_names = "berry",
+  n_mcmc_iterations  = 100)
+
+## get unique trials over all scenarios
+trials_unique <- getUniqueTrials(trial_data)
+n_cohorts     <- (ncol(trials_unique) - 1L) / 2
+
+## analyze only unique trials that have not been previously analyzed
+applicable_previous_trials <- applicablePreviousTrials(
+  scenario_list    = trial_data,
+  method_names     = "berry",
+  quantiles        = analysis_list$scenario_1$analysis_parameters$quantiles,
+  n_cohorts        = n_cohorts,
+  calc_differences = NULL)
+
+expect_false(applicable_previous_trials)
+
+## only get previous go indices if all conditions for previous trials are met
+if (applicable_previous_trials) {
+  calc_trial_indices <- trials_unique[, ncol(trials_unique)] > 0
+} else {
+  calc_trial_indices <- rep(TRUE, nrow(trials_unique))
+}
+
+## get resulting unique number of responders and number of subjects
+trials_unique_calc <- trials_unique[calc_trial_indices, -ncol(trials_unique)]
+n_responders       <- trials_unique_calc[, seq_len(n_cohorts)]
+n_subjects         <- trials_unique_calc[, seq_len(n_cohorts) + n_cohorts]
+
+method_quantiles_list        <- vector(mode = "list", length = 1)
+names(method_quantiles_list) <-  "berry"
+
+prior_parameters_list <- getPriorParameters(
+  method_names = "berry",
+  target_rates = rep(0.5, 2))
+
+## prepare analysis
+prepare_analysis <- prepareAnalysis(
+  method_name       = "berry",
+  target_rates      = rep(0.5, 2),
+  prior_parameters  = prior_parameters_list[["berry"]])
+
+## run analysis
+method_quantiles_list[["berry"]] <- getPostQuantiles(
+  method_name       = "berry",
+  quantiles         = analysis_list$scenario_1$analysis_parameters$quantiles,
+  scenario_data     = list(n_subjects   = n_subjects,
+                           n_responders = n_responders),
+  calc_differences  = NULL,
+  j_parameters      = prepare_analysis$j_parameters,
+  j_model_file      = prepare_analysis$j_model_file,
+  j_data            = prepare_analysis$j_data,
+  n_mcmc_iterations = 100,
+  save_path         = NULL,
+  save_trial        = NULL)
+
+scenario_method_quantiles_list <- mapUniqueTrials(
+  scenario_list              = trial_data,
+  method_quantiles_list      = method_quantiles_list,
+  trials_unique_calc         = trials_unique_calc,
+  applicable_previous_trials = applicable_previous_trials)
+
+test_that("mapUniqueTrials: without previous trials, maps unique trial quantiles back per scenario", {
+  foreach::registerDoSEQ()
+  
+  out <- scenario_method_quantiles_list
+    
+  expect_type(out, "list")
+  expect_identical(names(out), "scenario_1")
+
+  scen1 <- out[["scenario_1"]]
+  expect_true(is.list(scen1))
+  expect_true("berry" %in% names(scen1))
+  
+  # For this setup: all trials are "new" (no previous), so each trial’s
+  # quantile matrix should be exactly what we precomputed in method_quantiles_list
+  for (i in seq_along(method_quantiles_list$berry)) {
+    expect_identical(scen1$berry[[i]], method_quantiles_list$berry[[i]])
+  }
+})
+
+
+test_that("mapUniqueTrials: with previous trials, only GO trials are updated from hash tables", {
+  foreach::registerDoSEQ()
+  set.seed(456)
+  
+  ## 1) Build a one-scenario object with 2 trials, 2 cohorts, incl. previous_analyses
+  scene <- getScenario(
+    n_subjects     = c(10, 10),
+    response_rates = c(0.1, 0.2),
+    n_trials       = 2
+  )
+  
+  trial_data <- list(scenario_1 = scene)
+  class(trial_data) <- "scenario_list"
+  if (is.null(trial_data$scenario_1$scenario_number)) {
+    trial_data$scenario_1$scenario_number <- 1L
+  }
+  
+  ## 2) Force GO / NoGo pattern in the "overall" column:
+  ##    - trial 1: GO
+  ##    - trial 2: NoGo
+  go_mat <- trial_data$scenario_1$previous_analyses$go_decisions
+  go_mat[, 1] <- c(TRUE, FALSE)   # column 1 is used by mapUniqueTrials
+  trial_data$scenario_1$previous_analyses$go_decisions <- go_mat
+  
+  ## 3) Create REAL "previous" post_quantiles using package functions
+  n_trials   <- trial_data$scenario_1$n_trials
+  n_cohorts  <- ncol(trial_data$scenario_1$n_subjects)
+  quantiles  <- c(0.025, 0.5, 0.975)
+  
+  prior_parameters_list <- getPriorParameters(
+    method_names = "berry",
+    target_rates = rep(0.5, n_cohorts)
+  )
+  
+  prep <- prepareAnalysis(
+    method_name      = "berry",
+    prior_parameters = prior_parameters_list[["berry"]],
+    target_rates     = rep(0.5, n_cohorts)
+  )
+  
+  ## Build a per-trial list of matrices (the structure mapUniqueTrials expects)
+  old_q_list <- vector("list", length = n_trials)
+  for (i in seq_len(n_trials)) {
+    n_subj_i <- trial_data$scenario_1$n_subjects[i, , drop = FALSE]
+    n_resp_i <- trial_data$scenario_1$n_responders[i, , drop = FALSE]
+    
+    old_q_list[[i]] <- getPostQuantiles(
+      method_name       = "berry",
+      quantiles         = quantiles,
+      scenario_data     = list(
+        n_subjects   = n_subj_i,
+        n_responders = n_resp_i
+      ),
+      calc_differences  = NULL,
+      j_parameters      = prep$j_parameters,
+      j_model_file      = prep$j_model_file,
+      j_data            = prep$j_data,
+      n_mcmc_iterations = 100,
+      save_path         = NULL,
+      save_trial        = NULL
+    )[[1]]
+  }
+  
+  trial_data$scenario_1$previous_analyses$post_quantiles <- list(
+    berry = old_q_list
+  )
+  
+  ## 4) Build trials_unique and the subset used for new calculations
+  trials_unique <- getUniqueTrials(trial_data)
+  n_cohorts_u   <- (ncol(trials_unique) - 1L) / 2L
+  
+  ## applicable_previous_trials is TRUE by design in this test
+  applicable_previous_trials <- TRUE
+  
+  ## We only (re)analyse unique GO trials:
+  calc_trial_indices <- trials_unique[, ncol(trials_unique)] > 0
+  trials_unique_calc <- trials_unique[calc_trial_indices, -ncol(trials_unique), drop = FALSE]
+  
+  ## 5) Create NEW quantiles for the GO pattern by modifying the existing ones
+  ##    - trials_unique_calc contains only the GO pattern(s). Here, with our setup,
+  ##      that's just trial 1.
+  ##    - We derive a new matrix from the previous one to ensure they differ.
+  new_q_go <- old_q_list[[1]] + 1  # simple shift to guarantee a difference
+  
+  method_quantiles_list <- list(
+    berry = list(new_q_go)  # one entry per UNIQUE GO pattern
+  )
+  
+  ## 6) Run mapUniqueTrials: should update only the GO trial
+  out <- mapUniqueTrials(
+    scenario_list              = trial_data,
+    method_quantiles_list      = method_quantiles_list,
+    trials_unique_calc         = trials_unique_calc,
+    applicable_previous_trials = applicable_previous_trials
+  )
+  
+  ## 7) Checks
+  expect_type(out, "list")
+  expect_identical(names(out), "scenario_1")
+  
+  scen1 <- out[["scenario_1"]]
+  expect_true(is.list(scen1))
+  expect_true("berry" %in% names(scen1))
+  
+  ## Trial 1 (GO) must now be the NEW quantiles
+  expect_identical(scen1$berry[[1]], new_q_go)
+  
+  ## Trial 2 (NoGo) must remain with its original (old) quantiles
+  expect_identical(scen1$berry[[2]], old_q_list[[2]])
+})
+
+
+# test_that("mapUniqueTrials preserves per-trial posteriors vs naive computation", {
+#   foreach::registerDoSEQ()
+#   set.seed(123)
+#   
+#   get_rng_id <- function(r_vec, n_vec) {
+#     paste0(
+#       "r:", paste(r_vec, collapse = ","),
+#       "|n:", paste(n_vec, collapse = ",")
+#     )
+#   }
+#   
+#   scene <- getScenario(
+#     n_subjects     = c(10, 20),
+#     response_rates = c(0.4, 0.6),
+#     n_trials       = 10
+#   )
+#   
+#   if (is.null(scene$scenario_number)) {
+#     scene$scenario_number <- 1L
+#   }
+#   
+#   scenario_list <- list(scenario_1 = scene)
+#   class(scenario_list) <- "scenario_list"
+#   
+#   n_subj   <- scene$n_subjects    # 10 × 2
+#   n_resp   <- scene$n_responders  # 10 × 2
+#   n_trials <- nrow(n_subj)
+#   n_coh    <- ncol(n_subj)
+#   
+#   trials_unique <- getUniqueTrials(scenario_list)
+#   if (nrow(trials_unique) == n_trials) {
+#     skip("No duplicated trial patterns with this seed.")
+#   }
+#   
+#   target_rates <- rep(0.5, n_coh)
+#   priors_list  <- getPriorParameters(
+#     method_names = "exnex",
+#     target_rates = target_rates
+#   )
+#   
+#   prep <- prepareAnalysis(
+#     method_name      = "exnex",
+#     prior_parameters = priors_list[["exnex"]],
+#     target_rates     = target_rates
+#   )
+#   
+#   quantiles <- c(0.025, 0.5, 0.975)
+#   
+#   naive_list <- vector("list", length = n_trials)
+#   
+#   for (i in seq_len(n_trials)) {
+#     j_data_i <- prep$j_data
+#     j_data_i$r <- as.numeric(n_resp[i, ])
+#     j_data_i$n <- as.numeric(n_subj[i, ])
+#     
+#     rng_id_i <- get_rng_id(j_data_i$r, j_data_i$n)
+#     
+#     post_i <- getPosteriors(
+#       j_parameters      = prep$j_parameters,
+#       j_model_file      = prep$j_model_file,
+#       j_data            = j_data_i,
+#       n_mcmc_iterations = 1000,
+#       rng_id            = rng_id_i  # <-- passes through to performJags
+#     )
+#     
+#     # Keep only p_* columns for quantiles (as getPostQuantiles would)
+#     p_cols <- post_i[, grepl("^p_", colnames(post_i)), drop = FALSE]
+#     
+#     naive_list[[i]] <- posteriors2Quantiles(
+#       quantiles  = quantiles,
+#       posteriors = p_cols
+#     )
+#   }
+#   
+#   # trials_unique: [responders | subjects | go_flag]
+#   n_coh_u <- (ncol(trials_unique) - 1L) / 2L
+#   expect_equal(n_coh_u, n_coh)
+#   
+#   applicable_previous_trials <- FALSE
+#   
+#   calc_trial_indices <- rep(TRUE, nrow(trials_unique))
+#   trials_unique_calc <- trials_unique[calc_trial_indices, -ncol(trials_unique), drop = FALSE]
+#   
+#   n_resp_unique <- trials_unique_calc[, seq_len(n_coh),         drop = FALSE]
+#   n_subj_unique <- trials_unique_calc[, seq_len(n_coh) + n_coh, drop = FALSE]
+#   
+#   # For each unique pattern, run JAGS once with the *same* rng_id logic
+#   unique_quantiles <- vector("list", length = nrow(n_resp_unique))
+#   
+#   for (u in seq_len(nrow(n_resp_unique))) {
+#     j_data_u <- prep$j_data
+#     j_data_u$r <- as.numeric(n_resp_unique[u, ])
+#     j_data_u$n <- as.numeric(n_subj_unique[u, ])
+#     
+#     rng_id_u <- get_rng_id(j_data_u$r, j_data_u$n)
+#     
+#     post_u <- getPosteriors(
+#       j_parameters      = prep$j_parameters,
+#       j_model_file      = prep$j_model_file,
+#       j_data            = j_data_u,
+#       n_mcmc_iterations = 1000,
+#       rng_id            = rng_id_u
+#     )
+#     
+#     p_cols_u <- post_u[, grepl("^p_", colnames(post_u)), drop = FALSE]
+#     
+#     unique_quantiles[[u]] <- posteriors2Quantiles(
+#       quantiles  = quantiles,
+#       posteriors = p_cols_u
+#     )
+#   }
+#   
+#   method_quantiles_list <- list(
+#     exnex = unique_quantiles
+#   )
+#   
+#   # Map unique results back to all trials
+#   out <- mapUniqueTrials(
+#     scenario_list              = scenario_list,
+#     method_quantiles_list      = method_quantiles_list,
+#     trials_unique_calc         = trials_unique_calc,
+#     applicable_previous_trials = applicable_previous_trials
+#   )
+#   
+#   expect_type(out, "list")
+#   expect_identical(names(out), "scenario_1")
+#   
+#   scen1_out <- out[["scenario_1"]]
+#   expect_true(is.list(scen1_out))
+#   expect_true("exnex" %in% names(scen1_out))
+#   
+#   # Should now have one quantile matrix per *original* trial
+#   expect_equal(length(scen1_out$exnex), n_trials)
+#   
+#   for (i in seq_len(n_trials)) {
+#     expect_equal(
+#       scen1_out$exnex[[i]],
+#       naive_list[[i]],
+#       tolerance = 1e-10
+#     )
+#   }
+# })
+
+# Tests for posteriors2Quantiles ----------------------------------------------
+
+test_that("posteriors2Quantiles: computes quantiles, mean, and sd for each column", {
+  set.seed(123)
+  
+  theta <- rnorm(5000, mean = 2, sd = 3)
+  post  <- cbind(theta = theta)
+  
+  quantiles <- c(0.25, 0.5, 0.75)
+  
+  out <- posteriors2Quantiles(
+    quantiles  = quantiles,
+    posteriors = post
+  )
+  
+  expect_true(is.matrix(out))
+  expect_identical(colnames(out), "theta")
+  expect_identical(rownames(out),
+                   c("25%", "50%", "75%", "Mean", "SD"))
+  
+  exp_q <- stats::quantile(theta, probs = quantiles)
+  expect_equal(out[c("25%", "50%", "75%"), "theta"],
+               exp_q,
+               tolerance = 1e-2)
+  
+  expect_equal(out["Mean", "theta"], mean(theta), tolerance = 1e-2)
+  expect_equal(out["SD",   "theta"], stats::sd(theta), tolerance = 1e-2)
+})
+
+# Tests for performAnalyses ----------------------------------------------------
+
+# Shared scenario_list for performAnalyses tests
+scenario_list_pa <- make_scenario_list_pa()
+
+prior_parameters_list <- getPriorParameters(
+  method_names = c("pooled", "exnex"),
+  target_rates = c(0.5, 0.5, 0.5)
+)
+
+test_that("performAnalyses returns a well-formed analysis_list", {
+  res <- performAnalyses(
+    scenario_list       = scenario_list_pa,
+    target_rates        = c(0.5, 0.5, 0.5),
+    method_names        = c("pooled", "exnex"),
+    prior_parameters_list = prior_parameters_list,
+    n_mcmc_iterations   = 50,
+    verbose             = FALSE
+  )
+  
+  expect_s3_class(res, "analysis_list")
+  expect_equal(length(res), length(scenario_list_pa))
+  expect_identical(names(res), paste0("scenario_", sapply(scenario_list_pa, `[[`, "scenario_number")))
+  
+  scen1 <- res[[1]]
+  expect_true(is.list(scen1))
+  expect_true(all(c("quantiles_list", "scenario_data", "analysis_parameters") %in% names(scen1)))
+  
+  expect_identical(scen1$scenario_data, scenario_list_pa[[1]])
+})
+
+test_that("performAnalyses sorts method_names and stores them in analysis_parameters", {
+  res <- performAnalyses(
+    scenario_list       = scenario_list_pa,
+    target_rates        = c(0.5, 0.5, 0.5),
+    method_names        = c("stratified", "berry", "pooled"),
+    n_mcmc_iterations   = 30,
+    verbose             = FALSE
+  )
+  
+  scen1 <- res[[1]]
+  
+  expected_sorted <- sort(c("stratified", "berry", "pooled"))
+  expect_identical(scen1$analysis_parameters$method_names, expected_sorted)
+  
+  expect_true(is.list(scen1$quantiles_list))
+  expect_identical(names(scen1$quantiles_list), expected_sorted)
+})
+
+test_that("performAnalyses constructs quantiles from defaults and evidence_levels", {
+  ev_levels <- c(0.1, 0.2, 0.3)
+  
+  res <- performAnalyses(
+    scenario_list       = scenario_list_pa,
+    evidence_levels     = ev_levels,
+    target_rates        = c(0.5, 0.5, 0.5),
+    method_names        = c("pooled"),
+    n_mcmc_iterations   = 30,
+    verbose             = FALSE
+  )
+  
+  q <- res[[1]]$analysis_parameters$quantiles
+  expect_true(is.numeric(q))
+  expect_true(is.unsorted(q) == FALSE)
+  
+  defaults <- c(0.025, 0.05, 0.5, 0.8, 0.9, 0.95, 0.975)
+  expected_q <- sort(unique(round(1 - c(defaults, ev_levels), 9)))
+  
+  expect_true(all(expected_q %in% q))
+})
+
+test_that("performAnalyses fills prior_parameters_list when not supplied", {
+  methods <- c("berry", "pooled")
+  
+  res <- performAnalyses(
+    scenario_list         = scenario_list_pa,
+    target_rates          = c(0.5, 0.5, 0.5),
+    method_names          = methods,
+    prior_parameters_list = NULL,
+    n_mcmc_iterations     = 30,
+    verbose               = FALSE
+  )
+  
+  priors <- res[[1]]$analysis_parameters$prior_parameters_list
+  
+  expect_false(is.null(priors))
+  expect_true(is.list(priors))
+  expect_true(all(methods %in% names(priors)))
+})
+
+test_that("performAnalyses prints a progress message when verbose = TRUE", {
+  expect_message(
+    performAnalyses(
+      scenario_list       = scenario_list_pa,
+      target_rates        = c(0.5, 0.5, 0.5),
+      method_names        = c("pooled"),
+      n_mcmc_iterations   = 10,
+      verbose             = TRUE
+    ),
+    "Performing Analyses"
+  )
+})
+
+# Tests for loadAnalyses -------------------------------------------------------
+
+test_that("loadAnalyses: loads saved analyses and sets class/names correctly", {
+  tmpdir <- tempdir()
+  
+  scen_nums <- c(1, 2)
+  anal_nums <- c(1, 2)
+  
+  dummy1 <- list(foo = 1)
+  dummy2 <- list(bar = 2)
+  
+  saveRDS(dummy1, file = file.path(tmpdir, "analysis_data_1_1.rds"))
+  saveRDS(dummy2, file = file.path(tmpdir, "analysis_data_2_2.rds"))
+  
+  loaded <- loadAnalyses(
+    scenario_numbers = scen_nums,
+    analysis_numbers = anal_nums,
+    load_path        = tmpdir
+  )
+  
+  expect_s3_class(loaded, "analysis_list")
+  expect_identical(names(loaded), c("scenario_1", "scenario_2"))
+  
+  expect_identical(loaded[[1]], dummy1)
+  expect_identical(loaded[[2]], dummy2)
+})
+
+test_that("loadAnalyses: scenario_numbers must be positive integers", {
+  tmpdir <- tempdir()
+  
+  expect_error(
+    loadAnalyses(scenario_numbers = "a", load_path = tmpdir),
+    "scenario_numbers"
+  )
+  
+  expect_error(
+    loadAnalyses(scenario_numbers = c(0, 1), load_path = tmpdir),
+    "scenario_numbers"
+  )
+})
+
+test_that("loadAnalyses: analysis_numbers must be positive integers of same length", {
+  tmpdir <- tempdir()
+  
+  expect_error(
+    loadAnalyses(
+      scenario_numbers = c(1, 2),
+      analysis_numbers = c(1),
+      load_path        = tmpdir
+    ),
+    "analysis_numbers"
+  )
+  
+  expect_error(
+    loadAnalyses(
+      scenario_numbers = c(1, 2),
+      analysis_numbers = c(1, -1),
+      load_path        = tmpdir
+    ),
+    "analysis_numbers"
+  )
+})
+
+test_that("loadAnalyses: load_path must be a single character string", {
+  expect_error(
+    loadAnalyses(scenario_numbers = 1, load_path = 123),
+    "load_path"
+  )
+  expect_error(
+    loadAnalyses(scenario_numbers = 1, load_path = c("a", "b")),
+    "load_path"
+  )
+})
+
+# Tests for printAnalyses ------------------------------------------------------
+
+test_that("print.analysis_list: prints header, scenario blocks, method label, and numeric estimates", {
+  set.seed(123)
+  
+  scen <- simulateScenarios(
+    n_subjects_list     = list(c(10, 20),
+                               c(10, 20)),
+    response_rates_list = list(c(0.3, 0.6),
+                               c(0.4, 0.7)),
+    n_trials            = 50
+  )
+  
+  analyses <- performAnalyses(
+    scenario_list      = scen,
+    method_names       = "pooled",
+    target_rates       = c(0.5, 0.5),
+    n_mcmc_iterations  = 20,
+    verbose            = FALSE
+  )
+  
+  est_list <- getEstimates(analyses)
+  
+  expect_true(is.list(est_list[[1]]))
+  est_mat1 <- est_list[[1]][[1]]
+  
+  mean_p1 <- round(est_mat1["p_1", "Mean"], digits = 2)
+  sd_p1   <- round(est_mat1["p_1", "SD"],   digits = 2)
+  
+  out <- capture.output(print(analyses))
+  flat_out <- paste(out, collapse = " ")
+  
+  expect_true(
+    any(grepl("analysis_list of 2 scenarios with 1 method", out))
+  )
+  
+  expect_true(
+    any(grepl("^  - scenario_1", out))
+  )
+  expect_true(
+    any(grepl("^  - scenario_2", out))
+  )
+  
+  expect_true(
+    any(grepl("Pooled", out))
+  )
+  
+  mean_str <- sprintf("%.2f", mean_p1)
+  sd_str   <- sprintf("%.2f", sd_p1)
+  
+  expect_true(
+    grepl(mean_str, flat_out)
+  )
+  expect_true(
+    grepl(sd_str, flat_out)
+  )
+  
+  expect_true(
+    any(grepl("MCMC iterationns per BHM method", out))
+  )
+  expect_true(
+    any(grepl("Available evidence levels:", out))
+  )
+})
+
+test_that("print.analysis_list: multiple scenarios print distinct scenario-specific estimates", {
+  set.seed(456)
+  
+  n_subj <- c(10, 20)
+  rr1    <- c(0.3, 0.6)
+  rr2    <- c(0.7, 0.2)
+  
+  scen_multi <- simulateScenarios(
+    n_subjects_list     = list(n_subj, n_subj),
+    response_rates_list = list(rr1, rr2),
+    n_trials            = 30
+  )
+  
+  analyses_multi <- performAnalyses(
+    scenario_list      = scen_multi,
+    method_names       = "pooled",
+    target_rates       = c(0.5, 0.5),
+    n_mcmc_iterations  = 20,
+    verbose            = FALSE
+  )
+  
+  est_multi <- getEstimates(analyses_multi)
+  
+  expect_true(is.list(est_multi[[1]]))
+  m1 <- est_multi[[1]][[1]]
+  m2 <- est_multi[[1]][[2]]
+  
+  mean1 <- round(m1["p_1", "Mean"], 2)
+  mean2 <- round(m2["p_1", "Mean"], 2)
+  
+  out <- capture.output(print(analyses_multi))
+  flat_out <- paste(out, collapse = " ")
+  
+  expect_true(
+    any(grepl("analysis_list of 2 scenarios with 1 method", out))
+  )
+  
+  expect_true(any(grepl("^  - scenario_1", out)))
+  expect_true(any(grepl("^  - scenario_2", out)))
+  
+  mean1_str <- sprintf("%.2f", mean1)
+  mean2_str <- sprintf("%.2f", mean2)
+  
+  expect_true(
+    grepl(mean1_str, flat_out)
+  )
+  expect_true(
+    grepl(mean2_str, flat_out)
+  )
+  
+  expect_false(
+    isTRUE(all.equal(mean1, mean2))
+  )
+})
+
+test_that("print.analysis_list: digits argument controls printed numeric precision", {
+  set.seed(789)
+  
+  scen <- simulateScenarios(
+    n_subjects_list     = list(c(10, 20),
+                               c(10, 20)),
+    response_rates_list = list(c(0.33, 0.66),
+                               c(0.33, 0.66)),
+    n_trials            = 40
+  )
+  
+  analyses <- performAnalyses(
+    scenario_list      = scen,
+    method_names       = "pooled",
+    target_rates       = c(0.5, 0.5),
+    n_mcmc_iterations  = 20,
+    verbose            = FALSE
+  )
+  
+  est_list <- getEstimates(analyses)
+  est_obj  <- est_list[[1]]
+  expect_true(is.list(est_obj))
+  est_mat1 <- est_obj[[1]]
+  
+  mean_p1 <- est_mat1["p_1", "Mean"]
+  
+  out_2 <- capture.output(print(analyses, digits = 2))
+  out_4 <- capture.output(print(analyses, digits = 4))
+  
+  flat_2 <- paste(out_2, collapse = " ")
+  flat_4 <- paste(out_4, collapse = " ")
+  
+  fmt2 <- sprintf("%.2f", round(mean_p1, 2))
+  fmt4 <- sprintf("%.4f", round(mean_p1, 4))
+  
+  expect_true(
+    grepl(fmt2, flat_2)
+  )
+  
+  expect_true(
+    grepl(fmt4, flat_4)
+  )
+})
+
+# Tests for saveAnalyses -------------------------------------------------------
+
+test_that("saveAnalyses: saves analysis_list to disk and loadAnalyses can read it back", {
+  set.seed(101)
+  
+  scen <- simulateScenarios(
+    n_subjects_list     = list(c(10, 20),
+                               c(15, 25)),
+    response_rates_list = list(c(0.3, 0.6),
+                               c(0.5, 0.8)),
+    n_trials            = 20
+  )
+  
+  analyses <- performAnalyses(
+    scenario_list      = scen,
+    method_names       = "pooled",
+    target_rates       = c(0.5, 0.5),
+    n_mcmc_iterations  = 20,
+    verbose            = FALSE
+  )
+  
+  tmp_dir <- tempdir()
+  
+  info <- saveAnalyses(analyses, save_path = tmp_dir)
+  
+  expect_true(is.list(info))
+  expect_equal(length(info$scenario_numbers), length(analyses))
+  expect_equal(length(info$analysis_numbers), length(analyses))
+  expect_identical(info$path, tmp_dir)
+  
+  internal_scen <- vapply(
+    analyses,
+    function(x) x$scenario_data$scenario_number,
+    FUN.VALUE = numeric(1)
+  )
+  expect_equal(info$scenario_numbers, internal_scen)
+  
+  for (i in seq_along(info$scenario_numbers)) {
+    f <- file.path(
+      tmp_dir,
+      paste0("analysis_data_",
+             info$scenario_numbers[i], "_",
+             info$analysis_numbers[i], ".rds")
+    )
+    expect_true(file.exists(f))
+  }
+  
+  loaded <- loadAnalyses(
+    scenario_numbers = info$scenario_numbers,
+    analysis_numbers = info$analysis_numbers,
+    load_path        = info$path
+  )
+  
+  expect_s3_class(loaded, "analysis_list")
+  expect_identical(length(loaded), length(analyses))
+  expect_identical(names(loaded), names(analyses))
+})
+
+test_that("saveAnalyses: non-analysis_list input triggers a class error", {
+  expect_error(
+    saveAnalyses(list(a = 1)),
+    "analysis_list",
+    ignore.case = TRUE
+  )
+})
+
+test_that("saveAnalyses: save_path must be a character vector of length 1", {
+  set.seed(202)
+  
+  scen <- simulateScenarios(
+    n_subjects_list     = list(c(10, 20)),
+    response_rates_list = list(c(0.3, 0.6)),
+    n_trials            = 10
+  )
+  
+  analyses <- performAnalyses(
+    scenario_list      = scen,
+    method_names       = "pooled",
+    target_rates       = c(0.5, 0.5),
+    n_mcmc_iterations  = 10,
+    verbose            = FALSE
+  )
+  
+  expect_error(
+    saveAnalyses(analyses, save_path = c("a", "b")),
+    "save_path",
+    ignore.case = TRUE
+  )
 })
