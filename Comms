@@ -1,30 +1,116 @@
-── Error (test-AnalysisFunctions.R:1180:3): mapUniqueTrials: pooled backend preserves naive per-trial Beta quantiles ──
-Error in `{
-    scenario_data_matrix <- cbind(scenario_list[[k]]$n_responders, 
-        scenario_list[[k]]$n_subjects)
-    if (applicable_previous_trials) {
-        scenario_go_flags <- scenario_list[[k]]$previous_analyses$go_decisions[, 
-            1] > 0
-        scenario_method_quantiles <- scenario_list[[k]]$previous_analyses$post_quantiles
-    }
-    else {
-        scenario_go_flags <- rep(TRUE, length = nrow(scenario_data_matrix))
-        scenario_method_quantiles <- vector(mode = "list", length = length(method_names))
-        names(scenario_method_quantiles) <- method_names
-    }
-    if (any(scenario_go_flags)) {
-        scenario_data_matrix_go <- convertVector2Matrix(scenario_data_matrix[scenario_go_flags, 
-            ])
-        search_keys <- getHashKeys(scenario_data_matrix_go)
-        for (n in seq_along(method_names)) {
-            scenario_method_quantiles[[method_names[n]]][scenario_go_flags] <- getHashValues(search_keys, 
-                hash_tables_list[[n]])
-        }
-    }
-    return(scenario_method_quantiles)
-}`: task 1 failed - "value for 'x1:2|x2:3|x3:10|x4:20' not found"
-Backtrace:
-    ▆
- 1. └─bhmbasket:::mapUniqueTrials(...) at test-AnalysisFunctions.R:1180:3
- 2.   └─... %do% ... at bhmbasket/R/AnalysisFunctions.R:590:3
- 3.     └─e$fun(obj, substitute(ex), parent.frame(), e$data)
+## Test: mapUniqueTrials with pooled backend preserves naive per-trial Beta quantiles
+## Input:
+##   - One scenario with several trials and 2 cohorts.
+##   - trials_unique_calc derived from getUniqueTrials(), with applicable_previous_trials = FALSE
+##     so that all unique patterns are treated as newly analysed.
+##   - method_quantiles_list for method "pooled" containing Beta posterior quantile
+##     matrices computed only for the unique trial patterns (via getPostQuantiles).
+## Expected output:
+##   - mapUniqueTrials returns a list with one element "scenario_1".
+##   - scenario_1$pooled is a list of length equal to the original number of trials.
+##   - For each trial i, scenario_1$pooled[[i]] is exactly equal to the naive
+##     per-trial Beta quantile matrix that would be computed directly from that trial's
+##     total responders and subjects (conjugate Beta update with j_data$a, j_data$b).
+## Why this test:
+##   - For the pooled design, the posterior for the shared response rate p is fully
+##     determined by the total responders and total subjects.
+##   - mapUniqueTrials must avoid redundant computations via hashing on unique
+##     (n_responders, n_subjects) patterns, while still reproducing the same per-trial
+##     Beta posteriors as a naive analysis that ignores deduplication.
+
+test_that("mapUniqueTrials: pooled backend preserves naive per-trial Beta quantiles", {
+  skip_if_not_installed("foreach")
+  foreach::registerDoSEQ()
+  set.seed(123)
+
+  scene <- getScenario(
+    n_subjects     = c(10, 20),
+    response_rates = c(0.4, 0.6),
+    n_trials       = 10
+  )
+
+  if (is.null(scene$scenario_number)) {
+    scene$scenario_number <- 1L
+  }
+
+  scenario_list <- list(scenario_1 = scene)
+  class(scenario_list) <- "scenario_list"
+
+  n_subj   <- scene$n_subjects
+  n_resp   <- scene$n_responders
+  n_trials <- nrow(n_subj)
+  n_coh    <- ncol(n_subj)
+
+  trials_unique <- getUniqueTrials(scenario_list)
+  n_coh_u       <- (ncol(trials_unique) - 1L) / 2L
+  expect_equal(n_coh_u, n_coh)
+
+  applicable_previous_trials <- FALSE
+
+  calc_trial_indices <- rep(TRUE, nrow(trials_unique))
+  trials_unique_calc <- trials_unique[calc_trial_indices, -ncol(trials_unique), drop = FALSE]
+
+  n_resp_unique <- trials_unique_calc[, seq_len(n_coh),         drop = FALSE]
+  n_subj_unique <- trials_unique_calc[, seq_len(n_coh) + n_coh, drop = FALSE]
+
+  j_data    <- list(a = 1, b = 1)
+  quantiles <- c(0.025, 0.5, 0.975)
+
+  unique_quantiles <- getPostQuantiles(
+    method_name       = "pooled",
+    quantiles         = quantiles,
+    scenario_data     = list(
+      n_subjects   = n_subj_unique,
+      n_responders = n_resp_unique
+    ),
+    calc_differences  = NULL,
+    j_parameters      = NULL,
+    j_model_file      = NULL,
+    j_data            = j_data,
+    n_mcmc_iterations = 1000,
+    save_path         = NULL,
+    save_trial        = NULL
+  )
+
+  method_quantiles_list <- list(
+    pooled = unique_quantiles
+  )
+
+  out <- mapUniqueTrials(
+    scenario_list              = scenario_list,
+    method_quantiles_list      = method_quantiles_list,
+    trials_unique_calc         = trials_unique_calc,
+    applicable_previous_trials = applicable_previous_trials
+  )
+
+  expect_type(out, "list")
+  expect_identical(names(out), "scenario_1")
+
+  scen1_out <- out[["scenario_1"]]
+  expect_true(is.list(scen1_out))
+  expect_true("pooled" %in% names(scen1_out))
+  expect_equal(length(scen1_out$pooled), n_trials)
+
+  row_names <- c("2.5%", "50%", "97.5%", "Mean", "SD")
+
+  for (i in seq_len(n_trials)) {
+    r_tot   <- sum(n_resp[i, ])
+    n_tot   <- sum(n_subj[i, ])
+    shape_1 <- j_data$a + r_tot
+    shape_2 <- j_data$b + (n_tot - r_tot)
+
+    q_vals <- stats::qbeta(quantiles, shape1 = shape_1, shape2 = shape_2)
+    mu     <- shape_1 / (shape_1 + shape_2)
+    sd     <- sqrt((shape_1 * shape_2) / ((shape_1 + shape_2)^2 * (shape_1 + shape_2 + 1)))
+
+    vals     <- c(q_vals, mu, sd)
+    expected <- cbind(p_1 = vals, p_2 = vals)
+    rownames(expected) <- row_names
+
+    expect_equal(
+      scen1_out$pooled[[i]],
+      expected,
+      tolerance = 1e-12
+    )
+  }
+})
