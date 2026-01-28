@@ -1,78 +1,82 @@
-test_that("mapUniqueTrials preserves per-trial posteriors vs naive computation (pooled)", {
-  foreach::registerDoSEQ()
-  set.seed(123)
+## Test: mapUniqueTrials with pooled backend preserves naive per-trial Beta quantiles
+## Input:
+##   - One scenario with 5 trials and 2 cohorts, where several trials share identical
+##     (n_responders, n_subjects) patterns (i.e., duplicate trial configurations).
+##   - A method_quantiles_list for method "pooled" that contains Beta posterior
+##     quantile matrices computed only for the unique trial patterns.
+##   - trials_unique_calc derived from getUniqueTrials(), with applicable_previous_trials = FALSE
+##     so that all unique patterns are treated as newly analysed.
+## Expected output:
+##   - mapUniqueTrials returns a list with one element "scenario_1".
+##   - scenario_1$pooled is a list of length equal to the original number of trials.
+##   - For each trial i, scenario_1$pooled[[i]] is exactly equal to the "naive"
+##     per-trial Beta quantile matrix that would be computed directly for that trial.
+## Why this test:
+##   - For the pooled design, the posterior for the shared response rate p is fully
+##     determined by the total responders and total subjects (Beta update; no MCMC).
+##   - mapUniqueTrials must only avoid redundant computations for duplicate patterns,
+##     but the mapped per-trial quantiles must remain identical to the naive
+##     per-trial Beta posteriors.
 
-  # Build a single scenario with 4 trials and 2 cohorts,
-  # where trials 1 & 2 share the same pattern, and 3 & 4 share another one.
+test_that("mapUniqueTrials: pooled backend preserves naive per-trial Beta quantiles", {
   scene <- getScenario(
     n_subjects     = c(10, 20),
     response_rates = c(0.4, 0.6),
-    n_trials       = 4
+    n_trials       = 5
   )
 
-  if (is.null(scene$scenario_number)) {
-    scene$scenario_number <- 1L
-  }
-
-  # Overwrite responder/subject counts to enforce duplicated patterns
-  n_subj <- rbind(
-    c(10, 20),  # trial 1
-    c(10, 20),  # trial 2 (duplicate of trial 1)
-    c(15, 25),  # trial 3
-    c(15, 25)   # trial 4 (duplicate of trial 3)
+  scene$n_responders <- rbind(
+    c(2, 3),  # trial 1
+    c(2, 3),  # trial 2 (duplicate of trial 1)
+    c(4, 6),  # trial 3
+    c(4, 6),  # trial 4 (duplicate of trial 3)
+    c(1, 1)   # trial 5 (unique)
   )
-  n_resp <- rbind(
-    c(3, 7),    # trial 1
-    c(3, 7),    # trial 2 (duplicate of trial 1)
-    c(5, 9),    # trial 3
-    c(5, 9)     # trial 4 (duplicate of trial 3)
+  scene$n_subjects <- rbind(
+    c(10, 20),
+    c(10, 20),
+    c(10, 20),
+    c(10, 20),
+    c(10, 20)
   )
 
-  scene$n_subjects <- n_subj
-  scene$n_responders <- n_resp
-  scene$n_trials <- nrow(n_subj)
+  scene$previous_analyses <- list(
+    go_decisions = cbind(overall = rep(1L, 5L))
+  )
 
   scenario_list <- list(scenario_1 = scene)
   class(scenario_list) <- "scenario_list"
 
-  n_subj_mat <- scene$n_subjects
-  n_resp_mat <- scene$n_responders
-  n_trials   <- nrow(n_subj_mat)
-  n_coh      <- ncol(n_subj_mat)
+  n_subj   <- scene$n_subjects
+  n_resp   <- scene$n_responders
+  n_trials <- nrow(n_subj)
 
-  # --- Naive per-trial computation (one posterior per original trial) ----
-
-  quantiles <- c(0.025, 0.5, 0.975)
-  j_data    <- list(a = 1, b = 1)  # Beta(1,1) prior for pooled model
+  quantiles   <- c(0.025, 0.5, 0.975)
+  row_names   <- c("2.5%", "50%", "97.5%", "Mean", "SD")
+  a_prior     <- 1
+  b_prior     <- 1
 
   naive_list <- vector("list", length = n_trials)
-
   for (i in seq_len(n_trials)) {
-    scenario_data_i <- list(
-      n_subjects   = n_subj_mat[i, , drop = FALSE],
-      n_responders = n_resp_mat[i, , drop = FALSE]
-    )
+    r_tot   <- sum(n_resp[i, ])
+    n_tot   <- sum(n_subj[i, ])
+    shape_1 <- a_prior + r_tot
+    shape_2 <- b_prior + (n_tot - r_tot)
 
-    naive_list[[i]] <- getPostQuantiles(
-      method_name       = "pooled",
-      quantiles         = quantiles,
-      scenario_data     = scenario_data_i,
-      calc_differences  = NULL,
-      j_parameters      = NULL,
-      j_model_file      = NULL,
-      j_data            = j_data,
-      n_mcmc_iterations = 1000,
-      save_path         = NULL,
-      save_trial        = NULL
-    )[[1]]
+    q_vals <- stats::qbeta(quantiles, shape1 = shape_1, shape2 = shape_2)
+    mu     <- shape_1 / (shape_1 + shape_2)
+    sd     <- sqrt((shape_1 * shape_2) / ((shape_1 + shape_2)^2 * (shape_1 + shape_2 + 1)))
+
+    vals <- c(q_vals, mu, sd)
+    mat  <- cbind(p_1 = vals, p_2 = vals)
+    rownames(mat) <- row_names
+
+    naive_list[[i]] <- mat
   }
 
-  # --- Unique-pattern computation (run only once per distinct pattern) ----
-
   trials_unique <- getUniqueTrials(scenario_list)
-  # trials_unique: [responders | subjects | go_flag]
-  n_coh_u <- (ncol(trials_unique) - 1L) / 2L
-  expect_equal(n_coh_u, n_coh)
+  n_coh         <- (ncol(trials_unique) - 1L) / 2L
+  expect_equal(n_coh, 2L)
 
   applicable_previous_trials <- FALSE
 
@@ -82,28 +86,27 @@ test_that("mapUniqueTrials preserves per-trial posteriors vs naive computation (
   n_resp_unique <- trials_unique_calc[, seq_len(n_coh),         drop = FALSE]
   n_subj_unique <- trials_unique_calc[, seq_len(n_coh) + n_coh, drop = FALSE]
 
-  # Compute pooled quantiles once for each unique trial pattern
-  unique_quantiles <- getPostQuantiles(
-    method_name       = "pooled",
-    quantiles         = quantiles,
-    scenario_data     = list(
-      n_subjects   = n_subj_unique,
-      n_responders = n_resp_unique
-    ),
-    calc_differences  = NULL,
-    j_parameters      = NULL,
-    j_model_file      = NULL,
-    j_data            = j_data,
-    n_mcmc_iterations = 1000,
-    save_path         = NULL,
-    save_trial        = NULL
-  )
+  unique_quantiles <- vector("list", length = nrow(n_resp_unique))
+  for (u in seq_len(nrow(n_resp_unique))) {
+    r_tot_u   <- sum(n_resp_unique[u, ])
+    n_tot_u   <- sum(n_subj_unique[u, ])
+    shape_1_u <- a_prior + r_tot_u
+    shape_2_u <- b_prior + (n_tot_u - r_tot_u)
+
+    q_vals_u <- stats::qbeta(quantiles, shape1 = shape_1_u, shape2 = shape_2_u)
+    mu_u     <- shape_1_u / (shape_1_u + shape_2_u)
+    sd_u     <- sqrt((shape_1_u * shape_2_u) / ((shape_1_u + shape_2_u)^2 * (shape_1_u + shape_2_u + 1)))
+
+    vals_u <- c(q_vals_u, mu_u, sd_u)
+    mat_u  <- cbind(p_1 = vals_u, p_2 = vals_u)
+    rownames(mat_u) <- row_names
+
+    unique_quantiles[[u]] <- mat_u
+  }
 
   method_quantiles_list <- list(
     pooled = unique_quantiles
   )
-
-  # --- Map unique results back to all trials via mapUniqueTrials ---------
 
   out <- mapUniqueTrials(
     scenario_list              = scenario_list,
@@ -118,11 +121,8 @@ test_that("mapUniqueTrials preserves per-trial posteriors vs naive computation (
   scen1_out <- out[["scenario_1"]]
   expect_true(is.list(scen1_out))
   expect_true("pooled" %in% names(scen1_out))
-
-  # Should now have one quantile matrix per *original* trial
   expect_equal(length(scen1_out$pooled), n_trials)
 
-  # For each original trial, the mapped quantiles should match the naive ones
   for (i in seq_len(n_trials)) {
     expect_equal(
       scen1_out$pooled[[i]],
