@@ -1,19 +1,26 @@
-## Test: mapUniqueTrials with pooled backend preserves naive per-trial Beta quantiles
+## Test: mapUniqueTrials with pooled backend preserves naive per-trial quantiles
 ## Input:
-##   - One scenario with several trials and 2 cohorts.
-##   - trials_unique_calc derived from getUniqueTrials(), with applicable_previous_trials = FALSE
-##     so that all unique patterns are treated as newly analysed.
-##   - method_quantiles_list for method "pooled" containing Beta posterior quantile
-##     matrices computed only for the unique trial patterns (via getPostQuantiles).
+##   - One scenario with several trials and 2 cohorts (generated via getScenario()).
+##   - trials_unique_calc derived from getUniqueTrials(), with
+##     applicable_previous_trials = FALSE so that all unique patterns are treated
+##     as newly analysed.
+##   - method_quantiles_list for method "pooled" containing posterior quantile
+##     matrices computed only for the unique trial patterns using getPostQuantiles().
+##
+## Naive reference:
+##   - For each original trial i (row i of n_responders, n_subjects), we call
+##     getPostQuantiles(method_name = "pooled", ...) directly and store the
+##     resulting single-trial quantile matrix in naive_list[[i]].
+##
 ## Expected output:
-##   - mapUniqueTrials returns a list with one element "scenario_1".
+##   - mapUniqueTrials returns a list with one element named "scenario_1".
 ##   - scenario_1$pooled is a list of length equal to the original number of trials.
-##   - For each trial i, scenario_1$pooled[[i]] is exactly equal to the naive
-##     per-trial Beta quantile matrix that would be computed directly from that trial's
-##     total responders and subjects (conjugate Beta update with j_data$a, j_data$b).
+##   - For each trial i, scenario_1$pooled[[i]] is exactly equal to
+##     naive_list[[i]] (the per-trial quantile matrix from the naive analysis).
+##
 ## Why this test:
-##   - For the pooled design, the posterior for the shared response rate p is fully
-##     determined by the total responders and total subjects.
-##   - mapUniqueTrials must avoid redundant computations via hashing on unique
-##     (n_responders, n_subjects) patterns, while still reproducing the same per-trial
-##     Beta posteriors as a naive analysis that ignores deduplication.
+##   - For the pooled design, getPostQuantiles() is deterministic given
+##     (n_responders, n_subjects) and j_data.
+##   - mapUniqueTrials must use hashing + unique trial patterns to avoid
+##     redundant computations, but still reproduce the same per-trial quantiles
+##     as the naive approach that analyses each trial separately.
