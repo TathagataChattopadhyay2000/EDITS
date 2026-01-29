@@ -1,218 +1,77 @@
-fig <- plot_ly() %>%
-  # --- Markers: Coarse ---
-  add_trace(
-    data  = md_coarse_feas,
-    x     = ~n, y = ~gamma,
-    type  = "scatter", mode = "markers",
-    marker = list(color = "green"),
-    name  = "Coarse — Feasible",
-    legendgroup = "coarse",
-    hoverinfo = "text",
-    text  = ~paste0(
-      "Resolution = Coarse",
-      "<br>n = ", n,
-      "<br>gamma = ", round(gamma, 3),
-      "<br>Type I error = ", round(type_1_error_hat, 3),
-      "<br>Power = ", round(power_hat, 3),
-      "<br>Feasible = ", feasible
-    ),
-    visible = TRUE
-  ) %>%
-  add_trace(
-    data  = md_coarse_nfeas,
-    x     = ~n, y = ~gamma,
-    type  = "scatter", mode = "markers",
-    marker = list(color = "red"),
-    name  = "Coarse — Not feasible",
-    legendgroup = "coarse",
-    hoverinfo = "text",
-    text  = ~paste0(
-      "Resolution = Coarse",
-      "<br>n = ", n,
-      "<br>gamma = ", round(gamma, 3),
-      "<br>Type I error = ", round(type_1_error_hat, 3),
-      "<br>Power = ", round(power_hat, 3),
-      "<br>Feasible = ", feasible
-    ),
-    visible = TRUE
-  ) %>%
-  # --- Boundary: Coarse ---
-  add_trace(
-    data   = bnd_coarse$min_n_per_gamma,
-    x      = ~n, y = ~gamma,
-    type   = "scatter", mode = "lines+markers",
-    inherit = FALSE,
-    line   = list(width = 2),
-    marker = list(size = 8, symbol = "x", color = "black"),
-    name   = "Coarse boundary",
-    legendgroup = "coarse",
-    hoverinfo = "text",
-    text = ~paste0(
-      "Resolution = Coarse",
-      "<br>gamma = ", round(gamma, 3),
-      "<br>min n = ", n,
-      "<br>Type I error = ", round(type_1_error_hat, 3),
-      "<br>Power = ", round(power_hat, 3)
-    ),
-    showlegend = FALSE,
-    visible = TRUE
-  ) %>%
-  # --- Markers: Fine ---
-  add_trace(
-    data  = md_fine_feas,
-    x     = ~n, y = ~gamma,
-    type  = "scatter", mode = "markers",
-    marker = list(color = "green"),
-    name  = "Fine — Feasible",
-    legendgroup = "fine",
-    hoverinfo = "text",
-    text  = ~paste0(
-      "Resolution = Fine",
-      "<br>n = ", n,
-      "<br>gamma = ", round(gamma, 3),
-      "<br>Type I error = ", round(type_1_error_hat, 3),
-      "<br>Power = ", round(power_hat, 3),
-      "<br>Feasible = ", feasible
-    ),
-    visible = FALSE
-  ) %>%
-  add_trace(
-    data  = md_fine_nfeas,
-    x     = ~n, y = ~gamma,
-    type  = "scatter", mode = "markers",
-    marker = list(color = "red"),
-    name  = "Fine — Not feasible",
-    legendgroup = "fine",
-    hoverinfo = "text",
-    text  = ~paste0(
-      "Resolution = Fine",
-      "<br>n = ", n,
-      "<br>gamma = ", round(gamma, 3),
-      "<br>Type I error = ", round(type_1_error_hat, 3),
-      "<br>Power = ", round(power_hat, 3),
-      "<br>Feasible = ", feasible
-    ),
-    visible = FALSE
-  ) %>%
-  # --- Boundary: Fine ---
-  add_trace(
-    data   = bnd_fine$min_n_per_gamma,
-    x      = ~n, y = ~gamma,
-    type   = "scatter", mode = "lines+markers",
-    inherit = FALSE,
-    line   = list(width = 2),
-    marker = list(size = 8, symbol = "x", color = "black"),
-    name   = "Fine boundary",
-    legendgroup = "fine",
-    hoverinfo = "text",
-    text = ~paste0(
-      "Resolution = Fine",
-      "<br>gamma = ", round(gamma, 3),
-      "<br>min n = ", n,
-      "<br>Type I error = ", round(type_1_error_hat, 3),
-      "<br>Power = ", round(power_hat, 3)
-    ),
-    showlegend = FALSE,
-    visible = FALSE
-  ) %>%
-  layout(
-    title = "Feasible vs Non-feasible Designs (stratified, 2 cohorts)",
-    xaxis = list(
-      title      = "Sample size per cohort (n)",
-      range      = c(10, 40),
-      fixedrange = TRUE
-    ),
-    yaxis = list(
-      title      = "Evidence level (gamma)",
-      range      = c(0.5, 0.95),
-      fixedrange = TRUE
-    ),
-    legend = list(title = list(text = "Designs")),
-    updatemenus = list(
-      list(
-        type = "dropdown",
-        x    = 1.12,
-        y    = 1,
-        showactive = TRUE,
-        buttons = list(
-          # Coarse only
-          list(
-            label  = "Coarse — both feasibilities",
-            method = "update",
-            args   = list(
-              list(visible = c(TRUE,  TRUE,  TRUE,  FALSE, FALSE, FALSE)),
-              list(title   = "Feasible vs Non-feasible — Coarse only")
-            )
-          ),
-          list(
-            label  = "Coarse — feasible only",
-            method = "update",
-            args   = list(
-              list(visible = c(TRUE,  FALSE, TRUE,  FALSE, FALSE, FALSE)),
-              list(title   = "Feasible only — Coarse")
-            )
-          ),
-          list(
-            label  = "Coarse — not feasible only",
-            method = "update",
-            args   = list(
-              list(visible = c(FALSE, TRUE,  TRUE,  FALSE, FALSE, FALSE)),
-              list(title   = "Not feasible only — Coarse")
-            )
-          ),
-          # Fine only
-          list(
-            label  = "Fine — both feasibilities",
-            method = "update",
-            args   = list(
-              list(visible = c(FALSE, FALSE, FALSE, TRUE,  TRUE,  TRUE)),
-              list(title   = "Feasible vs Non-feasible — Fine only")
-            )
-          ),
-          list(
-            label  = "Fine — feasible only",
-            method = "update",
-            args   = list(
-              list(visible = c(FALSE, FALSE, FALSE, TRUE,  FALSE, TRUE)),
-              list(title   = "Feasible only — Fine")
-            )
-          ),
-          list(
-            label  = "Fine — not feasible only",
-            method = "update",
-            args   = list(
-              list(visible = c(FALSE, FALSE, FALSE, FALSE, TRUE,  TRUE)),
-              list(title   = "Not feasible only — Fine")
-            )
-          ),
-          # Both resolutions
-          list(
-            label  = "Both — both feasibilities",
-            method = "update",
-            args   = list(
-              list(visible = c(TRUE,  TRUE,  TRUE,  TRUE,  TRUE,  TRUE)),
-              list(title   = "Feasible vs Non-feasible — Coarse & Fine")
-            )
-          ),
-          list(
-            label  = "Both — feasible only",
-            method = "update",
-            args   = list(
-              list(visible = c(TRUE,  FALSE, TRUE,  TRUE,  FALSE, TRUE)),
-              list(title   = "Feasible only — Coarse & Fine")
-            )
-          ),
-          list(
-            label  = "Both — not feasible only",
-            method = "update",
-            args   = list(
-              list(visible = c(FALSE, TRUE,  TRUE,  FALSE, TRUE,  TRUE)),
-              list(title   = "Not feasible only — Coarse & Fine")
-            )
-          )
-        )
-      )
-    )
+go_prob_overall_interim <- function(n,
+                                    p_true_vec,
+                                    p_beta_vec,
+                                    gamma_interim,
+                                    gamma_final,
+                                    overall_min_gos = 1L,
+                                    n_trials,
+                                    method_name = "stratified") {
+  stopifnot(length(p_true_vec) == 2L, length(p_beta_vec) == 2L)
+
+  n_int  <- floor(n / 2)
+  n_add  <- n - n_int
+  cohort_names <- c("p_1", "p_2")
+
+  # ---------- Stage 1: simulate, analyse, interim decisions ----------
+  scen_stage1 <- simulateScenarios(
+    n_subjects_list     = list(rep(n_int, 2L)),
+    response_rates_list = list(p_true_vec),
+    n_trials            = n_trials
   )
 
-fig
+  analysis_stage1 <- performAnalyses(
+    scenario_list      = scen_stage1,
+    evidence_levels    = c(gamma_interim, gamma_interim),
+    target_rates       = p_beta_vec,
+    method_names       = method_name,
+    n_mcmc_iterations  = 100,
+    verbose            = FALSE
+  )
+
+  decisions_stage1 <- getGoDecisions(
+    analyses_list   = analysis_stage1,
+    cohort_names    = cohort_names,
+    evidence_levels = c(gamma_interim, gamma_interim),
+    boundary_rules  = quote(c(
+      x[1] > p_beta_vec[1],
+      x[2] > p_beta_vec[2]
+    )),
+    overall_min_gos = overall_min_gos
+  )
+
+  overall_stage1 <- decisions_stage1$scenario_1$decisions_list[[method_name]]$overall
+
+  # ---------- Stage 2: continue recruitment, analyse final ----------
+  scen_stage2 <- continueRecruitment(
+    n_subjects_add_list = list(rep(n_add, 2L)),
+    decisions_list      = decisions_stage1,
+    method_name         = method_name
+  )
+
+  analysis_stage2 <- performAnalyses(
+    scenario_list      = scen_stage2,
+    evidence_levels    = c(gamma_final, gamma_final),
+    target_rates       = p_beta_vec,
+    method_names       = method_name,
+    n_mcmc_iterations  = 100,
+    verbose            = FALSE
+  )
+
+  decisions_stage2 <- getGoDecisions(
+    analyses_list   = analysis_stage2,
+    cohort_names    = cohort_names,
+    evidence_levels = c(gamma_final, gamma_final),
+    boundary_rules  = quote(c(
+      x[1] > p_beta_vec[1],
+      x[2] > p_beta_vec[2]
+    )),
+    overall_min_gos = overall_min_gos
+  )
+
+  overall_final <- decisions_stage2$scenario_1$decisions_list[[method_name]]$overall
+
+  # early futility: if interim overall == FALSE → cannot be Go at the end
+  overall_final_adj <- ifelse(overall_stage1, overall_final, FALSE)
+
+  mean(overall_final_adj)
+}
