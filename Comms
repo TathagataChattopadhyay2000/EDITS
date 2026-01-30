@@ -1,70 +1,18 @@
-getRecruitment <- function (
-
-  n_subjects_required,
+getNSubjectsNormal <- function(
   recruitment_per_month,
   start_date,
-
+  analysis_dates,
   date_format = "%m/%d/%Y"
-
 ) {
+  recruitment_per_day <- recruitment_per_month * (12 / 365)
 
+  start_date     <- as.Date(start_date, format = date_format)
+  analysis_dates <- as.Date(analysis_dates, format = date_format)
 
-  checkmate::assert_numeric(
-    
-    n_subjects_required, lower = 0, any.missing = FALSE,
-  .var.name = "Providing a matrix of non-negative integers for the argument 'n_subjects_required'"
-  )
+  n_subjects_matrix <- floor((analysis_dates - start_date) %o% recruitment_per_day)
 
-  checkmate::assert_true(
-    
-    checkmate::test_integerish(n_subjects_required, lower = 0),
-    .var.name = "Providing a matrix of non-negative integers for the argument 'n_subjects_required'"
-    )
+  rownames(n_subjects_matrix) <- format(analysis_dates, format = date_format)
+  colnames(n_subjects_matrix) <- paste0("cohort_", seq_len(ncol(n_subjects_matrix)))
 
-  checkmate::assert_numeric(
-    
-    recruitment_per_month, lower = 0, any.missing = FALSE,
-    .var.name = "Providing a vector of non-negative numerics for the argument 'recruitment_per_month'")
-
-  checkmate::assert_string(
-    
-    start_date, pattern = ".+",
-    .var.name = "Please provide a string in the format 'date_format' of for the argument 'start_date'")
-
-  ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
-  
-  hist_index <- recruitment_per_month == 0
-
-  recruitment_per_day <- recruitment_per_month[!hist_index] * (12 / 365)
-
-  start_date <- as.Date(start_date, format = date_format)
-
-  n_subjects_required <- convertVector2Matrix(n_subjects_required)
-
-  checkmate::assert_true(
-    length(recruitment_per_month) == ncol(n_subjects_required))
-
-  days_required <- apply(convertVector2Matrix(n_subjects_required[, !hist_index]),
-                         1, function (n_subj) {
-                           max(ceiling(n_subj * recruitment_per_day^-1))
-                         })
-
-  n_subjects_matrix_0 <- getNSubjects(
-    recruitment_per_month = recruitment_per_month[!hist_index],
-    start_date            = start_date,
-    analysis_dates        = start_date + days_required,
-    date_format           = date_format)
-
-  n_subjects_matrix <- matrix(NA,
-                              ncol = ncol(n_subjects_required),
-                              nrow = nrow(n_subjects_required))
-
-  n_subjects_matrix[, !hist_index] <- n_subjects_matrix_0
-  n_subjects_matrix[, hist_index]  <- n_subjects_required[, hist_index]
-
-  rownames(n_subjects_matrix) <- rownames(n_subjects_matrix_0)
-  colnames(n_subjects_matrix) <- paste0("cohort_", seq_len(ncol(n_subjects_required)))
-
-  return (n_subjects_matrix)
-
+  return(n_subjects_matrix)
 }
