@@ -1,18 +1,86 @@
-getNSubjectsNormal <- function(
-  recruitment_per_month,
-  start_date,
-  analysis_dates,
-  date_format = "%m/%d/%Y"
+#' @title createTrial
+#' @description This function creates an object of class `scenario_list_normal`
+#' for a single trial outcome, which can subsequently be analyzed with other
+#' functions of `bhmbasket`, e.g. \code{\link[bhmbasket]{performAnalysesNormal}}.
+#'
+#' @param n_subjects A vector of integers for the number of subjects in the trial outcome
+#'   per cohort.
+#' @param means A vector of numerics for the (true or observed) means in the trial outcome
+#'   per cohort.
+#' @param sd A positive numeric value for the common standard deviation.
+#'
+#' @return An object of class `scenario_list_normal` with the scenario data for a
+#' single trial outcome.
+#'
+#' @details This function is a wrapper for \code{\link[bhmbasket]{simulateScenariosNormal}} with
+#' \preformatted{
+#' simulateScenariosNormal(
+#'   n_subjects_list = list(n_subjects),
+#'   mean_list       = list(means),
+#'   sd              = sd,
+#'   n_trials        = 1
+#' )
+#' }
+#'
+#' @seealso
+#'   \code{\link[bhmbasket]{simulateScenariosNormal}}
+#'   \code{\link[bhmbasket]{performAnalysesNormal}}
+#'
+#' @author Stephan Wojciekowski (adapted to normal endpoint)
+#' @rdname createTrial
+#' @examples
+#'   trial_outcome <- createTrial(
+#'     n_subjects = c(10, 20, 30),
+#'     means      = c(0.5, 0.7, 0.9),
+#'     sd         = 1
+#'   )
+#' @export
+#' @md
+createTrial <- function(
+  n_subjects,
+  means,
+  sd
 ) {
-  recruitment_per_day <- recruitment_per_month * (12 / 365)
+  error_n_subjects <- "Providing a vector of integers for the argument 'n_subjects'"
+  error_means      <- "Providing a vector of numerics for the argument 'means'"
+  error_sd         <- "Providing a positive numeric value for the argument 'sd'"
 
-  start_date     <- as.Date(start_date, format = date_format)
-  analysis_dates <- as.Date(analysis_dates, format = date_format)
+  checkmate::assert_integerish(
+    n_subjects,
+    any.missing = FALSE,
+    min.len     = 1,
+    .var.name   = error_n_subjects
+  )
 
-  n_subjects_matrix <- floor((analysis_dates - start_date) %o% recruitment_per_day)
+  checkmate::assert_numeric(
+    means,
+    any.missing = FALSE,
+    min.len     = 1,
+    .var.name   = error_means
+  )
 
-  rownames(n_subjects_matrix) <- format(analysis_dates, format = date_format)
-  colnames(n_subjects_matrix) <- paste0("cohort_", seq_len(ncol(n_subjects_matrix)))
+  checkmate::assert_true(
+    length(n_subjects) == length(means),
+    .var.name = "n_subjects and means must have the same length"
+  )
 
-  return(n_subjects_matrix)
+  checkmate::assert_number(
+    sd,
+    lower     = 0,
+    finite    = TRUE,
+    .var.name = error_sd
+  )
+
+  ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
+
+  utils::capture.output({
+    trial <- simulateScenariosNormal(
+      n_subjects_list = list(as.integer(n_subjects)),
+      mean_list       = list(as.numeric(means)),
+      sd              = sd,
+      n_trials        = 1
+    )
+  })
+
+  return(trial)
 }
