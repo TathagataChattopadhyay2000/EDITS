@@ -1,57 +1,108 @@
-#' @title loadScenariosNormal
-#' @md
-#' @description
-#' Load normal-endpoint scenarios saved with `saveScenariosNormal()`.
-#'
-#' @param scenario_numbers A vector of positive integers naming the scenarios to be loaded.
-#' @param load_path A string for the directory where the scenarios are stored,
-#'   Default: [base::tempdir()].
-#'
-#' @return
-#' An object of class `scenario_list_normal`.
-#'
-#' @seealso
-#'  \code{\link[bhmbasket]{simulateScenariosNormal}}
-#'  \code{\link[bhmbasket]{saveScenariosNormal}}
-#'  \code{\link[base]{tempdir}}
-#'
-#' @examples
-#' \dontrun{
-#'   scenarios_list <- simulateScenariosNormal(
-#'     n_subjects_list = list(c(50, 50)),
-#'     mean_list       = list(c(0, 1)),
-#'     sd              = 1,
-#'     n_trials        = 10
-#'   )
-#'
-#'   save_info      <- saveScenariosNormal(scenarios_list)
-#'   scenarios_list <- loadScenariosNormal(
-#'     scenario_numbers = save_info$scenario_numbers,
-#'     load_path        = save_info$path
-#'   )
-#' }
-#' @export
-loadScenariosNormal <- function(
-  scenario_numbers,
-  load_path = tempdir()
+getScenarioNormal <- function(
+  n_subjects,
+  means,
+  sd,
+  cohort_names = seq_along(n_subjects),
+  n_trials     = 1e4
 ) {
+
   checkmate::assert_integerish(
-    scenario_numbers,
-    lower      = 1,
+    n_subjects,
+    lower       = 1,
     any.missing = FALSE,
-    .var.name  = "Providing a vector of positive integers for the argument 'scenario_numbers'"
+    .var.name   = "n_subjects"
   )
   
-  checkmate::assert_string(
-    load_path,
-    .var.name = "Providing a string for the argument 'load_path'"
+  checkmate::assert_numeric(
+    means,
+    any.missing = FALSE,
+    len         = length(n_subjects),
+    .var.name   = "means"
   )
   
-  files <- file.path(load_path, paste0("scenario_data_", scenario_numbers, ".rds"))
-  scenario_list <- lapply(files, readRDS)
+  checkmate::assert_numeric(
+    sd,
+    any.missing = FALSE,
+    lower       = 0,
+    .var.name   = "sd"
+  )
   
-  names(scenario_list) <- paste0("scenario_", scenario_numbers)
-  class(scenario_list) <- "scenario_list_normal"
+  # allow scalar sd or per-cohort sd
+  if (length(sd) == 1L) {
+    sd_vec <- rep(sd, length(n_subjects))
+  } else {
+    checkmate::assert_true(
+      length(sd) == length(n_subjects),
+      .var.name = "sd must be length 1 or length(n_subjects)"
+    )
+    sd_vec <- sd
+  }
   
-  return(scenario_list)
+  checkmate::assert_integerish(
+    n_trials,
+    lower       = 1,
+    any.missing = FALSE,
+    len         = 1L,
+    .var.name   = "n_trials"
+  )
+  
+  checkmate::assert_true(
+    length(cohort_names) == length(n_subjects),
+    .var.name = "cohort_names must match length of n_subjects"
+  )
+  
+  K                <- length(n_subjects)
+  cohort_names_chr <- as.character(cohort_names)
+  
+  # matrix of planned sample sizes (same as binary version, just no responders)
+  n_subjects_mat <- matrix(
+    n_subjects,
+    nrow = n_trials,
+    ncol = K,
+    byrow = TRUE
+  )
+  colnames(n_subjects_mat) <- paste0("n_", cohort_names_chr)
+  
+  # trials[[t]]$y_list is a list of length K, each element is a numeric vector
+  # of length n_subjects[k] with Normal(mean_k, sd_k^2) data
+  trials <- vector("list", n_trials)
+  
+  for (t in seq_len(n_trials)) {
+    y_list <- vector("list", K)
+    for (k in seq_len(K)) {
+      y_list[[k]] <- stats::rnorm(
+        n    = n_subjects[k],
+        mean = means[k],
+        sd   = sd_vec[k]
+      )
+    }
+    names(y_list) <- paste0("c_", cohort_names_chr)
+    
+    trials[[t]] <- list(
+      y_list     = y_list,
+      n_subjects = n_subjects   # per-trial copy (optional, but handy)
+    )
+  }
+  
+  previous_gos <- matrix(
+    TRUE,
+    byrow = TRUE,
+    ncol  = K + 1L,
+    nrow  = n_trials
+  )
+  colnames(previous_gos) <- c("overall", paste0("decision_", cohort_names_chr))
+  
+  scenario_data <- list(
+    n_subjects        = n_subjects_mat,   # design/sample size per trial
+    means             = means,           # true means per cohort
+    sd                = sd_vec,          # sd per cohort
+    trials            = trials,          # list of outcome data
+    previous_analyses = list(
+      go_decisions   = previous_gos,
+      post_quantiles = NULL
+    ),
+    n_trials          = n_trials
+  )
+  
+  return(scenario_data)
 }
