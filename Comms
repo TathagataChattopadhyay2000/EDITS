@@ -1,43 +1,57 @@
+#' @title loadScenariosNormal
+#' @md
+#' @description
+#' Load normal-endpoint scenarios saved with `saveScenariosNormal()`.
+#'
+#' @param scenario_numbers A vector of positive integers naming the scenarios to be loaded.
+#' @param load_path A string for the directory where the scenarios are stored,
+#'   Default: [base::tempdir()].
+#'
+#' @return
+#' An object of class `scenario_list_normal`.
+#'
+#' @seealso
+#'  \code{\link[bhmbasket]{simulateScenariosNormal}}
+#'  \code{\link[bhmbasket]{saveScenariosNormal}}
+#'  \code{\link[base]{tempdir}}
+#'
+#' @examples
+#' \dontrun{
+#'   scenarios_list <- simulateScenariosNormal(
+#'     n_subjects_list = list(c(50, 50)),
+#'     mean_list       = list(c(0, 1)),
+#'     sd              = 1,
+#'     n_trials        = 10
+#'   )
+#'
+#'   save_info      <- saveScenariosNormal(scenarios_list)
+#'   scenarios_list <- loadScenariosNormal(
+#'     scenario_numbers = save_info$scenario_numbers,
+#'     load_path        = save_info$path
+#'   )
+#' }
 #' @export
-print.scenario_list_normal <- function(x, ...) {
+loadScenariosNormal <- function(
+  scenario_numbers,
+  load_path = tempdir()
+) {
+  checkmate::assert_integerish(
+    scenario_numbers,
+    lower      = 1,
+    any.missing = FALSE,
+    .var.name  = "Providing a vector of positive integers for the argument 'scenario_numbers'"
+  )
   
-  # --- basic structure -------------------------------------------------------
-  n_scenarios    <- length(x)
-  scenario_names <- names(x)
+  checkmate::assert_string(
+    load_path,
+    .var.name = "Providing a string for the argument 'load_path'"
+  )
   
-  # true means per cohort
-  true_means   <- lapply(x, function(s) s$means)
-  n_cohorts    <- length(true_means[[1L]])
-  cohort_names <- paste0("c_", seq_len(n_cohorts))
+  files <- file.path(load_path, paste0("scenario_data_", scenario_numbers, ".rds"))
+  scenario_list <- lapply(files, readRDS)
   
-  # average sample size per cohort over trials
-  n_subjects_avg <- lapply(x, function(s) {
-    colMeans(as.matrix(s$n_subjects))
-  })
+  names(scenario_list) <- paste0("scenario_", scenario_numbers)
+  class(scenario_list) <- "scenario_list_normal"
   
-  # trial counts
-  n_trial_realizations  <- x[[1L]]$n_trials
-  n_unique_realizations <- nrow(getUniqueTrialsNormal(x))
-  
-  cat("scenario_list_normal of ", n_scenarios, " scenario",
-      ifelse(n_scenarios == 1, "", "s"),
-      " with ", n_cohorts, " cohort", ifelse(n_cohorts == 1, "", "s"),
-      "\n\n", sep = "")
-  
-  for (n in seq_along(scenario_names)) {
-    
-    df_out <- rbind(
-      "    - true means:"               = true_means[[n]],
-      "    - average number of subjects:" = n_subjects_avg[[n]]
-    )
-    
-    colnames(df_out) <- cohort_names
-    
-    cat("  -", scenario_names[n], "\n")
-    print(df_out)
-    cat("\n")
-  }
-  
-  cat("  -", n_trial_realizations,  " trial realizations per scenario\n")
-  cat("  -", n_unique_realizations, " unique trial realizations overall\n")
+  return(scenario_list)
 }
