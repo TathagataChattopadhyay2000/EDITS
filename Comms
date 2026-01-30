@@ -1,86 +1,226 @@
-#' @title createTrial
-#' @description This function creates an object of class `scenario_list_normal`
-#' for a single trial outcome, which can subsequently be analyzed with other
-#' functions of `bhmbasket`, e.g. \code{\link[bhmbasket]{performAnalysesNormal}}.
-#'
-#' @param n_subjects A vector of integers for the number of subjects in the trial outcome
-#'   per cohort.
-#' @param means A vector of numerics for the (true or observed) means in the trial outcome
-#'   per cohort.
-#' @param sd A positive numeric value for the common standard deviation.
-#'
-#' @return An object of class `scenario_list_normal` with the scenario data for a
-#' single trial outcome.
-#'
-#' @details This function is a wrapper for \code{\link[bhmbasket]{simulateScenariosNormal}} with
-#' \preformatted{
-#' simulateScenariosNormal(
-#'   n_subjects_list = list(n_subjects),
-#'   mean_list       = list(means),
-#'   sd              = sd,
-#'   n_trials        = 1
-#' )
-#' }
-#'
-#' @seealso
-#'   \code{\link[bhmbasket]{simulateScenariosNormal}}
-#'   \code{\link[bhmbasket]{performAnalysesNormal}}
-#'
-#' @author Stephan Wojciekowski (adapted to normal endpoint)
-#' @rdname createTrial
-#' @examples
-#'   trial_outcome <- createTrial(
-#'     n_subjects = c(10, 20, 30),
-#'     means      = c(0.5, 0.7, 0.9),
-#'     sd         = 1
-#'   )
-#' @export
+#' @title continueRecruitment
 #' @md
-createTrial <- function(
-  n_subjects,
-  means,
-  sd
+#' @description This function continues the recruitment of subjects for a set of scenarios
+#' based on the Go / NoGo decisions in the simulated trial outcomes of said scenarios.
+#' @param n_subjects_add_list A list that contains for each scenario an integer vector for
+#' the number of subjects per cohort to be additionally recruited.
+#' @param decisions_list A list with decisions per scenario created with
+#' `getGoDecisionsNormal()`
+#' @param method_name A string for the method name of the analysis the decisions are based on.
+#' Can be `NULL` if only one method has been used for analysis, Default: `NULL`
+#' @return An object of class `scenario_list_normal` with the scenario data for each specified scenario.
+#' @details
+#' This function is intended to be used for analyses with the following workflow:\cr
+#' `simulateScenariosNormal()` -> `performAnalysesNormal()` -> `getGoDecisionsNormal()` -> \cr
+#' `continueRecruitment()` -> `performAnalysesNormal()` -> `getGoDecisionsNormal()` -> \cr
+#' `continueRecruitment()` -> ...
+#'
+#' Note that `n_subjects_add_list` takes the additional number of subjects to be recruited,
+#' not the overall number of subjects.
+#' This way the workflow can be repeated as often as
+#' required, which can be useful e.g. for interim analyses.
+#' @examples
+#' interim_scenarios <- simulateScenariosNormal(
+#'   n_subjects_list = list(c(10, 20, 30)),
+#'   mean_list       = list(c(0, 0, 0)),
+#'   sd              = 1,
+#'   n_trials        = 10
+#' )
+#'
+#' interim_analyses <- performAnalysesNormal(
+#'   scenario_list       = interim_scenarios,
+#'   evidence_levels     = c(0.025, 0.5, 0.975),
+#'   n_mcmc_iterations   = 100
+#' )
+#'
+#' interim_gos <- getGoDecisionsNormal(
+#'   analyses_list   = interim_analyses,
+#'   cohort_names    = c("mu_1", "mu_2", "mu_3"),
+#'   evidence_levels = c(0.5, 0.8, 0.5),
+#'   boundary_rules  = quote(c(x[1] > 0.8, x[2] > 0.6, x[3] > 0.7))
+#' )
+#'
+#' scenarios_list2 <- continueRecruitment(
+#'   n_subjects_add_list = list(c(30, 20, 10)),
+#'   decisions_list      = interim_gos,
+#'   method_name         = "normal"
+#' )
+#' @seealso
+#'  \code{\link{simulateScenariosNormal}}
+#'  \code{\link{performAnalysesNormal}}
+#'  \code{\link{getGoDecisionsNormal}}
+#' @rdname continueRecruitment
+#' @author Stephan Wojciekowski (adapted for normal endpoints)
+#' @export
+continueRecruitment <- function(
+  n_subjects_add_list,
+  decisions_list,
+  method_name = NULL
 ) {
-  error_n_subjects <- "Providing a vector of integers for the argument 'n_subjects'"
-  error_means      <- "Providing a vector of numerics for the argument 'means'"
-  error_sd         <- "Providing a positive numeric value for the argument 'sd'"
 
-  checkmate::assert_integerish(
-    n_subjects,
+  error_n_subjects_add_list <-
+    "Providing a list of vectors of non-negative integers for the argument 'n_subjects_add_list'"
+  error_decisions_list <-
+    "Providing an object of class decision_list for the argument 'decisions_list'"
+  error_method_name <- simpleError(paste(
+    "Please provide a string naming an analysis method for the argument 'method_name'.",
+    "Must be 'normal' in the normal-endpoint setting."
+  ))
+
+  checkmate::assert_true(!missing(n_subjects_add_list), .var.name = error_n_subjects_add_list)
+  checkmate::assert_true(!missing(decisions_list),      .var.name = error_decisions_list)
+
+  checkmate::assert_class(decisions_list, "decision_list", .var.name = error_decisions_list)
+
+  ## determine method_name if not given
+  if (is.null(method_name)) {
+
+    n_methods <- length(decisions_list$scenario_1$decisions_list)
+
+    if (n_methods > 1) {
+      stop(error_method_name)
+    } else {
+      method_name <- names(decisions_list$scenario_1$decisions_list)
+    }
+
+  } else {
+
+    method_name <- tryCatch({
+      match.arg(
+        method_name,
+        choices    = c("normal"),
+        several.ok = FALSE
+      )
+    }, error = function(e) e)
+
+    if (inherits(method_name, "error")) stop(error_method_name)
+  }
+
+  ## ensure list structure for n_subjects_add_list
+  if (!is.list(n_subjects_add_list)) {
+    n_subjects_add_list <- rep(list(n_subjects_add_list), length(decisions_list))
+  }
+
+  checkmate::assert_list(
+    n_subjects_add_list,
+    types       = c("integer", "numeric"),
     any.missing = FALSE,
-    min.len     = 1,
-    .var.name   = error_n_subjects
+    .var.name   = error_n_subjects_add_list
   )
 
-  checkmate::assert_numeric(
-    means,
+  checkmate::assert_list(
+    n_subjects_add_list,
+    len        = length(decisions_list),
     any.missing = FALSE,
-    min.len     = 1,
-    .var.name   = error_means
+    .var.name   = "The lengths of 'n_subjects_add_list' and 'decisions_list' must be equal"
   )
 
   checkmate::assert_true(
-    length(n_subjects) == length(means),
-    .var.name = "n_subjects and means must have the same length"
-  )
-
-  checkmate::assert_number(
-    sd,
-    lower     = 0,
-    finite    = TRUE,
-    .var.name = error_sd
+    all(vapply(
+      n_subjects_add_list,
+      checkmate::test_integerish,
+      logical(1),
+      lower       = 0,
+      any.missing = FALSE
+    )),
+    .var.name = error_n_subjects_add_list
   )
 
   ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
 
-  utils::capture.output({
-    trial <- simulateScenariosNormal(
-      n_subjects_list = list(as.integer(n_subjects)),
-      mean_list       = list(as.numeric(means)),
-      sd              = sd,
-      n_trials        = 1
-    )
-  })
+  scenario_numbers <- as.numeric(sub("scenario_", "", names(decisions_list)))
 
-  return(trial)
+  scenario_list <- vector(mode = "list", length = length(decisions_list))
+  names(scenario_list) <- paste0("scenario_", scenario_numbers)
+
+  for (s in seq_along(scenario_list)) {
+
+    analysis_params <- decisions_list[[s]]$analysis_data$analysis_parameters
+
+    if (!(method_name %in% analysis_params$method_names)) {
+      stop(simpleError("Selected method_name not analyzed"))
+    }
+
+    n_subjects_add <- as.integer(n_subjects_add_list[[s]])
+
+    scenario_data   <- decisions_list[[s]]$scenario_data
+    n_subjects      <- scenario_data$n_subjects     # matrix: trials x cohorts
+    n_trials        <- scenario_data$n_trials
+    means           <- scenario_data$means         # vector length K
+    sd              <- scenario_data$sd            # scalar (or vector length K)
+
+    K <- ncol(n_subjects)
+
+    checkmate::assert_true(
+      length(n_subjects_add) == K,
+      .var.name = "The length of 'n_subjects_add' must match the number of cohorts"
+    )
+
+    ## ensure sd is vector of length K
+    if (length(sd) == 1L) {
+      sd_vec <- rep(sd, K)
+    } else {
+      sd_vec <- sd
+    }
+
+    ## decisions
+    go_decisions <- decisions_list[[s]]$decisions_list[[method_name]]
+    previous_gos <- go_decisions
+
+    if ("overall" %in% colnames(go_decisions)) {
+      overall_gos  <- go_decisions[, "overall"] > 0
+      go_decisions <- go_decisions[, colnames(go_decisions) != "overall", drop = FALSE]
+    } else {
+      overall_gos <- rep(TRUE, nrow(go_decisions))
+    }
+
+    ## we expect one decision column per cohort: decision_1, decision_2, ...
+    if (!all(seq_len(K) %in% as.numeric(sub("decision_", "", colnames(go_decisions))))) {
+      stop(simpleError(
+        "There must be a decision for each cohort in the 'decisions_list'"
+      ))
+    }
+
+    go_decisions <- go_decisions > 0
+
+    ## copy original structures
+    n_subjects_new <- n_subjects
+    trials_new     <- scenario_data$trials
+
+    ## simulate and append additional normal outcomes
+    for (t in seq_len(n_trials)) {
+      if (!overall_gos[t]) next
+
+      for (k in seq_len(K)) {
+        if (!go_decisions[t, k]) next
+        n_add <- n_subjects_add[k]
+        if (n_add <= 0) next
+
+        y_add <- stats::rnorm(n_add, mean = means[k], sd = sd_vec[k])
+
+        trials_new[[t]]$y_list[[k]] <-
+          c(trials_new[[t]]$y_list[[k]], y_add)
+
+        n_subjects_new[t, k] <- n_subjects_new[t, k] + n_add
+      }
+    }
+
+    scenario_list[[s]] <- list(
+      n_subjects        = n_subjects_new,
+      trials            = trials_new,
+      means             = means,
+      sd                = sd,
+      previous_analyses = list(
+        go_decisions   = previous_gos,
+        post_quantiles = decisions_list[[s]]$analysis_data$quantiles_list
+      ),
+      n_trials          = n_trials
+    )
+
+    scenario_list[[s]]$scenario_number <- scenario_data$scenario_number
+  }
+
+  class(scenario_list) <- "scenario_list_normal"
+
+  return(scenario_list)
 }
