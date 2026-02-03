@@ -1,12 +1,13 @@
-trials <- vector("list", length = n_trials)
-    
-    for (t in seq_len(n_trials)) {
-      y_list <- vector("list", length = n_cohorts)
-      for (k in seq_len(n_cohorts)) {
-        n_k        <- n_subj_vec[k]
-        y_list[[k]] <- stats::rnorm(n_k, mean = mu_vec[k], sd = sd_vec[k])
-      }
-      trials[[t]] <- list(y_list = y_list)
-    }
+03-Feb-2026 Performing Analyses (normal endpoint)
+   Analyzing 1 scenario (1 unique trial group)
+   Running bhm_normal model on representative trials ...
+Error in rjags::jags.model(file = model_file, data = data, inits = inits,  : 
+  RUNTIME ERROR:
+Compilation error on line 3.
+Unknown variable J
+Either supply values for this variable with the data
+or define it  on the left hand side of a relation.
 
-I have this
+In addition: Warning message:
+In rjags::jags.model(file = model_file, data = data, inits = inits,  :
+  Unused variable "K" in data
