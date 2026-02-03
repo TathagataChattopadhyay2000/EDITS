@@ -1,13 +1,84 @@
-03-Feb-2026 Performing Analyses (normal endpoint)
-   Analyzing 1 scenario (1 unique trial group)
-   Running bhm_normal model on representative trials ...
-Error in rjags::jags.model(file = model_file, data = data, inits = inits,  : 
-  RUNTIME ERROR:
-Compilation error on line 3.
-Unknown variable J
-Either supply values for this variable with the data
-or define it  on the left hand side of a relation.
-
-In addition: Warning message:
-In rjags::jags.model(file = model_file, data = data, inits = inits,  :
-  Unused variable "K" in data
+getPostQuantilesOfTrialNormal <- function(
+    y_list,
+    j_data,
+    j_parameters,
+    j_model_file,
+    method_name,
+    quantiles,
+    calc_differences,
+    n_mcmc_iterations,
+    save_path,
+    save_trial
+) {
+  # number of cohorts
+  K <- length(y_list)
+  if (K < 1L) stop("y_list must be a non-empty list of numeric vectors.")
+  
+  # subjects per cohort
+  n_vec <- vapply(y_list, length, integer(1L))
+  if (any(n_vec <= 0L)) {
+    stop("All cohorts in y_list must have at least one observation.")
+  }
+  
+  # pad to rectangular y[K, max_n]
+  max_n <- max(n_vec)
+  y_mat <- matrix(NA_real_, nrow = K, ncol = max_n)
+  for (k in seq_len(K)) {
+    y_mat[k, seq_len(n_vec[k])] <- y_list[[k]]
+  }
+  
+  # 🔧 IMPORTANT: JAGS expects J, not K
+  j_data_full <- c(
+    j_data,
+    list(
+      J = K,      # <- number of cohorts for bhm_normal.txt
+      n = n_vec,  # length-J integer vector
+      y = y_mat   # J x max_n matrix
+    )
+  )
+  
+  # run JAGS
+  posterior_samples <- getPosteriorsNormal(
+    j_parameters      = j_parameters,
+    j_model_file      = j_model_file,
+    j_data            = j_data_full,
+    n_mcmc_iterations = n_mcmc_iterations
+  )
+  
+  # extract mu_k columns (cohort means)
+  mu_cols <- grepl("^mu_[0-9]+$", colnames(posterior_samples))
+  mu_post <- posterior_samples[, mu_cols, drop = FALSE]
+  
+  if (ncol(mu_post) != K) {
+    stop("Could not identify exactly K mu columns in posterior_samples.")
+  }
+  
+  # for compatibility with decision code, call them p_1, p_2, ...
+  colnames(mu_post) <- paste0("p_", seq_len(K))
+  
+  # optional differences (mu_i - mu_j)
+  if (!is.null(calc_differences)) {
+    calc_differences <- convertVector2Matrix(calc_differences)
+    mu_post <- calcDiffsMCMCNormal(
+      posterior_samples = mu_post,
+      calc_differences  = calc_differences
+    )
+  }
+  
+  # optional save of raw MCMC sample
+  if (!is.null(save_path) && !is.null(save_trial)) {
+    saveRDS(
+      posterior_samples,
+      file = file.path(
+        save_path,
+        paste0("posterior_samples_", save_trial, "_", method_name, "_rds")
+      )
+    )
+  }
+  
+  # turn posterior sample into quantile table + mean + sd
+  posterior2quantilesNormal(
+    quantiles  = quantiles,
+    posteriors = mu_post
+  )
+}
