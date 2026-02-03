@@ -1,10 +1,10 @@
 performAnalysesNormal <- function(
     scenario_list,
-    evidence_levels        = c(0.025, 0.05, 0.5, 0.8, 0.9, 0.95, 0.975),
-    calc_differences       = NULL,
-    n_mcmc_iterations      = 1e4,
-    prior_parameters_normal= NULL,
-    verbose                = TRUE
+    evidence_levels         = c(0.025, 0.05, 0.5, 0.8, 0.9, 0.95, 0.975),
+    calc_differences        = NULL,
+    n_mcmc_iterations       = 1e4,
+    prior_parameters_normal = NULL,
+    verbose                 = TRUE
 ) {
   error_scenario_list <- simpleError(
     "Please provide an object of class 'scenario_list_normal' for 'scenario_list'")
@@ -18,14 +18,15 @@ performAnalysesNormal <- function(
   if (missing(scenario_list)) stop(error_scenario_list)
   if (!is.scenario_list_normal(scenario_list)) stop(error_scenario_list)
   
-  if (!is.numeric.in.zero.one(evidence_levels)) stop(error_evidence_levels)
+  if (!is.numeric.in.zero.one(evidence_levels))       stop(error_evidence_levels)
   if (!is.single.positive.wholenumber(n_mcmc_iterations)) stop(error_n_mcmc_iterations)
-  if (!is.logical(verbose) || length(verbose) != 1L) stop(error_verbose)
+  if (!is.logical(verbose) || length(verbose) != 1L)  stop(error_verbose)
   
   if (!is.null(calc_differences)) {
     calc_differences <- convertVector2Matrix(calc_differences)
   }
   
+  ## quantiles to compute (same pattern as original)
   quantiles <- sort(unique(round(
     1 - c(0.025, 0.05, 0.5, 0.8, 0.9, 0.95, 0.975, evidence_levels),
     9
@@ -42,20 +43,18 @@ performAnalysesNormal <- function(
   
   scenario_numbers <- sapply(scenario_list, function(x) x$scenario_number)
   
+  ## --------------------------------------------------------------------------
+  ## 1) Find unique trial groups via binning on trial-level means
+  ## --------------------------------------------------------------------------
+  ## nbins is fixed here; if you later want it configurable, just add an argument.
+  nbins       <- 5L
+  unique_info <- getUniqueTrialsNormal(
+    scenario_list = scenario_list,
+    nbins         = nbins,
+    bin_breaks    = NULL
+  )
   
-  # --- NEW: build bin index and representatives ---
-  if (is.null(bin_breaks)) {
-    # default: derive number of cohorts from first scenario
-    n_cohorts <- length(scenario_list[[1]]$trials[[1]]$y_list)
-    # crude default breaks; you should set this explicitly upstream
-    bin_breaks <- rep(list(seq(-10, 10, by = 0.25)), n_cohorts)
-    names(bin_breaks) <- paste0("c_", seq_len(n_cohorts))
-  }
-  
-  bin_table        <- computeTrialBinsNormal(scenario_list, bin_breaks)
-  representatives  <- selectRepresentativesNormal(bin_table)
-  rep_trials       <- buildRepInputsNormal(scenario_list, representatives)
-  signature_index  <- buildSignatureIndex(bin_table, representatives)
+  groups <- unique_info$groups  # group_id, signature, rep_scenario, rep_trial, n_members
   
   if (verbose) {
     message(
@@ -66,26 +65,41 @@ performAnalysesNormal <- function(
       "   Analyzing ",
       length(scenario_numbers), " scenario",
       ifelse(length(scenario_numbers) == 1, "", "s"),
-      " (", length(rep_trials), " unique bin group",
-      ifelse(length(rep_trials) == 1, "", "s"), ")"
+      " (", nrow(groups), " unique trial group",
+      ifelse(nrow(groups) == 1, "", "s"), ")"
     )
   }
   
+  ## --------------------------------------------------------------------------
+  ## 2) Run bhm_normal once per unique group (representative trial)
+  ## --------------------------------------------------------------------------
   if (verbose) {
     start_time <- Sys.time()
     message("   Running bhm_normal model on representative trials ...")
   }
   
-  # --- CHANGED: run per representative trial (one per unique signature) ---
-  method_quantiles_by_rep <- getPostQuantilesNormal_fromRepTrials(
-    rep_trials        = rep_trials,
-    quantiles         = quantiles,
-    j_parameters      = j_parameters,
-    j_model_file      = j_model_file,
-    j_data_fixed      = j_data_fixed,
-    calc_differences  = calc_differences,
-    n_mcmc_iterations = n_mcmc_iterations
-  )
+  n_groups                 <- nrow(groups)
+  method_quantiles_by_group <- vector("list", n_groups)
+  
+  for (g in seq_len(n_groups)) {
+    s_idx <- groups$rep_scenario[g]
+    t_idx <- groups$rep_trial[g]
+    
+    y_list <- scenario_list[[s_idx]]$trials[[t_idx]]$y_list
+    
+    method_quantiles_by_group[[g]] <- getPostQuantilesOfTrialNormal(
+      y_list            = y_list,
+      j_data            = j_data_fixed,
+      j_parameters      = j_parameters,
+      j_model_file      = j_model_file,
+      method_name       = "bhm_normal",
+      quantiles         = quantiles,
+      calc_differences  = calc_differences,
+      n_mcmc_iterations = n_mcmc_iterations,
+      save_path         = NULL,
+      save_trial        = NULL
+    )
+  }
   
   if (verbose) {
     message(
@@ -95,16 +109,18 @@ performAnalysesNormal <- function(
     )
   }
   
-  # --- CHANGED: map back by (scenario,trial) -> rep_id ---
+  ## --------------------------------------------------------------------------
+  ## 3) Map group results back to all trials
+  ## --------------------------------------------------------------------------
   if (verbose) {
     start_time <- Sys.time()
-    message("   Processing scenarios (mapping bin results) ...")
+    message("   Processing scenarios (mapping grouped results) ...")
   }
   
-  scenario_method_quantiles_list <- mapByRepIdNormal(
+  scenario_method_quantiles_list <- mapUniqueTrialsNormal(
     scenario_list             = scenario_list,
-    method_quantiles_by_rep   = method_quantiles_by_rep,
-    signature_index           = signature_index
+    method_quantiles_by_group = method_quantiles_by_group,
+    unique_info               = unique_info
   )
   
   if (verbose) {
@@ -115,7 +131,9 @@ performAnalysesNormal <- function(
     )
   }
   
-  # --- output unchanged below, except we plug in the mapped results ---
+  ## --------------------------------------------------------------------------
+  ## 4) Build analysis_list_normal (same structure as before)
+  ## --------------------------------------------------------------------------
   analyses_list        <- vector("list", length(scenario_numbers))
   names(analyses_list) <- paste0("scenario_", scenario_numbers)
   
@@ -129,7 +147,8 @@ performAnalysesNormal <- function(
         method_names            = "normal",
         prior_parameters_normal = prior_parameters_normal,
         n_mcmc_iterations       = n_mcmc_iterations,
-        bin_breaks              = bin_breaks  # <-- record for reproducibility
+        nbins                   = nbins,
+        bin_breaks              = unique_info$breaks
       )
     )
   }
