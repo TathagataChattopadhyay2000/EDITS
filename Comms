@@ -1,134 +1,116 @@
+# -------------------------------------------------------------------
+# Borrowing diagnostics for a selected design (uses existing settings)
+# -------------------------------------------------------------------
+
 library(ggplot2)
 
-# Convert Beta mean+variance to (alpha, beta, ESS)
+# Helper: convert Beta mean + variance to (alpha, beta, ESS)
 beta_moments_to_params <- function(mu, sigma2) {
-  S <- mu * (1 - mu) / sigma2 - 1
+  S     <- mu * (1 - mu) / sigma2 - 1
   alpha <- mu * S
   beta  <- (1 - mu) * S
   list(alpha = alpha, beta = beta, ESS = alpha + beta)
 }
 
-# Build data frames for shrinkage and effective sample size ("borrowing")
-make_borrowing_data <- function(n,
-                                p_true_vec,
-                                p_beta_vec,
-                                methods = c("stratified", "berry", "pooled"),
-                                evidence_levels = seq(0.5, 0.95, by = 0.01),
-                                n_mcmc_iterations = 2000) {
-  stopifnot(length(p_true_vec) == 2L)
+# Choose a design for which you want to visualise borrowing
+# (You can change this to any n and scenario you like, e.g. pick a feasible (n, gamma) from oc_all)
+n_borrow      <- 30              # sample size per cohort
+p_true_borrow <- p1              # here: use your alternative scenario
+methods_borrow <- method_names   # e.g. c("stratified", "berry", "pooled") if available
 
-  # 1) Simulate one trial for the chosen n and true rates
-  scen <- simulateScenarios(
-    n_subjects_list     = list(c(n, n)),
-    response_rates_list = list(p_true_vec),
-    n_trials            = 1
-  )
-
-  # 2) Run analyses for all methods in one call
-  analyses <- performAnalyses(
-    scenario_list      = scen,
-    evidence_levels    = evidence_levels,
-    target_rates       = p_beta_vec,
-    method_names       = methods,
-    n_mcmc_iterations  = n_mcmc_iterations,
-    verbose            = FALSE
-  )
-
-  # 3) Extract per-method posterior summaries for p_1, p_2
-  extract_for_method <- function(m) {
-    # Assumes: analyses[[m]][["scenario_1"]]$post_quantiles is a list per trial
-    q_list <- analyses[[m]][["scenario_1"]]$post_quantiles
-    q1     <- q_list[[1L]]  # one trial only
-
-    # rows: "2.5%", "50%", "97.5%", "Mean", "SD"
-    out <- data.frame(
-      method = m,
-      cohort = c("1", "2"),
-      mean   = c(q1["Mean", "p_1"],  q1["Mean", "p_2"]),
-      lower  = c(q1["2.5%", "p_1"],  q1["2.5%", "p_2"]),
-      upper  = c(q1["97.5%", "p_1"], q1["97.5%", "p_2"]),
-      sd     = c(q1["SD", "p_1"],    q1["SD", "p_2"]),
-      n_obs  = n
-    )
-    out
-  }
-
-  shrinkage_df <- do.call(
-    rbind,
-    lapply(methods, extract_for_method)
-  )
-
-  # 4) Compute ESS and "borrowed" patients from posterior mean + SD
-  borrowing_df <- shrinkage_df
-  borrowing_df$ESS      <- NA_real_
-  borrowing_df$borrowed <- NA_real_
-
-  for (i in seq_len(nrow(borrowing_df))) {
-    mu    <- borrowing_df$mean[i]
-    var   <- borrowing_df$sd[i]^2
-    pars  <- beta_moments_to_params(mu, var)
-    borrowing_df$ESS[i]      <- pars$ESS
-    borrowing_df$borrowed[i] <- pars$ESS - borrowing_df$n_obs[i]
-  }
-
-  list(
-    shrinkage_df = shrinkage_df,
-    borrowing_df = borrowing_df
-  )
-}
-
-# Build the two ggplots from the data ------------------------------------------
-
-make_shrinkage_plot <- function(shrinkage_df) {
-  ggplot(shrinkage_df,
-         aes(x = cohort, y = mean,
-             colour = method, group = method)) +
-    geom_point(position = position_dodge(width = 0.35), size = 2) +
-    geom_errorbar(aes(ymin = lower, ymax = upper),
-                  width = 0.1,
-                  position = position_dodge(width = 0.35)) +
-    labs(
-      x = "Cohort",
-      y = "Posterior mean response probability",
-      title = "Borrowing as shrinkage of cohort estimates"
-    ) +
-    theme_minimal()
-}
-
-make_borrowed_plot <- function(borrowing_df) {
-  ggplot(borrowing_df,
-         aes(x = cohort, y = borrowed, fill = method)) +
-    geom_col(position = position_dodge(width = 0.6)) +
-    labs(
-      x = "Cohort",
-      y = "Effective extra patients (ESS - n)",
-      title = "Borrowing expressed as effective extra sample size"
-    ) +
-    theme_minimal()
-}
-
-# -------------------------------------------------------------------
-# Example: run for one configuration and draw the two borrowing plots
-# -------------------------------------------------------------------
-
-set.seed(123)
-
-n_example       <- 30
-p_true_example  <- c(0.40, 0.60)   # true rates for cohorts 1 and 2
-p_beta_example  <- c(0.50, 0.50)
-methods_example <- c("stratified", "berry", "pooled")  # adapt to what you have
-
-borrow_data <- make_borrowing_data(
-  n               = n_example,
-  p_true_vec      = p_true_example,
-  p_beta_vec      = p_beta_example,
-  methods         = methods_example,
-  evidence_levels = seq(0.5, 0.95, by = 0.01),
-  n_mcmc_iterations = 2000
+# Simulate ONE trial for this configuration
+scen_borrow <- simulateScenarios(
+  n_subjects_list     = list(c(n_borrow, n_borrow)),
+  response_rates_list = list(p_true_borrow),
+  n_trials            = 1
 )
 
-shrinkage_plot <- make_shrinkage_plot(borrow_data$shrinkage_df)
-borrowed_plot  <- make_borrowed_plot(borrow_data$borrowing_df)
+# Run analyses for all methods for this single trial
+analyses_borrow <- performAnalyses(
+  scenario_list      = scen_borrow,
+  evidence_levels    = seq(0.5, 0.95, by = 0.01),
+  target_rates       = p_beta_vec,
+  method_names       = methods_borrow,
+  n_mcmc_iterations  = 2000,
+  verbose            = FALSE
+)
+
+# Build shrinkage_df: posterior means + intervals for each method and cohort
+shrinkage_list <- list()
+
+for (m in methods_borrow) {
+  # post_quantiles is a list (one element per trial); we simulated n_trials = 1
+  q_list <- analyses_borrow[[m]][["scenario_1"]]$post_quantiles
+  q1     <- q_list[[1L]]
+  
+  df_m <- data.frame(
+    method = m,
+    cohort = c("1", "2"),
+    mean   = c(q1["Mean",   "p_1"],  q1["Mean",   "p_2"]),
+    lower  = c(q1["2.5%",   "p_1"],  q1["2.5%",   "p_2"]),
+    upper  = c(q1["97.5%",  "p_1"],  q1["97.5%",  "p_2"]),
+    sd     = c(q1["SD",     "p_1"],  q1["SD",     "p_2"]),
+    n_obs  = n_borrow
+  )
+  shrinkage_list[[m]] <- df_m
+}
+
+shrinkage_df <- bind_rows(shrinkage_list)
+
+# Compute ESS and "borrowed" patients for each method and cohort
+borrowing_df <- shrinkage_df
+borrowing_df$ESS      <- NA_real_
+borrowing_df$borrowed <- NA_real_
+
+for (i in seq_len(nrow(borrowing_df))) {
+  mu  <- borrowing_df$mean[i]
+  v   <- borrowing_df$sd[i]^2
+  par <- beta_moments_to_params(mu, v)
+  borrowing_df$ESS[i]      <- par$ESS
+  borrowing_df$borrowed[i] <- par$ESS - borrowing_df$n_obs[i]
+}
+
+# -------------------------------------------------------------------
+# Plot 1: Shrinkage (posterior means + 95% CI per method & cohort)
+# -------------------------------------------------------------------
+
+shrinkage_plot <- ggplot(
+  shrinkage_df,
+  aes(x = cohort, y = mean, colour = method, group = method)
+) +
+  geom_point(position = position_dodge(width = 0.35), size = 2) +
+  geom_errorbar(
+    aes(ymin = lower, ymax = upper),
+    width = 0.1,
+    position = position_dodge(width = 0.35)
+  ) +
+  labs(
+    x = "Cohort",
+    y = "Posterior mean response probability",
+    title = paste0(
+      "Shrinkage of cohort estimates (n = ", n_borrow,
+      ", p_true = (", paste(p_true_borrow, collapse = ", "), "))"
+    )
+  ) +
+  theme_minimal()
+
+# -------------------------------------------------------------------
+# Plot 2: Borrowing as effective extra sample size (ESS - n_obs)
+# -------------------------------------------------------------------
+
+borrowed_plot <- ggplot(
+  borrowing_df,
+  aes(x = cohort, y = borrowed, fill = method)
+) +
+  geom_col(position = position_dodge(width = 0.6)) +
+  labs(
+    x = "Cohort",
+    y = "Effective extra patients (ESS - n)",
+    title = paste0(
+      "Borrowing expressed as effective extra sample size (n = ", n_borrow, ")"
+    )
+  ) +
+  theme_minimal()
 
 shrinkage_plot
 borrowed_plot
