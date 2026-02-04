@@ -1,5 +1,6 @@
 doFuture::registerDoFuture()
-future::plan(future::sequential())
+#future::plan(future::multisession())
+foreach::registerDoSEQ()
 
 library(dplyr)
 library(plotly)
@@ -12,7 +13,7 @@ p_beta_vec   <- c(0.50, 0.50)   # clinical boundary
 type_1_error <- 0.20            # allowed Type I error
 power_min    <- 0.80            # required power
 n_trials_oc  <- 100             # simulated trials per (n, gamma)
-method_name  <- "stratified"    # backend used for OC evaluation
+method_names <- c("stratified", "berry")  # <-- compare these methods
 
 # Grids for n and gamma --------------------------------------------------------
 
@@ -24,16 +25,19 @@ set.seed(2026)
 # Coarse grid: directly compute OC table ---------------------------------------
 
 oc_results_coarse <- expand.grid(
-  n     = n_grid_coarse,
-  gamma = gamma_grid_coarse
+  n      = n_grid_coarse,
+  gamma  = gamma_grid_coarse,
+  method = method_names
 )
 
 oc_results_coarse$type_1_error_hat <- NA_real_
 oc_results_coarse$power_hat        <- NA_real_
 
-for (i in seq_len(nrow(oc_results_coarse))) {
-  n_i     <- oc_results_coarse$n[i]
-  gamma_i <- oc_results_coarse$gamma[i]
+pairs <- unique(oc_results_coarse[c("n", "gamma")])
+
+for (i in seq_len(nrow(pairs))) {
+  n_i     <- pairs$n[i]
+  gamma_i <- pairs$gamma[i]
   
   # ----- Type I error under p0 -----
   scen0 <- simulateScenarios(
@@ -46,7 +50,7 @@ for (i in seq_len(nrow(oc_results_coarse))) {
     scenario_list      = scen0,
     evidence_levels    = seq(0.5, 0.95, by = 0.01),
     target_rates       = p_beta_vec,
-    method_names       = method_name,
+    method_names       = method_names,   # <-- all methods at once
     n_mcmc_iterations  = 100,
     verbose            = FALSE
   )
@@ -63,8 +67,6 @@ for (i in seq_len(nrow(oc_results_coarse))) {
   )
   
   go_probs0 <- getGoProbabilities(decisions0)
-  go_mat0   <- go_probs0[[method_name]][["scenario_1"]]
-  oc_results_coarse$type_1_error_hat[i] <- go_mat0["Go", "overall"]
   
   # ----- Power under p1 -----
   scen1 <- simulateScenarios(
@@ -77,7 +79,7 @@ for (i in seq_len(nrow(oc_results_coarse))) {
     scenario_list      = scen1,
     evidence_levels    = seq(0.5, 0.95, by = 0.01),
     target_rates       = p_beta_vec,
-    method_names       = method_name,
+    method_names       = method_names,   # <-- all methods at once
     n_mcmc_iterations  = 100,
     verbose            = FALSE
   )
@@ -94,8 +96,19 @@ for (i in seq_len(nrow(oc_results_coarse))) {
   )
   
   go_probs1 <- getGoProbabilities(decisions1)
-  go_mat1   <- go_probs1[[method_name]][["scenario_1"]]
-  oc_results_coarse$power_hat[i] <- go_mat1["Go", "overall"]
+  
+  # ----- Fill all methods for this (n, gamma) -----
+  for (m in method_names) {
+    rid <- which(
+      oc_results_coarse$n == n_i &
+        oc_results_coarse$gamma == gamma_i &
+        oc_results_coarse$method == m
+    )
+    go_mat0 <- go_probs0[[m]][["scenario_1"]]
+    go_mat1 <- go_probs1[[m]][["scenario_1"]]
+    oc_results_coarse$type_1_error_hat[rid] <- go_mat0["Go", "overall"]
+    oc_results_coarse$power_hat[rid]        <- go_mat1["Go", "overall"]
+  }
 }
 
 oc_results_coarse$feasible <- with(
@@ -125,16 +138,18 @@ if (nrow(feas_coarse) > 0L) {
   )
   
   oc_results_fine <- expand.grid(
-    n     = n_grid_fine,
-    gamma = gamma_grid_fine
+    n      = n_grid_fine,
+    gamma  = gamma_grid_fine,
+    method = method_names
   )
   
   oc_results_fine$type_1_error_hat <- NA_real_
   oc_results_fine$power_hat        <- NA_real_
   
-  for (i in seq_len(nrow(oc_results_fine))) {
-    n_i     <- oc_results_fine$n[i]
-    gamma_i <- oc_results_fine$gamma[i]
+  pairs_f <- unique(oc_results_fine[c("n", "gamma")])
+  for (i in seq_len(nrow(pairs_f))) {
+    n_i     <- pairs_f$n[i]
+    gamma_i <- pairs_f$gamma[i]
     
     # ----- Type I error under p0 -----
     scen0 <- simulateScenarios(
@@ -147,7 +162,7 @@ if (nrow(feas_coarse) > 0L) {
       scenario_list      = scen0,
       evidence_levels    = seq(0.5, 0.95, by = 0.01),
       target_rates       = p_beta_vec,
-      method_names       = method_name,
+      method_names       = method_names,
       n_mcmc_iterations  = 100,
       verbose            = FALSE
     )
@@ -164,8 +179,6 @@ if (nrow(feas_coarse) > 0L) {
     )
     
     go_probs0 <- getGoProbabilities(decisions0)
-    go_mat0   <- go_probs0[[method_name]][["scenario_1"]]
-    oc_results_fine$type_1_error_hat[i] <- go_mat0["Go", "overall"]
     
     # ----- Power under p1 -----
     scen1 <- simulateScenarios(
@@ -178,7 +191,7 @@ if (nrow(feas_coarse) > 0L) {
       scenario_list      = scen1,
       evidence_levels    = seq(0.5, 0.95, by = 0.01),
       target_rates       = p_beta_vec,
-      method_names       = method_name,
+      method_names       = method_names,
       n_mcmc_iterations  = 100,
       verbose            = FALSE
     )
@@ -195,8 +208,18 @@ if (nrow(feas_coarse) > 0L) {
     )
     
     go_probs1 <- getGoProbabilities(decisions1)
-    go_mat1   <- go_probs1[[method_name]][["scenario_1"]]
-    oc_results_fine$power_hat[i] <- go_mat1["Go", "overall"]
+    
+    for (m in method_names) {
+      rid <- which(
+        oc_results_fine$n == n_i &
+          oc_results_fine$gamma == gamma_i &
+          oc_results_fine$method == m
+      )
+      go_mat0 <- go_probs0[[m]][["scenario_1"]]
+      go_mat1 <- go_probs1[[m]][["scenario_1"]]
+      oc_results_fine$type_1_error_hat[rid] <- go_mat0["Go", "overall"]
+      oc_results_fine$power_hat[rid]        <- go_mat1["Go", "overall"]
+    }
   }
   
   oc_results_fine$feasible <- with(
@@ -223,26 +246,51 @@ oc_all$feasible_factor <- factor(
 calc_boundaries <- function(df) {
   feas_only <- df[df$feasible, , drop = FALSE]
   if (nrow(feas_only) == 0L) {
-    return(df[FALSE, , drop = FALSE])
+    # always return a list (safe even when no feasible design exists)
+    empty <- df[FALSE, , drop = FALSE]
+    return(list(
+      min_n_per_gamma = empty,
+      min_gamma_per_n = empty
+    ))
   }
   
-  tmp_gamma <- aggregate(n ~ gamma, data = feas_only, FUN = min)
-  min_n_per_gamma <- merge(
-    tmp_gamma,
-    feas_only,
-    by = c("gamma", "n"),
-    all.x = TRUE,
-    sort = TRUE
-  )
-  
-  tmp_n <- aggregate(gamma ~ n, data = feas_only, FUN = min)
-  min_gamma_per_n <- merge(
-    tmp_n,
-    feas_only,
-    by = c("n", "gamma"),
-    all.x = TRUE,
-    sort = TRUE
-  )
+  if ("method" %in% names(feas_only)) {
+    tmp_gamma <- aggregate(n ~ gamma + method, data = feas_only, FUN = min)
+    min_n_per_gamma <- merge(
+      tmp_gamma,
+      feas_only,
+      by = c("gamma", "method", "n"),
+      all.x = TRUE,
+      sort = TRUE
+    )
+    
+    tmp_n <- aggregate(gamma ~ n + method, data = feas_only, FUN = min)
+    min_gamma_per_n <- merge(
+      tmp_n,
+      feas_only,
+      by = c("n", "method", "gamma"),
+      all.x = TRUE,
+      sort = TRUE
+    )
+  } else {
+    tmp_gamma <- aggregate(n ~ gamma, data = feas_only, FUN = min)
+    min_n_per_gamma <- merge(
+      tmp_gamma,
+      feas_only,
+      by = c("gamma", "n"),
+      all.x = TRUE,
+      sort = TRUE
+    )
+    
+    tmp_n <- aggregate(gamma ~ n, data = feas_only, FUN = min)
+    min_gamma_per_n <- merge(
+      tmp_n,
+      feas_only,
+      by = c("n", "gamma"),
+      all.x = TRUE,
+      sort = TRUE
+    )
+  }
   
   list(
     min_n_per_gamma = min_n_per_gamma,
@@ -261,7 +309,9 @@ md_coarse_nfeas <- md_coarse %>% filter(feasible_factor == "Not feasible")
 md_fine_feas    <- md_fine   %>% filter(feasible_factor == "Feasible")
 md_fine_nfeas   <- md_fine   %>% filter(feasible_factor == "Not feasible")
 
-# Plotly (same as before) ------------------------------------------------------
+# Plotly (same as before, but split by method) ---------------------------------
+
+K <- length(method_names)
 
 fig <- plot_ly() %>%
   add_trace(
@@ -274,12 +324,14 @@ fig <- plot_ly() %>%
     hoverinfo = "text",
     text  = ~paste0(
       "Resolution = Coarse",
+      "<br>Method = ", method,
       "<br>n = ", n,
       "<br>gamma = ", round(gamma, 3),
       "<br>Type I error = ", round(type_1_error_hat, 3),
       "<br>Power = ", round(power_hat, 3),
       "<br>Feasible = ", feasible
     ),
+    split = ~method,
     visible = TRUE
   ) %>%
   add_trace(
@@ -292,12 +344,14 @@ fig <- plot_ly() %>%
     hoverinfo = "text",
     text  = ~paste0(
       "Resolution = Coarse",
+      "<br>Method = ", method,
       "<br>n = ", n,
       "<br>gamma = ", round(gamma, 3),
       "<br>Type I error = ", round(type_1_error_hat, 3),
       "<br>Power = ", round(power_hat, 3),
       "<br>Feasible = ", feasible
     ),
+    split = ~method,
     visible = TRUE
   ) %>%
   add_trace(
@@ -312,11 +366,13 @@ fig <- plot_ly() %>%
     hoverinfo = "text",
     text = ~paste0(
       "Resolution = Coarse",
+      "<br>Method = ", method,
       "<br>gamma = ", round(gamma, 3),
       "<br>min n = ", n,
       "<br>Type I error = ", round(type_1_error_hat, 3),
       "<br>Power = ", round(power_hat, 3)
     ),
+    split = ~method,
     showlegend = FALSE,
     visible = TRUE
   ) %>%
@@ -330,12 +386,14 @@ fig <- plot_ly() %>%
     hoverinfo = "text",
     text  = ~paste0(
       "Resolution = Fine",
+      "<br>Method = ", method,
       "<br>n = ", n,
       "<br>gamma = ", round(gamma, 3),
       "<br>Type I error = ", round(type_1_error_hat, 3),
       "<br>Power = ", round(power_hat, 3),
       "<br>Feasible = ", feasible
     ),
+    split = ~method,
     visible = FALSE
   ) %>%
   add_trace(
@@ -348,12 +406,14 @@ fig <- plot_ly() %>%
     hoverinfo = "text",
     text  = ~paste0(
       "Resolution = Fine",
+      "<br>Method = ", method,
       "<br>n = ", n,
       "<br>gamma = ", round(gamma, 3),
       "<br>Type I error = ", round(type_1_error_hat, 3),
       "<br>Power = ", round(power_hat, 3),
       "<br>Feasible = ", feasible
     ),
+    split = ~method,
     visible = FALSE
   ) %>%
   add_trace(
@@ -368,16 +428,22 @@ fig <- plot_ly() %>%
     hoverinfo = "text",
     text = ~paste0(
       "Resolution = Fine",
+      "<br>Method = ", method,
       "<br>gamma = ", round(gamma, 3),
       "<br>min n = ", n,
       "<br>Type I error = ", round(type_1_error_hat, 3),
       "<br>Power = ", round(power_hat, 3)
     ),
+    split = ~method,
     showlegend = FALSE,
     visible = FALSE
   ) %>%
   layout(
-    title = "Feasible vs Non-feasible Designs (stratified, 2 cohorts)",
+    title = paste0(
+      "Feasible vs Non-feasible Designs (methods: ",
+      paste(method_names, collapse = ", "),
+      "; 2 cohorts)"
+    ),
     xaxis = list(title = "Sample size per cohort (n)", range = c(10, 40), fixedrange = TRUE),
     yaxis = list(title = "Evidence level (gamma)", range = c(0.5, 0.95), fixedrange = TRUE),
     legend = list(title = list(text = "Designs")),
@@ -389,7 +455,14 @@ fig <- plot_ly() %>%
             label = "Coarse only",
             method = "update",
             args = list(
-              list(visible = c(TRUE, TRUE, TRUE,  FALSE, FALSE, FALSE)),
+              list(visible = c(
+                rep(TRUE,  K),  # coarse feasible (by method)
+                rep(TRUE,  K),  # coarse not feasible
+                rep(TRUE,  K),  # coarse boundary
+                rep(FALSE, K),  # fine feasible
+                rep(FALSE, K),  # fine not feasible
+                rep(FALSE, K)   # fine boundary
+              )),
               list(title = "Feasible vs Non-feasible — Coarse")
             )
           ),
@@ -397,7 +470,14 @@ fig <- plot_ly() %>%
             label = "Fine only",
             method = "update",
             args = list(
-              list(visible = c(FALSE, FALSE, FALSE, TRUE, TRUE, TRUE)),
+              list(visible = c(
+                rep(FALSE, K),
+                rep(FALSE, K),
+                rep(FALSE, K),
+                rep(TRUE,  K),
+                rep(TRUE,  K),
+                rep(TRUE,  K)
+              )),
               list(title = "Feasible vs Non-feasible — Fine")
             )
           ),
@@ -405,7 +485,10 @@ fig <- plot_ly() %>%
             label = "Both",
             method = "update",
             args = list(
-              list(visible = c(TRUE, TRUE, TRUE, TRUE, TRUE, TRUE)),
+              list(visible = c(
+                rep(TRUE, K), rep(TRUE, K), rep(TRUE, K),
+                rep(TRUE, K), rep(TRUE, K), rep(TRUE, K)
+              )),
               list(title = "Feasible vs Non-feasible — Coarse & Fine")
             )
           )
@@ -417,17 +500,38 @@ fig <- plot_ly() %>%
           list(
             label = "Feasible only",
             method = "restyle",
-            args = list("marker.opacity", list(1, 0, 1, 1, 0, 1))
+            args = list("marker.opacity", c(
+              rep(1, K),  # coarse feasible
+              rep(0, K),  # coarse not feasible
+              rep(1, K),  # coarse boundary
+              rep(1, K),  # fine feasible
+              rep(0, K),  # fine not feasible
+              rep(1, K)   # fine boundary
+            ))
           ),
           list(
             label = "Not feasible only",
             method = "restyle",
-            args = list("marker.opacity", list(0, 1, 1, 0, 1, 1))
+            args = list("marker.opacity", c(
+              rep(0, K),
+              rep(1, K),
+              rep(1, K),
+              rep(0, K),
+              rep(1, K),
+              rep(1, K)
+            ))
           ),
           list(
             label = "Both feasibilities",
             method = "restyle",
-            args = list("marker.opacity", list(1, 1, 1, 1, 1, 1))
+            args = list("marker.opacity", c(
+              rep(1, K),
+              rep(1, K),
+              rep(1, K),
+              rep(1, K),
+              rep(1, K),
+              rep(1, K)
+            ))
           )
         )
       )
@@ -435,3 +539,8 @@ fig <- plot_ly() %>%
   )
 
 fig
+
+
+
+# we can see borrowing between
+
