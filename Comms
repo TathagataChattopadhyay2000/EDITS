@@ -1,118 +1,15 @@
-library(ggplot2)
-
-# Helper: convert Beta mean + variance to (alpha, beta, ESS)
-beta_moments_to_params <- function(mu, sigma2) {
-  S     <- mu * (1 - mu) / sigma2 - 1
-  alpha <- mu * S
-  beta  <- (1 - mu) * S
-  list(alpha = alpha, beta = beta, ESS = alpha + beta)
-}
-
-# Choose a design for which you want to visualise borrowing
-n_borrow       <- 30                # sample size per cohort (change if you like)
-p_true_borrow  <- p1                # e.g. alternative scenario
-methods_borrow <- method_names      # e.g. c("stratified", "berry")
-
-# Simulate ONE trial for this configuration
-scen_borrow <- simulateScenarios(
-  n_subjects_list     = list(c(n_borrow, n_borrow)),
-  response_rates_list = list(p_true_borrow),
-  n_trials            = 1
-)
-
-# Run analyses for all methods for this single trial
-analyses_borrow <- performAnalyses(
-  scenario_list      = scen_borrow,
-  evidence_levels    = seq(0.5, 0.95, by = 0.01),
-  target_rates       = p_beta_vec,
-  method_names       = methods_borrow,
-  n_mcmc_iterations  = 2000,
-  verbose            = FALSE
-)
-
-# Build shrinkage_df: posterior means + intervals for each method and cohort
-shrinkage_list <- list()
-
-for (m in methods_borrow) {
-  # post_quantiles is a list (one element per trial); we simulated n_trials = 1
-  q_list <- analyses_borrow[[m]][["scenario_1"]]$post_quantiles
-  q1     <- q_list[[1L]]
-  
-  # find all posterior columns for cohort parameters (p_1, p_2, ...)
-  p_cols <- grep("^p_", colnames(q1), value = TRUE)
-  
-  # if a method does not have p_* columns, skip it
-  if (length(p_cols) == 0L) next
-  
-  mu    <- q1["Mean",   p_cols]
-  lower <- q1["2.5%",   p_cols]
-  upper <- q1["97.5%",  p_cols]
-  sd    <- q1["SD",     p_cols]
-  
-  df_m <- data.frame(
-    method = m,
-    cohort = seq_along(p_cols),              # 1, 2, ... per p_j
-    mean   = as.numeric(mu),
-    lower  = as.numeric(lower),
-    upper  = as.numeric(upper),
-    sd     = as.numeric(sd),
-    n_obs  = n_borrow,
-    stringsAsFactors = FALSE
-  )
-  
-  shrinkage_list[[m]] <- df_m
-}
-
-shrinkage_df <- bind_rows(shrinkage_list)
-
-# Compute ESS and "borrowed" patients for each method and cohort
-borrowing_df <- shrinkage_df
-borrowing_df$ESS      <- NA_real_
-borrowing_df$borrowed <- NA_real_
-
-for (i in seq_len(nrow(borrowing_df))) {
-  mu  <- borrowing_df$mean[i]
-  v   <- borrowing_df$sd[i]^2
-  par <- beta_moments_to_params(mu, v)
-  borrowing_df$ESS[i]      <- par$ESS
-  borrowing_df$borrowed[i] <- par$ESS - borrowing_df$n_obs[i]
-}
-
-# Shrinkage (posterior means + 95% CI per method & cohort)
-shrinkage_plot <- ggplot(
-  shrinkage_df,
-  aes(x = factor(cohort), y = mean, colour = method, group = method)
-) +
-  geom_point(position = position_dodge(width = 0.35), size = 2) +
-  geom_errorbar(
-    aes(ymin = lower, ymax = upper),
-    width = 0.1,
-    position = position_dodge(width = 0.35)
-  ) +
-  labs(
-    x = "Cohort",
-    y = "Posterior mean response probability",
-    title = paste0(
-      "Shrinkage of cohort estimates (n = ", n_borrow,
-      ", p_true = (", paste(p_true_borrow, collapse = ", "), "))"
-    )
-  ) +
-  theme_minimal()
-
-# Borrowing as effective extra sample size (ESS - n_obs)
-borrowed_plot <- ggplot(
-  borrowing_df,
-  aes(x = factor(cohort), y = borrowed, fill = method)
-) +
-  geom_col(position = position_dodge(width = 0.6)) +
-  labs(
-    x = "Cohort",
-    y = "Effective extra patients (ESS - n)",
-    title = paste0(
-      "Borrowing expressed as effective extra sample size (n = ", n_borrow, ")"
-    )
-  ) +
-  theme_minimal()
-
-shrinkage_plot
-borrowed_plot
+> shrinkage_plot
+Error in `geom_point()`:
+! Problem while computing aesthetics.
+ℹ Error occurred in the 1st layer.
+Caused by error:
+! object 'cohort' not found
+Run `rlang::last_trace()` to see where the error occurred.
+> borrowed_plot
+Error in `geom_col()`:
+! Problem while computing aesthetics.
+ℹ Error occurred in the 1st layer.
+Caused by error:
+! object 'cohort' not found
+Run `rlang::last_trace()` to see where the error occurred.
+> 
