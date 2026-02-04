@@ -1,127 +1,49 @@
-library(ggplot2)
-
-## Borrowing visualisation for your current setup ------------------------------
-
-# number of cohorts (from your simulated scenario)
-n_coh_borrow <- length(p0)         # here 2 cohorts
-
-# choose a design to inspect borrowing
-n_borrow      <- 30                # per cohort; change as needed
-p_true_borrow <- p1                # e.g. alternative scenario
-methods_borrow <- method_names     # c("stratified","berry")
-
-# simulate ONE trial under p_true_borrow
-scen_borrow <- simulateScenarios(
-  n_subjects_list     = list(rep(n_borrow, n_coh_borrow)),
-  response_rates_list = list(p_true_borrow),
-  n_trials            = 1
-)
-
-# run analyses for all methods on this one trial
-analyses_borrow <- performAnalyses(
-  scenario_list      = scen_borrow,
-  evidence_levels    = seq(0.5, 0.95, by = 0.01),
-  target_rates       = p_beta_vec,
-  method_names       = methods_borrow,
-  n_mcmc_iterations  = 2000,
-  verbose            = FALSE
-)
-
-# helper: Beta moments -> (alpha, beta, ESS)
-beta_moments_to_params <- function(mu, sigma2) {
-  S     <- mu * (1 - mu) / sigma2 - 1
-  alpha <- mu * S
-  beta  <- (1 - mu) * S
-  list(alpha = alpha, beta = beta, ESS = alpha + beta)
-}
-
-# build shrinkage_df: posterior mean & CI per method & cohort
-shrinkage_list <- list()
-
-for (m in methods_borrow) {
-  # structure: analyses_borrow[[m]][["scenario_1"]]$post_quantiles is a list over trials
-  q_list <- analyses_borrow[[m]][["scenario_1"]]$post_quantiles
-  
-  if (length(q_list) == 0L) next    # safety
-  q1 <- q_list[[1L]]               # our single trial
-  
-  # use first n_coh_borrow columns as cohort response posteriors
-  if (ncol(q1) < n_coh_borrow) next
-  idx <- seq_len(n_coh_borrow)
-  
-  mu    <- q1["Mean",   idx]
-  lower <- q1["2.5%",   idx]
-  upper <- q1["97.5%",  idx]
-  sd    <- q1["SD",     idx]
-  
-  df_m <- data.frame(
-    method    = m,
-    cohort_id = idx,                     # 1..n_coh
-    mean      = as.numeric(mu),
-    lower     = as.numeric(lower),
-    upper     = as.numeric(upper),
-    sd        = as.numeric(sd),
-    n_obs     = n_borrow,
-    stringsAsFactors = FALSE
-  )
-  
-  shrinkage_list[[m]] <- df_m
-}
-
-shrinkage_df <- dplyr::bind_rows(shrinkage_list)
-
-if (nrow(shrinkage_df) == 0L) {
-  stop("shrinkage_df is empty: check that post_quantiles exist and have enough columns.")
-}
-
-# compute ESS and 'borrowed' patients
-borrowing_df <- shrinkage_df
-borrowing_df$ESS      <- NA_real_
-borrowing_df$borrowed <- NA_real_
-
-for (i in seq_len(nrow(borrowing_df))) {
-  mu <- borrowing_df$mean[i]
-  v  <- borrowing_df$sd[i]^2
-  par <- beta_moments_to_params(mu, v)
-  borrowing_df$ESS[i]      <- par$ESS
-  borrowing_df$borrowed[i] <- par$ESS - borrowing_df$n_obs[i]
-}
-
-# Plot: shrinkage (posterior means & 95% CI)
-shrinkage_plot <- ggplot(
-  shrinkage_df,
-  aes(x = factor(cohort_id), y = mean, colour = method, group = method)
-) +
-  geom_point(position = position_dodge(width = 0.35), size = 2) +
-  geom_errorbar(
-    aes(ymin = lower, ymax = upper),
-    width = 0.1,
-    position = position_dodge(width = 0.35)
-  ) +
-  labs(
-    x = "Cohort",
-    y = "Posterior mean response probability",
-    title = paste0(
-      "Shrinkage of cohort estimates (n = ", n_borrow,
-      ", p_true = (", paste(p_true_borrow, collapse = ", "), "))"
-    )
-  ) +
-  theme_minimal()
-
-# Plot: borrowing as effective extra sample size
-borrowed_plot <- ggplot(
-  borrowing_df,
-  aes(x = factor(cohort_id), y = borrowed, fill = method)
-) +
-  geom_col(position = position_dodge(width = 0.6)) +
-  labs(
-    x = "Cohort",
-    y = "Effective extra patients (ESS - n)",
-    title = paste0(
-      "Borrowing expressed as effective extra sample size (n = ", n_borrow, ")"
-    )
-  ) +
-  theme_minimal()
-
-shrinkage_plot
-borrowed_plot
+> str(analyses_borrow)
+List of 1
+ $ scenario_1:List of 3
+  ..$ quantiles_list     :List of 2
+  .. ..$ berry     :List of 1
+  .. .. ..$ : num [1:51, 1:4] -0.99 -0.748 -0.695 -0.619 -0.566 ...
+  .. .. .. ..- attr(*, "dimnames")=List of 2
+  .. .. .. .. ..$ : chr [1:51] "2.5%" "5%" "6%" "7%" ...
+  .. .. .. .. ..$ : chr [1:4] "mu" "p_1" "p_2" "tau"
+  .. ..$ stratified:List of 1
+  .. .. ..$ : num [1:51, 1:2] 0.328 0.354 0.362 0.369 0.375 ...
+  .. .. .. ..- attr(*, "dimnames")=List of 2
+  .. .. .. .. ..$ : chr [1:51] "2.5%" "5%" "6%" "7%" ...
+  .. .. .. .. ..$ : chr [1:2] "p_1" "p_2"
+  ..$ scenario_data      :List of 6
+  .. ..$ n_subjects       : num [1, 1:2] 30 30
+  .. .. ..- attr(*, "dimnames")=List of 2
+  .. .. .. ..$ : NULL
+  .. .. .. ..$ : chr [1:2] "n_1" "n_2"
+  .. ..$ n_responders     : int [1, 1:2] 15 16
+  .. .. ..- attr(*, "dimnames")=List of 2
+  .. .. .. ..$ : NULL
+  .. .. .. ..$ : chr [1:2] "r_1" "r_2"
+  .. ..$ response_rates   : num [1, 1:2] 0.55 0.55
+  .. .. ..- attr(*, "dimnames")=List of 2
+  .. .. .. ..$ : NULL
+  .. .. .. ..$ : chr [1:2] "rr_1" "rr_2"
+  .. ..$ previous_analyses:List of 2
+  .. .. ..$ go_decisions  : logi [1, 1:3] TRUE TRUE TRUE
+  .. .. .. ..- attr(*, "dimnames")=List of 2
+  .. .. .. .. ..$ : NULL
+  .. .. .. .. ..$ : chr [1:3] "overall" "decision_1" "decision_2"
+  .. .. ..$ post_quantiles: NULL
+  .. ..$ n_trials         : num 1
+  .. ..$ scenario_number  : int 1
+  ..$ analysis_parameters:List of 4
+  .. ..$ quantiles            : num [1:49] 0.025 0.05 0.06 0.07 0.08 0.09 0.1 0.11 0.12 0.13 ...
+  .. ..$ method_names         : chr [1:2] "berry" "stratified"
+  .. ..$ prior_parameters_list:List of 2
+  .. .. ..$ berry     :List of 3
+  .. .. .. ..$ mu_mean  : num 0
+  .. .. .. ..$ mu_sd    : num 1.73
+  .. .. .. ..$ tau_scale: num 1
+  .. .. ..$ stratified:List of 2
+  .. .. .. ..$ a_j: num [1:2] 0.5 0.5
+  .. .. .. ..$ b_j: num [1:2] 0.5 0.5
+  .. .. ..- attr(*, "class")= chr "prior_parameters_list"
+  .. ..$ n_mcmc_iterations    : num 2000
+ - attr(*, "class")= chr "analysis_list"
