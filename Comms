@@ -1,14 +1,12 @@
-# 0) Setup: parallel backend, packages
-# ---------------------------------------------------------------------------
+# Setup: parallel backend, packages
 
 doFuture::registerDoFuture()
-future::plan(future::sequential())
+future::plan(future::multisession())
 
 library(dplyr)
 library(plotly)
 
-# 1) Function: Go probability for a single-stage design (stratified model)
-# ---------------------------------------------------------------------------
+# Function: Go probability for a single-stage design (stratified model)
 
 go_prob_overall <- function(n,
                             p_true_vec,
@@ -50,24 +48,21 @@ go_prob_overall <- function(n,
   go_mat["Go", "overall"]
 }
 
-# 2) Global design settings
-# ---------------------------------------------------------------------------
+# Design settings
 
-p0           <- c(0.30, 0.30)
-p1           <- c(0.45, 0.45)
-p_beta_vec   <- c(0.40, 0.40)
+p0           <- c(0.40, 0.40)
+p1           <- c(0.55, 0.55)
+p_beta_vec   <- c(0.50, 0.50)
 type_1_error <- 0.20
 power_min    <- 0.80
 n_trials_oc  <- 100
 
-# 3) Coarse grid definitions (n and gamma)
-# ---------------------------------------------------------------------------
+# Coarse grid definitions (n and gamma)
 
 n_grid_coarse     <- seq(10, 40, by = 5)
 gamma_grid_coarse <- seq(0.5, 0.95, by = 0.05)
 
-# 4) Helper: compute operating characteristics on an n×gamma grid
-# ---------------------------------------------------------------------------
+# Helper: compute operating characteristics on an n×gamma grid
 
 compute_oc_grid <- function(n_grid,
                             gamma_grid,
@@ -118,8 +113,7 @@ compute_oc_grid <- function(n_grid,
 
 set.seed(2026)
 
-# 5) Coarse grid: run OC computation with stratified model
-# ---------------------------------------------------------------------------
+# Coarse grid
 
 oc_results_coarse <- compute_oc_grid(
   n_grid        = n_grid_coarse,
@@ -135,8 +129,7 @@ oc_results_coarse <- compute_oc_grid(
 
 oc_results_coarse$resolution <- "Coarse"
 
-# 6) Fine grid: zoom into the feasible region of the coarse grid
-# ---------------------------------------------------------------------------
+# Fine grid: zoom into the feasible region of the coarse grid
 
 feas_coarse <- oc_results_coarse[oc_results_coarse$feasible, , drop = FALSE]
 
@@ -175,8 +168,7 @@ if (nrow(feas_coarse) > 0L) {
   oc_results_fine$resolution <- "Fine"
 }
 
-# 7) Combine coarse and fine results, label feasibility, and build boundaries
-# ---------------------------------------------------------------------------
+# Combine coarse and fine results, label feasibility, and draw boundaries
 
 oc_all <- bind_rows(oc_results_coarse, oc_results_fine)
 
@@ -227,8 +219,7 @@ md_coarse_nfeas <- md_coarse %>% filter(feasible_factor == "Not feasible")
 md_fine_feas    <- md_fine   %>% filter(feasible_factor == "Feasible")
 md_fine_nfeas   <- md_fine   %>% filter(feasible_factor == "Not feasible")
 
-# 8) Interactive Plotly: toggle between coarse / fine / both and feasibility
-# ---------------------------------------------------------------------------
+# Interactive toggle between coarse / fine / both and feasibility
 
 fig <- plot_ly() %>%
   add_trace(
@@ -402,3 +393,6 @@ fig <- plot_ly() %>%
   )
 
 fig
+
+can we open up the go_prob_overall because it seems like the wrappers are causing the issue, maybe we just manually call all the results one after other instead of making it all so wrapped up and complicated. Thre graphs should remain the same so the variables we can keep same, but we can just call the results and use them directly
+
