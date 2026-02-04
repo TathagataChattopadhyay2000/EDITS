@@ -1,58 +1,81 @@
 ## ------------------------------------------------------------------
-## Borrowing / shrinkage demonstration for berry vs stratified
+## Borrowing / shrinkage integrated with OC grid
 ## ------------------------------------------------------------------
 
-n_borrow       <- 30                         # patients per cohort in scen_borrow
-methods_borrow <- method_names               # e.g. c("berry", "stratified")
-cohort_names   <- c("p_1", "p_2")
-n_coh_borrow   <- length(cohort_names)
+library(ggplot2)
 
-# If you haven't run this yet in your script, do it once:
-# scen_borrow <- simulateScenarios(
-#   n_subjects_list     = list(rep(n_borrow, 2L)),
-#   response_rates_list = list(p1),          # or p0, or any scenario you want
-#   n_trials            = 1
-# )
-# analyses_borrow <- performAnalyses(
-#   scenario_list      = scen_borrow,
-#   evidence_levels    = seq(0.5, 0.95, by = 0.01),
-#   target_rates       = p_beta_vec,
-#   method_names       = methods_borrow,
-#   n_mcmc_iterations  = 2000,
-#   verbose            = FALSE
-# )
+# We assume you already have:
+#   oc_results_fine  with columns n, gamma, method, feasible, ...
+#   p1, p_beta_vec, method_names, etc. defined above.
 
-# Extract per-method quantiles from analyses_borrow
-quantiles_list_all <- analyses_borrow$scenario_1$quantiles_list
+# 1) Choose one representative design per method from the fine grid
+#    Here: the feasible design with the smallest n for each method.
+ref_designs <- oc_results_fine %>%
+  dplyr::filter(feasible) %>%
+  dplyr::group_by(method) %>%
+  dplyr::slice_min(n, with_ties = FALSE) %>%
+  dplyr::ungroup()
 
+ref_designs
+# Columns of interest: method, n, gamma (and type_1_error_hat, power_hat if you want)
+
+# 2) For each chosen design, simulate one trial and get posterior summaries
 shrinkage_list <- list()
 
-for (m in names(quantiles_list_all)) {
+for (i in seq_len(nrow(ref_designs))) {
+  m       <- ref_designs$method[i]
+  n_ref   <- ref_designs$n[i]
+  gamma_ref <- ref_designs$gamma[i]   # for labelling only; does not affect posterior
+  
+  cohort_names   <- c("p_1", "p_2")
+  n_coh_borrow   <- length(cohort_names)
+  n_borrow       <- n_ref
+  
+  # One scenario under p1 for this design
+  scen_borrow <- simulateScenarios(
+    n_subjects_list     = list(rep(n_borrow, n_coh_borrow)),
+    response_rates_list = list(p1),        # alternative scenario (can change if you want)
+    n_trials            = 1
+  )
+  
+  analyses_borrow <- performAnalyses(
+    scenario_list      = scen_borrow,
+    evidence_levels    = seq(0.5, 0.95, by = 0.01),
+    target_rates       = p_beta_vec,
+    method_names       = m,               # single method here
+    n_mcmc_iterations  = 2000,
+    verbose            = FALSE
+  )
+  
+  # Extract posterior quantiles for this method
+  quantiles_list_all <- analyses_borrow$scenario_1$quantiles_list
+  
+  # If the method name is used as list name:
   q_list_m <- quantiles_list_all[[m]]
   if (length(q_list_m) == 0L) next
   
-  # we have only 1 trial here, so take [[1]]
-  qmat <- q_list_m[[1L]]  # matrix [51 × #params]
+  qmat <- q_list_m[[1L]]   # matrix [51 x #params], rows include "Mean", "SD", "2.5%", "97.5%"
   
-  # find the columns corresponding to p_1, p_2
+  # Find p_1, p_2 columns (cohorts)
   idx <- match(cohort_names, colnames(qmat))
   idx <- idx[!is.na(idx)]
   if (length(idx) == 0L) next
   
-  # extract posterior summaries for each cohort
   mu    <- qmat["Mean",   idx]
   sd    <- qmat["SD",     idx]
   lower <- qmat["2.5%",   idx]
   upper <- qmat["97.5%",  idx]
   
-  # moment-matching to a Beta(alpha, beta) to get ESS = alpha + beta
+  # Moment-match to Beta(alpha,beta) to get ESS = alpha + beta
   var <- sd^2
-  S   <- (mu * (1 - mu) / var) - 1         # S = alpha + beta
-  ESS <- pmax(S, 0)                        # guard against numeric weirdness
-  borrowed <- pmax(ESS - n_borrow, 0)      # extra "pseudo-patients"
+  S   <- (mu * (1 - mu) / var) - 1
+  ESS <- pmax(S, 0)                   # guard against numerical issues
+  borrowed <- pmax(ESS - n_borrow, 0) # "extra" pseudo-patients
   
   df_m <- data.frame(
     method   = m,
+    n        = n_ref,
+    gamma    = gamma_ref,
     cohort   = seq_along(idx),
     mean     = as.numeric(mu),
     lower    = as.numeric(lower),
@@ -63,38 +86,48 @@ for (m in names(quantiles_list_all)) {
     n_obs    = n_borrow
   )
   
-  shrinkage_list[[m]] <- df_m
+  shrinkage_list[[length(shrinkage_list) + 1L]] <- df_m
 }
 
 shrinkage_df <- dplyr::bind_rows(shrinkage_list)
 
 shrinkage_df
+# You should now see rows like:
+# method | n | gamma | cohort | mean | lower | upper | ESS | borrowed | n_obs
 
-shrinkage_plot <- ggplot(shrinkage_df,
-                         aes(x = factor(cohort),
-                             y = mean,
-                             ymin = lower,
-                             ymax = upper,
-                             colour = method)) +
-  geom_point(position = position_dodge(width = 0.4)) +
+# 3) Plot shrinkage of posterior means (per method / cohort / design)
+shrinkage_plot <- ggplot(
+  shrinkage_df,
+  aes(x = factor(cohort),
+      y = mean,
+      ymin = lower,
+      ymax = upper,
+      colour = method)
+) +
+  geom_point(position = position_dodge(width = 0.4), size = 2) +
   geom_errorbar(width = 0.2,
                 position = position_dodge(width = 0.4)) +
+  facet_grid(. ~ paste0("n = ", n, ", gamma = ", round(gamma, 2))) +
   labs(
     x = "Cohort",
     y = "Posterior mean response (95% CI)",
-    title = "Shrinkage of cohort estimates by method"
+    title = "Shrinkage of cohort estimates for selected designs"
   ) +
   theme_minimal()
 
-borrowed_plot <- ggplot(shrinkage_df,
-                        aes(x = factor(cohort),
-                            y = borrowed,
-                            fill = method)) +
+# 4) Plot implied borrowed ESS (ESS − n_obs) per cohort and method
+borrowed_plot <- ggplot(
+  shrinkage_df,
+  aes(x = factor(cohort),
+      y = borrowed,
+      fill = method)
+) +
   geom_col(position = "dodge") +
+  facet_grid(. ~ paste0("n = ", n, ", gamma = ", round(gamma, 2))) +
   labs(
     x = "Cohort",
     y = "Borrowed effective sample size (ESS − n_obs)",
-    title = "Implied borrowing by method"
+    title = "Implied borrowing for selected designs"
   ) +
   theme_minimal()
 
