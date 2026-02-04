@@ -1,29 +1,49 @@
-# Setup: parallel backend, packages
-
 doFuture::registerDoFuture()
-future::plan(future::multisession())
+future::plan(future::sequential())
 
 library(dplyr)
 library(plotly)
 
-# Function: Go probability for a single-stage design (stratified model)
+# Design settings --------------------------------------------------------------
 
-go_prob_overall <- function(n,
-                            p_true_vec,
-                            p_beta_vec,
-                            gamma,
-                            overall_min_gos = 1,
-                            n_trials,
-                            method_name = "stratified") {
+p0           <- c(0.40, 0.40)   # null true response rates
+p1           <- c(0.55, 0.55)   # alternative true response rates
+p_beta_vec   <- c(0.50, 0.50)   # clinical boundary
+type_1_error <- 0.20            # allowed Type I error
+power_min    <- 0.80            # required power
+n_trials_oc  <- 100             # simulated trials per (n, gamma)
+method_name  <- "stratified"    # backend used for OC evaluation
+
+# Grids for n and gamma --------------------------------------------------------
+
+n_grid_coarse     <- seq(10, 40, by = 5)
+gamma_grid_coarse <- seq(0.5, 0.95, by = 0.05)
+
+set.seed(2026)
+
+# Coarse grid: directly compute OC table ---------------------------------------
+
+oc_results_coarse <- expand.grid(
+  n     = n_grid_coarse,
+  gamma = gamma_grid_coarse
+)
+
+oc_results_coarse$type_1_error_hat <- NA_real_
+oc_results_coarse$power_hat        <- NA_real_
+
+for (i in seq_len(nrow(oc_results_coarse))) {
+  n_i     <- oc_results_coarse$n[i]
+  gamma_i <- oc_results_coarse$gamma[i]
   
-  scen <- simulateScenarios(
-    n_subjects_list     = list(c(n, n)),
-    response_rates_list = list(p_true_vec),
-    n_trials            = n_trials
+  # ----- Type I error under p0 -----
+  scen0 <- simulateScenarios(
+    n_subjects_list     = list(c(n_i, n_i)),
+    response_rates_list = list(p0),
+    n_trials            = n_trials_oc
   )
   
-  analyses <- performAnalyses(
-    scenario_list      = scen,
+  analyses0 <- performAnalyses(
+    scenario_list      = scen0,
     evidence_levels    = seq(0.5, 0.95, by = 0.01),
     target_rates       = p_beta_vec,
     method_names       = method_name,
@@ -31,105 +51,60 @@ go_prob_overall <- function(n,
     verbose            = FALSE
   )
   
-  decisions <- getGoDecisions(
-    analyses_list   = analyses,
+  decisions0 <- getGoDecisions(
+    analyses_list   = analyses0,
     cohort_names    = c("p_1", "p_2"),
-    evidence_levels = c(gamma, gamma),
+    evidence_levels = c(gamma_i, gamma_i),
     boundary_rules  = quote(c(
       x[1] > p_beta_vec[1],
       x[2] > p_beta_vec[2]
     )),
-    overall_min_gos = overall_min_gos
+    overall_min_gos = 1
   )
   
-  go_probs_list <- getGoProbabilities(decisions)
-  go_mat        <- go_probs_list[[method_name]][["scenario_1"]]
+  go_probs0 <- getGoProbabilities(decisions0)
+  go_mat0   <- go_probs0[[method_name]][["scenario_1"]]
+  oc_results_coarse$type_1_error_hat[i] <- go_mat0["Go", "overall"]
   
-  go_mat["Go", "overall"]
+  # ----- Power under p1 -----
+  scen1 <- simulateScenarios(
+    n_subjects_list     = list(c(n_i, n_i)),
+    response_rates_list = list(p1),
+    n_trials            = n_trials_oc
+  )
+  
+  analyses1 <- performAnalyses(
+    scenario_list      = scen1,
+    evidence_levels    = seq(0.5, 0.95, by = 0.01),
+    target_rates       = p_beta_vec,
+    method_names       = method_name,
+    n_mcmc_iterations  = 100,
+    verbose            = FALSE
+  )
+  
+  decisions1 <- getGoDecisions(
+    analyses_list   = analyses1,
+    cohort_names    = c("p_1", "p_2"),
+    evidence_levels = c(gamma_i, gamma_i),
+    boundary_rules  = quote(c(
+      x[1] > p_beta_vec[1],
+      x[2] > p_beta_vec[2]
+    )),
+    overall_min_gos = 1
+  )
+  
+  go_probs1 <- getGoProbabilities(decisions1)
+  go_mat1   <- go_probs1[[method_name]][["scenario_1"]]
+  oc_results_coarse$power_hat[i] <- go_mat1["Go", "overall"]
 }
 
-# Design settings
-
-p0           <- c(0.40, 0.40)
-p1           <- c(0.55, 0.55)
-p_beta_vec   <- c(0.50, 0.50)
-type_1_error <- 0.20
-power_min    <- 0.80
-n_trials_oc  <- 100
-
-# Coarse grid definitions (n and gamma)
-
-n_grid_coarse     <- seq(10, 40, by = 5)
-gamma_grid_coarse <- seq(0.5, 0.95, by = 0.05)
-
-# Helper: compute operating characteristics on an n×gamma grid
-
-compute_oc_grid <- function(n_grid,
-                            gamma_grid,
-                            p0,
-                            p1,
-                            p_beta_vec,
-                            type_1_error,
-                            power_min,
-                            n_trials_oc,
-                            go_fun) {
-  
-  oc_results <- expand.grid(
-    n     = n_grid,
-    gamma = gamma_grid
-  )
-  
-  oc_results$type_1_error_hat <- NA_real_
-  oc_results$power_hat        <- NA_real_
-  
-  for (i in seq_len(nrow(oc_results))) {
-    n_i     <- oc_results$n[i]
-    gamma_i <- oc_results$gamma[i]
-    
-    oc_results$type_1_error_hat[i] <- go_fun(
-      n            = n_i,
-      p_true_vec   = p0,
-      p_beta_vec   = p_beta_vec,
-      gamma        = gamma_i,
-      n_trials     = n_trials_oc
-    )
-    
-    oc_results$power_hat[i] <- go_fun(
-      n            = n_i,
-      p_true_vec   = p1,
-      p_beta_vec   = p_beta_vec,
-      gamma        = gamma_i,
-      n_trials     = n_trials_oc
-    )
-  }
-  
-  oc_results$feasible <- with(
-    oc_results,
-    type_1_error_hat <= type_1_error & power_hat >= power_min
-  )
-  
-  oc_results
-}
-
-set.seed(2026)
-
-# Coarse grid
-
-oc_results_coarse <- compute_oc_grid(
-  n_grid        = n_grid_coarse,
-  gamma_grid    = gamma_grid_coarse,
-  p0            = p0,
-  p1            = p1,
-  p_beta_vec    = p_beta_vec,
-  type_1_error  = type_1_error,
-  power_min     = power_min,
-  n_trials_oc   = n_trials_oc,
-  go_fun        = go_prob_overall
+oc_results_coarse$feasible <- with(
+  oc_results_coarse,
+  type_1_error_hat <= type_1_error & power_hat >= power_min
 )
-
 oc_results_coarse$resolution <- "Coarse"
 
-# Fine grid: zoom into the feasible region of the coarse grid
+# Fine grid: define from feasible coarse region and compute directly -----------
 
 feas_coarse <- oc_results_coarse[oc_results_coarse$feasible, , drop = FALSE]
 
@@ -149,18 +124,85 @@ if (nrow(feas_coarse) > 0L) {
     by   = 0.01
   )
   
-  oc_results_fine <- compute_oc_grid(
-    n_grid        = n_grid_fine,
-    gamma_grid    = gamma_grid_fine,
-    p0            = p0,
-    p1            = p1,
-    p_beta_vec    = p_beta_vec,
-    type_1_error  = type_1_error,
-    power_min     = power_min,
-    n_trials_oc   = n_trials_oc,
-    go_fun        = go_prob_overall
+  oc_results_fine <- expand.grid(
+    n     = n_grid_fine,
+    gamma = gamma_grid_fine
   )
   
+  oc_results_fine$type_1_error_hat <- NA_real_
+  oc_results_fine$power_hat        <- NA_real_
+  
+  for (i in seq_len(nrow(oc_results_fine))) {
+    n_i     <- oc_results_fine$n[i]
+    gamma_i <- oc_results_fine$gamma[i]
+    
+    # ----- Type I error under p0 -----
+    scen0 <- simulateScenarios(
+      n_subjects_list     = list(c(n_i, n_i)),
+      response_rates_list = list(p0),
+      n_trials            = n_trials_oc
+    )
+    
+    analyses0 <- performAnalyses(
+      scenario_list      = scen0,
+      evidence_levels    = seq(0.5, 0.95, by = 0.01),
+      target_rates       = p_beta_vec,
+      method_names       = method_name,
+      n_mcmc_iterations  = 100,
+      verbose            = FALSE
+    )
+    
+    decisions0 <- getGoDecisions(
+      analyses_list   = analyses0,
+      cohort_names    = c("p_1", "p_2"),
+      evidence_levels = c(gamma_i, gamma_i),
+      boundary_rules  = quote(c(
+        x[1] > p_beta_vec[1],
+        x[2] > p_beta_vec[2]
+      )),
+      overall_min_gos = 1
+    )
+    
+    go_probs0 <- getGoProbabilities(decisions0)
+    go_mat0   <- go_probs0[[method_name]][["scenario_1"]]
+    oc_results_fine$type_1_error_hat[i] <- go_mat0["Go", "overall"]
+    
+    # ----- Power under p1 -----
+    scen1 <- simulateScenarios(
+      n_subjects_list     = list(c(n_i, n_i)),
+      response_rates_list = list(p1),
+      n_trials            = n_trials_oc
+    )
+    
+    analyses1 <- performAnalyses(
+      scenario_list      = scen1,
+      evidence_levels    = seq(0.5, 0.95, by = 0.01),
+      target_rates       = p_beta_vec,
+      method_names       = method_name,
+      n_mcmc_iterations  = 100,
+      verbose            = FALSE
+    )
+    
+    decisions1 <- getGoDecisions(
+      analyses_list   = analyses1,
+      cohort_names    = c("p_1", "p_2"),
+      evidence_levels = c(gamma_i, gamma_i),
+      boundary_rules  = quote(c(
+        x[1] > p_beta_vec[1],
+        x[2] > p_beta_vec[2]
+      )),
+      overall_min_gos = 1
+    )
+    
+    go_probs1 <- getGoProbabilities(decisions1)
+    go_mat1   <- go_probs1[[method_name]][["scenario_1"]]
+    oc_results_fine$power_hat[i] <- go_mat1["Go", "overall"]
+  }
+  
+  oc_results_fine$feasible <- with(
+    oc_results_fine,
+    type_1_error_hat <= type_1_error & power_hat >= power_min
+  )
   oc_results_fine$resolution <- "Fine"
   
 } else {
@@ -168,7 +210,7 @@ if (nrow(feas_coarse) > 0L) {
   oc_results_fine$resolution <- "Fine"
 }
 
-# Combine coarse and fine results, label feasibility, and draw boundaries
+# Combine coarse and fine, label feasibility, compute boundaries --------------
 
 oc_all <- bind_rows(oc_results_coarse, oc_results_fine)
 
@@ -219,7 +261,7 @@ md_coarse_nfeas <- md_coarse %>% filter(feasible_factor == "Not feasible")
 md_fine_feas    <- md_fine   %>% filter(feasible_factor == "Feasible")
 md_fine_nfeas   <- md_fine   %>% filter(feasible_factor == "Not feasible")
 
-# Interactive toggle between coarse / fine / both and feasibility
+# Plotly (same as before) ------------------------------------------------------
 
 fig <- plot_ly() %>%
   add_trace(
@@ -393,6 +435,3 @@ fig <- plot_ly() %>%
   )
 
 fig
-
-can we open up the go_prob_overall because it seems like the wrappers are causing the issue, maybe we just manually call all the results one after other instead of making it all so wrapped up and complicated. Thre graphs should remain the same so the variables we can keep same, but we can just call the results and use them directly
-
