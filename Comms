@@ -1,539 +1,214 @@
-doFuture::registerDoFuture()
-#future::plan(future::multisession())
-foreach::registerDoSEQ()
-
-library(dplyr)
-library(plotly)
-
-# Design settings --------------------------------------------------------------
-
-p0           <- c(0.40, 0.40)   # null true response rates
-p1           <- c(0.55, 0.55)   # alternative true response rates
-p_beta_vec   <- c(0.50, 0.50)   # clinical boundary
-type_1_error <- 0.20            # allowed Type I error
-power_min    <- 0.80            # required power
-n_trials_oc  <- 100             # simulated trials per (n, gamma)
-method_names <- c("stratified", "berry")  # <-- compare these methods
-
-# Grids for n and gamma --------------------------------------------------------
-
-n_grid_coarse     <- seq(10, 40, by = 5)
-gamma_grid_coarse <- seq(0.5, 0.95, by = 0.05)
-
-set.seed(2026)
-
-# Coarse grid: directly compute OC table ---------------------------------------
-
-oc_results_coarse <- expand.grid(
-  n      = n_grid_coarse,
-  gamma  = gamma_grid_coarse,
-  method = method_names
-)
-
-oc_results_coarse$type_1_error_hat <- NA_real_
-oc_results_coarse$power_hat        <- NA_real_
-
-pairs <- unique(oc_results_coarse[c("n", "gamma")])
-
-for (i in seq_len(nrow(pairs))) {
-  n_i     <- pairs$n[i]
-  gamma_i <- pairs$gamma[i]
-  
-  # ----- Type I error under p0 -----
-  scen0 <- simulateScenarios(
-    n_subjects_list     = list(c(n_i, n_i)),
-    response_rates_list = list(p0),
-    n_trials            = n_trials_oc
-  )
-  
-  analyses0 <- performAnalyses(
-    scenario_list      = scen0,
-    evidence_levels    = seq(0.5, 0.95, by = 0.01),
-    target_rates       = p_beta_vec,
-    method_names       = method_names,   # <-- all methods at once
-    n_mcmc_iterations  = 100,
-    verbose            = FALSE
-  )
-  
-  decisions0 <- getGoDecisions(
-    analyses_list   = analyses0,
-    cohort_names    = c("p_1", "p_2"),
-    evidence_levels = c(gamma_i, gamma_i),
-    boundary_rules  = quote(c(
-      x[1] > p_beta_vec[1],
-      x[2] > p_beta_vec[2]
-    )),
-    overall_min_gos = 1
-  )
-  
-  go_probs0 <- getGoProbabilities(decisions0)
-  
-  # ----- Power under p1 -----
-  scen1 <- simulateScenarios(
-    n_subjects_list     = list(c(n_i, n_i)),
-    response_rates_list = list(p1),
-    n_trials            = n_trials_oc
-  )
-  
-  analyses1 <- performAnalyses(
-    scenario_list      = scen1,
-    evidence_levels    = seq(0.5, 0.95, by = 0.01),
-    target_rates       = p_beta_vec,
-    method_names       = method_names,   # <-- all methods at once
-    n_mcmc_iterations  = 100,
-    verbose            = FALSE
-  )
-  
-  decisions1 <- getGoDecisions(
-    analyses_list   = analyses1,
-    cohort_names    = c("p_1", "p_2"),
-    evidence_levels = c(gamma_i, gamma_i),
-    boundary_rules  = quote(c(
-      x[1] > p_beta_vec[1],
-      x[2] > p_beta_vec[2]
-    )),
-    overall_min_gos = 1
-  )
-  
-  go_probs1 <- getGoProbabilities(decisions1)
-  
-  # ----- Fill all methods for this (n, gamma) -----
-  for (m in method_names) {
-    rid <- which(
-      oc_results_coarse$n == n_i &
-        oc_results_coarse$gamma == gamma_i &
-        oc_results_coarse$method == m
-    )
-    go_mat0 <- go_probs0[[m]][["scenario_1"]]
-    go_mat1 <- go_probs1[[m]][["scenario_1"]]
-    oc_results_coarse$type_1_error_hat[rid] <- go_mat0["Go", "overall"]
-    oc_results_coarse$power_hat[rid]        <- go_mat1["Go", "overall"]
-  }
-}
-
-oc_results_coarse$feasible <- with(
-  oc_results_coarse,
-  type_1_error_hat <= type_1_error & power_hat >= power_min
-)
-oc_results_coarse$resolution <- "Coarse"
-
-# Fine grid: define from feasible coarse region and compute directly -----------
-
-feas_coarse <- oc_results_coarse[oc_results_coarse$feasible, , drop = FALSE]
-
-if (nrow(feas_coarse) > 0L) {
-  n_range     <- range(feas_coarse$n)
-  gamma_range <- range(feas_coarse$gamma)
-  
-  n_grid_fine <- seq(
-    from = max(10, n_range[1] - 2),
-    to   = min(40, n_range[2] + 2),
-    by   = 1
-  )
-  
-  gamma_grid_fine <- seq(
-    from = max(0.5,  gamma_range[1] - 0.05),
-    to   = min(0.95, gamma_range[2] + 0.05),
-    by   = 0.01
-  )
-  
-  oc_results_fine <- expand.grid(
-    n      = n_grid_fine,
-    gamma  = gamma_grid_fine,
-    method = method_names
-  )
-  
-  oc_results_fine$type_1_error_hat <- NA_real_
-  oc_results_fine$power_hat        <- NA_real_
-  
-  pairs_f <- unique(oc_results_fine[c("n", "gamma")])
-  for (i in seq_len(nrow(pairs_f))) {
-    n_i     <- pairs_f$n[i]
-    gamma_i <- pairs_f$gamma[i]
-    
-    # ----- Type I error under p0 -----
-    scen0 <- simulateScenarios(
-      n_subjects_list     = list(c(n_i, n_i)),
-      response_rates_list = list(p0),
-      n_trials            = n_trials_oc
-    )
-    
-    analyses0 <- performAnalyses(
-      scenario_list      = scen0,
-      evidence_levels    = seq(0.5, 0.95, by = 0.01),
-      target_rates       = p_beta_vec,
-      method_names       = method_names,
-      n_mcmc_iterations  = 100,
-      verbose            = FALSE
-    )
-    
-    decisions0 <- getGoDecisions(
-      analyses_list   = analyses0,
-      cohort_names    = c("p_1", "p_2"),
-      evidence_levels = c(gamma_i, gamma_i),
-      boundary_rules  = quote(c(
-        x[1] > p_beta_vec[1],
-        x[2] > p_beta_vec[2]
-      )),
-      overall_min_gos = 1
-    )
-    
-    go_probs0 <- getGoProbabilities(decisions0)
-    
-    # ----- Power under p1 -----
-    scen1 <- simulateScenarios(
-      n_subjects_list     = list(c(n_i, n_i)),
-      response_rates_list = list(p1),
-      n_trials            = n_trials_oc
-    )
-    
-    analyses1 <- performAnalyses(
-      scenario_list      = scen1,
-      evidence_levels    = seq(0.5, 0.95, by = 0.01),
-      target_rates       = p_beta_vec,
-      method_names       = method_names,
-      n_mcmc_iterations  = 100,
-      verbose            = FALSE
-    )
-    
-    decisions1 <- getGoDecisions(
-      analyses_list   = analyses1,
-      cohort_names    = c("p_1", "p_2"),
-      evidence_levels = c(gamma_i, gamma_i),
-      boundary_rules  = quote(c(
-        x[1] > p_beta_vec[1],
-        x[2] > p_beta_vec[2]
-      )),
-      overall_min_gos = 1
-    )
-    
-    go_probs1 <- getGoProbabilities(decisions1)
-    
-    for (m in method_names) {
-      rid <- which(
-        oc_results_fine$n == n_i &
-          oc_results_fine$gamma == gamma_i &
-          oc_results_fine$method == m
-      )
-      go_mat0 <- go_probs0[[m]][["scenario_1"]]
-      go_mat1 <- go_probs1[[m]][["scenario_1"]]
-      oc_results_fine$type_1_error_hat[rid] <- go_mat0["Go", "overall"]
-      oc_results_fine$power_hat[rid]        <- go_mat1["Go", "overall"]
-    }
-  }
-  
-  oc_results_fine$feasible <- with(
-    oc_results_fine,
-    type_1_error_hat <= type_1_error & power_hat >= power_min
-  )
-  oc_results_fine$resolution <- "Fine"
-  
-} else {
-  oc_results_fine <- oc_results_coarse[FALSE, , drop = FALSE]
-  oc_results_fine$resolution <- "Fine"
-}
-
-# Combine coarse and fine, label feasibility, compute boundaries --------------
-
-oc_all <- bind_rows(oc_results_coarse, oc_results_fine)
-
-oc_all$feasible_factor <- ifelse(oc_all$feasible, "Feasible", "Not feasible")
-oc_all$feasible_factor <- factor(
-  oc_all$feasible_factor,
-  levels = c("Not feasible", "Feasible")
-)
-
-calc_boundaries <- function(df) {
-  feas_only <- df[df$feasible, , drop = FALSE]
-  if (nrow(feas_only) == 0L) {
-    # always return a list (safe even when no feasible design exists)
-    empty <- df[FALSE, , drop = FALSE]
-    return(list(
-      min_n_per_gamma = empty,
-      min_gamma_per_n = empty
-    ))
-  }
-  
-  if ("method" %in% names(feas_only)) {
-    tmp_gamma <- aggregate(n ~ gamma + method, data = feas_only, FUN = min)
-    min_n_per_gamma <- merge(
-      tmp_gamma,
-      feas_only,
-      by = c("gamma", "method", "n"),
-      all.x = TRUE,
-      sort = TRUE
-    )
-    
-    tmp_n <- aggregate(gamma ~ n + method, data = feas_only, FUN = min)
-    min_gamma_per_n <- merge(
-      tmp_n,
-      feas_only,
-      by = c("n", "method", "gamma"),
-      all.x = TRUE,
-      sort = TRUE
-    )
-  } else {
-    tmp_gamma <- aggregate(n ~ gamma, data = feas_only, FUN = min)
-    min_n_per_gamma <- merge(
-      tmp_gamma,
-      feas_only,
-      by = c("gamma", "n"),
-      all.x = TRUE,
-      sort = TRUE
-    )
-    
-    tmp_n <- aggregate(gamma ~ n, data = feas_only, FUN = min)
-    min_gamma_per_n <- merge(
-      tmp_n,
-      feas_only,
-      by = c("n", "gamma"),
-      all.x = TRUE,
-      sort = TRUE
-    )
-  }
-  
-  list(
-    min_n_per_gamma = min_n_per_gamma,
-    min_gamma_per_n = min_gamma_per_n
-  )
-}
-
-bnd_coarse <- calc_boundaries(oc_results_coarse)
-bnd_fine   <- calc_boundaries(oc_results_fine)
-
-md_coarse <- oc_all[oc_all$resolution == "Coarse", , drop = FALSE]
-md_fine   <- oc_all[oc_all$resolution == "Fine",   , drop = FALSE]
-
-md_coarse_feas  <- md_coarse %>% filter(feasible_factor == "Feasible")
-md_coarse_nfeas <- md_coarse %>% filter(feasible_factor == "Not feasible")
-md_fine_feas    <- md_fine   %>% filter(feasible_factor == "Feasible")
-md_fine_nfeas   <- md_fine   %>% filter(feasible_factor == "Not feasible")
-
-# Plotly (same as before, but split by method) ---------------------------------
+# ------------------------------------------------------------------
+# Main OC plot: toggle between methods, show coarse+fine together
+# ------------------------------------------------------------------
 
 K <- length(method_names)
 
-fig <- plot_ly() %>%
-  add_trace(
-    data  = md_coarse_feas,
-    x     = ~n, y = ~gamma,
-    type  = "scatter", mode = "markers",
-    marker = list(color = "green"),
-    name  = "Coarse — Feasible",
-    legendgroup = "coarse",
-    hoverinfo = "text",
-    text  = ~paste0(
-      "Resolution = Coarse",
-      "<br>Method = ", method,
-      "<br>n = ", n,
-      "<br>gamma = ", round(gamma, 3),
-      "<br>Type I error = ", round(type_1_error_hat, 3),
-      "<br>Power = ", round(power_hat, 3),
-      "<br>Feasible = ", feasible
-    ),
-    split = ~method,
-    visible = TRUE
-  ) %>%
-  add_trace(
-    data  = md_coarse_nfeas,
-    x     = ~n, y = ~gamma,
-    type  = "scatter", mode = "markers",
-    marker = list(color = "red"),
-    name  = "Coarse — Not feasible",
-    legendgroup = "coarse",
-    hoverinfo = "text",
-    text  = ~paste0(
-      "Resolution = Coarse",
-      "<br>Method = ", method,
-      "<br>n = ", n,
-      "<br>gamma = ", round(gamma, 3),
-      "<br>Type I error = ", round(type_1_error_hat, 3),
-      "<br>Power = ", round(power_hat, 3),
-      "<br>Feasible = ", feasible
-    ),
-    split = ~method,
-    visible = TRUE
-  ) %>%
-  add_trace(
-    data   = bnd_coarse$min_n_per_gamma,
-    x      = ~n, y = ~gamma,
-    type   = "scatter", mode = "lines+markers",
-    inherit = FALSE,
-    line   = list(width = 2),
-    marker = list(size = 8, symbol = "x", color = "black"),
-    name   = "Coarse boundary",
-    legendgroup = "coarse",
-    hoverinfo = "text",
-    text = ~paste0(
-      "Resolution = Coarse",
-      "<br>Method = ", method,
-      "<br>gamma = ", round(gamma, 3),
-      "<br>min n = ", n,
-      "<br>Type I error = ", round(type_1_error_hat, 3),
-      "<br>Power = ", round(power_hat, 3)
-    ),
-    split = ~method,
-    showlegend = FALSE,
-    visible = TRUE
-  ) %>%
-  add_trace(
-    data  = md_fine_feas,
-    x     = ~n, y = ~gamma,
-    type  = "scatter", mode = "markers",
-    marker = list(color = "green"),
-    name  = "Fine — Feasible",
-    legendgroup = "fine",
-    hoverinfo = "text",
-    text  = ~paste0(
-      "Resolution = Fine",
-      "<br>Method = ", method,
-      "<br>n = ", n,
-      "<br>gamma = ", round(gamma, 3),
-      "<br>Type I error = ", round(type_1_error_hat, 3),
-      "<br>Power = ", round(power_hat, 3),
-      "<br>Feasible = ", feasible
-    ),
-    split = ~method,
-    visible = FALSE
-  ) %>%
-  add_trace(
-    data  = md_fine_nfeas,
-    x     = ~n, y = ~gamma,
-    type  = "scatter", mode = "markers",
-    marker = list(color = "red"),
-    name  = "Fine — Not feasible",
-    legendgroup = "fine",
-    hoverinfo = "text",
-    text  = ~paste0(
-      "Resolution = Fine",
-      "<br>Method = ", method,
-      "<br>n = ", n,
-      "<br>gamma = ", round(gamma, 3),
-      "<br>Type I error = ", round(type_1_error_hat, 3),
-      "<br>Power = ", round(power_hat, 3),
-      "<br>Feasible = ", feasible
-    ),
-    split = ~method,
-    visible = FALSE
-  ) %>%
-  add_trace(
-    data   = bnd_fine$min_n_per_gamma,
-    x      = ~n, y = ~gamma,
-    type   = "scatter", mode = "lines+markers",
-    inherit = FALSE,
-    line   = list(width = 2),
-    marker = list(size = 8, symbol = "x", color = "black"),
-    name   = "Fine boundary",
-    legendgroup = "fine",
-    hoverinfo = "text",
-    text = ~paste0(
-      "Resolution = Fine",
-      "<br>Method = ", method,
-      "<br>gamma = ", round(gamma, 3),
-      "<br>min n = ", n,
-      "<br>Type I error = ", round(type_1_error_hat, 3),
-      "<br>Power = ", round(power_hat, 3)
-    ),
-    split = ~method,
-    showlegend = FALSE,
-    visible = FALSE
-  ) %>%
+fig <- plot_ly()
+trace_idx <- 0
+
+for (m in method_names) {
+  # Filter data for this method
+  md_coarse_m_feas  <- md_coarse_feas  %>% filter(method == m)
+  md_coarse_m_nfeas <- md_coarse_nfeas %>% filter(method == m)
+  md_fine_m_feas    <- md_fine_feas    %>% filter(method == m)
+  md_fine_m_nfeas   <- md_fine_nfeas   %>% filter(method == m)
+  
+  bnd_coarse_m <- bnd_coarse$min_n_per_gamma %>%
+    dplyr::filter(method == m)
+  bnd_fine_m   <- bnd_fine$min_n_per_gamma %>%
+    dplyr::filter(method == m)
+  
+  # Determine whether this method should be visible by default
+  # (only the FIRST method is shown initially)
+  default_visible <- (m == method_names[1])
+  
+  # 1) Coarse — Feasible
+  fig <- fig %>%
+    add_trace(
+      data  = md_coarse_m_feas,
+      x     = ~n, y = ~gamma,
+      type  = "scatter", mode = "markers",
+      marker = list(color = "green"),
+      name  = paste0(m, " — Coarse feasible"),
+      hoverinfo = "text",
+      text  = ~paste0(
+        "Method = ", method,
+        "<br>Resolution = Coarse",
+        "<br>n = ", n,
+        "<br>gamma = ", round(gamma, 3),
+        "<br>Type I error = ", round(type_1_error_hat, 3),
+        "<br>Power = ", round(power_hat, 3),
+        "<br>Feasible = ", feasible
+      ),
+      visible = default_visible
+    )
+  trace_idx <- trace_idx + 1
+  
+  # 2) Coarse — Not feasible
+  fig <- fig %>%
+    add_trace(
+      data  = md_coarse_m_nfeas,
+      x     = ~n, y = ~gamma,
+      type  = "scatter", mode = "markers",
+      marker = list(color = "red"),
+      name  = paste0(m, " — Coarse not feasible"),
+      hoverinfo = "text",
+      text  = ~paste0(
+        "Method = ", method,
+        "<br>Resolution = Coarse",
+        "<br>n = ", n,
+        "<br>gamma = ", round(gamma, 3),
+        "<br>Type I error = ", round(type_1_error_hat, 3),
+        "<br>Power = ", round(power_hat, 3),
+        "<br>Feasible = ", feasible
+      ),
+      visible = default_visible
+    )
+  trace_idx <- trace_idx + 1
+  
+  # 3) Coarse boundary
+  fig <- fig %>%
+    add_trace(
+      data   = bnd_coarse_m,
+      x      = ~n, y = ~gamma,
+      type   = "scatter", mode = "lines+markers",
+      inherit = FALSE,
+      line   = list(width = 2),
+      marker = list(size = 8, symbol = "x", color = "black"),
+      name   = paste0(m, " — Coarse boundary"),
+      hoverinfo = "text",
+      text = ~paste0(
+        "Method = ", method,
+        "<br>Resolution = Coarse",
+        "<br>gamma = ", round(gamma, 3),
+        "<br>min n = ", n,
+        "<br>Type I error = ", round(type_1_error_hat, 3),
+        "<br>Power = ", round(power_hat, 3)
+      ),
+      showlegend = FALSE,
+      visible = default_visible
+    )
+  trace_idx <- trace_idx + 1
+  
+  # 4) Fine — Feasible
+  fig <- fig %>%
+    add_trace(
+      data  = md_fine_m_feas,
+      x     = ~n, y = ~gamma,
+      type  = "scatter", mode = "markers",
+      marker = list(color = "green", symbol = "triangle-up"),
+      name  = paste0(m, " — Fine feasible"),
+      hoverinfo = "text",
+      text  = ~paste0(
+        "Method = ", method,
+        "<br>Resolution = Fine",
+        "<br>n = ", n,
+        "<br>gamma = ", round(gamma, 3),
+        "<br>Type I error = ", round(type_1_error_hat, 3),
+        "<br>Power = ", round(power_hat, 3),
+        "<br>Feasible = ", feasible
+      ),
+      visible = default_visible
+    )
+  trace_idx <- trace_idx + 1
+  
+  # 5) Fine — Not feasible
+  fig <- fig %>%
+    add_trace(
+      data  = md_fine_m_nfeas,
+      x     = ~n, y = ~gamma,
+      type  = "scatter", mode = "markers",
+      marker = list(color = "red", symbol = "triangle-up"),
+      name  = paste0(m, " — Fine not feasible"),
+      hoverinfo = "text",
+      text  = ~paste0(
+        "Method = ", method,
+        "<br>Resolution = Fine",
+        "<br>n = ", n,
+        "<br>gamma = ", round(gamma, 3),
+        "<br>Type I error = ", round(type_1_error_hat, 3),
+        "<br>Power = ", round(power_hat, 3),
+        "<br>Feasible = ", feasible
+      ),
+      visible = default_visible
+    )
+  trace_idx <- trace_idx + 1
+  
+  # 6) Fine boundary
+  fig <- fig %>%
+    add_trace(
+      data   = bnd_fine_m,
+      x      = ~n, y = ~gamma,
+      type   = "scatter", mode = "lines+markers",
+      inherit = FALSE,
+      line   = list(width = 2, dash = "dot"),
+      marker = list(size = 8, symbol = "x", color = "black"),
+      name   = paste0(m, " — Fine boundary"),
+      hoverinfo = "text",
+      text = ~paste0(
+        "Method = ", method,
+        "<br>Resolution = Fine",
+        "<br>gamma = ", round(gamma, 3),
+        "<br>min n = ", n,
+        "<br>Type I error = ", round(type_1_error_hat, 3),
+        "<br>Power = ", round(power_hat, 3)
+      ),
+      showlegend = FALSE,
+      visible = default_visible
+    )
+  trace_idx <- trace_idx + 1
+}
+
+# Build visibility masks for method dropdown
+n_traces <- 6 * K
+method_buttons <- vector("list", length = K)
+
+for (j in seq_len(K)) {
+  vis <- rep(FALSE, n_traces)
+  start <- (j - 1L) * 6L + 1L
+  vis[start:(start + 5L)] <- TRUE
+  
+  method_buttons[[j]] <- list(
+    label  = method_names[j],
+    method = "update",
+    args   = list(
+      list(visible = vis),
+      list(
+        title = paste0(
+          "Feasible vs Non-feasible Designs — method: ",
+          method_names[j]
+        )
+      )
+    )
+  )
+}
+
+fig <- fig %>%
   layout(
     title = paste0(
       "Feasible vs Non-feasible Designs (methods: ",
       paste(method_names, collapse = ", "),
       "; 2 cohorts)"
     ),
-    xaxis = list(title = "Sample size per cohort (n)", range = c(10, 40), fixedrange = TRUE),
-    yaxis = list(title = "Evidence level (gamma)", range = c(0.5, 0.95), fixedrange = TRUE),
-    legend = list(title = list(text = "Designs")),
+    xaxis = list(
+      title      = "Sample size per cohort (n)",
+      range      = c(10, 40),
+      fixedrange = TRUE
+    ),
+    yaxis = list(
+      title      = "Evidence level (gamma)",
+      range      = c(0.5, 0.95),
+      fixedrange = TRUE
+    ),
+    legend = list(title = list(text = "Design / Resolution")),
     updatemenus = list(
       list(
-        type = "dropdown", x = 1.12, y = 1,
-        buttons = list(
-          list(
-            label = "Coarse only",
-            method = "update",
-            args = list(
-              list(visible = c(
-                rep(TRUE,  K),  # coarse feasible (by method)
-                rep(TRUE,  K),  # coarse not feasible
-                rep(TRUE,  K),  # coarse boundary
-                rep(FALSE, K),  # fine feasible
-                rep(FALSE, K),  # fine not feasible
-                rep(FALSE, K)   # fine boundary
-              )),
-              list(title = "Feasible vs Non-feasible — Coarse")
-            )
-          ),
-          list(
-            label = "Fine only",
-            method = "update",
-            args = list(
-              list(visible = c(
-                rep(FALSE, K),
-                rep(FALSE, K),
-                rep(FALSE, K),
-                rep(TRUE,  K),
-                rep(TRUE,  K),
-                rep(TRUE,  K)
-              )),
-              list(title = "Feasible vs Non-feasible — Fine")
-            )
-          ),
-          list(
-            label = "Both",
-            method = "update",
-            args = list(
-              list(visible = c(
-                rep(TRUE, K), rep(TRUE, K), rep(TRUE, K),
-                rep(TRUE, K), rep(TRUE, K), rep(TRUE, K)
-              )),
-              list(title = "Feasible vs Non-feasible — Coarse & Fine")
-            )
-          )
-        )
-      ),
-      list(
-        type = "dropdown", x = 1.12, y = 0.92,
-        buttons = list(
-          list(
-            label = "Feasible only",
-            method = "restyle",
-            args = list("marker.opacity", c(
-              rep(1, K),  # coarse feasible
-              rep(0, K),  # coarse not feasible
-              rep(1, K),  # coarse boundary
-              rep(1, K),  # fine feasible
-              rep(0, K),  # fine not feasible
-              rep(1, K)   # fine boundary
-            ))
-          ),
-          list(
-            label = "Not feasible only",
-            method = "restyle",
-            args = list("marker.opacity", c(
-              rep(0, K),
-              rep(1, K),
-              rep(1, K),
-              rep(0, K),
-              rep(1, K),
-              rep(1, K)
-            ))
-          ),
-          list(
-            label = "Both feasibilities",
-            method = "restyle",
-            args = list("marker.opacity", c(
-              rep(1, K),
-              rep(1, K),
-              rep(1, K),
-              rep(1, K),
-              rep(1, K),
-              rep(1, K)
-            ))
-          )
-        )
+        type = "dropdown",
+        x    = 1.12,
+        y    = 1,
+        buttons = method_buttons,
+        showactive = TRUE
       )
     )
   )
@@ -541,6 +216,50 @@ fig <- plot_ly() %>%
 fig
 
 
+# ------------------------------------------------------------------
+# Boundary-only plot: min n per gamma (fine grid) for each method
+# ------------------------------------------------------------------
 
-# we can see borrowing between
+bnd_fine_df <- bnd_fine$min_n_per_gamma
 
+fig_boundary <- plot_ly()
+
+for (m in method_names) {
+  df_m <- bnd_fine_df %>% filter(method == m)
+  
+  fig_boundary <- fig_boundary %>%
+    add_trace(
+      data = df_m,
+      x    = ~gamma,
+      y    = ~n,
+      type = "scatter",
+      mode = "lines+markers",
+      name = m,
+      hoverinfo = "text",
+      text = ~paste0(
+        "Method = ", method,
+        "<br>gamma = ", round(gamma, 3),
+        "<br>min n = ", n,
+        "<br>Type I error = ", round(type_1_error_hat, 3),
+        "<br>Power = ", round(power_hat, 3)
+      )
+    )
+}
+
+fig_boundary <- fig_boundary %>%
+  layout(
+    title = "Boundary: minimal n per evidence level (fine grid)",
+    xaxis = list(
+      title      = "Evidence level (gamma)",
+      range      = c(0.5, 0.95),
+      fixedrange = TRUE
+    ),
+    yaxis = list(
+      title      = "Minimal sample size per cohort (n)",
+      range      = c(10, 40),
+      fixedrange = TRUE
+    ),
+    legend = list(title = list(text = "Method"))
+  )
+
+fig_boundary
