@@ -1,10 +1,15 @@
+# 0) Setup: parallel backend, packages
+# ---------------------------------------------------------------------------
+
 doFuture::registerDoFuture()
 future::plan(future::sequential())
 
 library(dplyr)
 library(plotly)
 
-# Generic Go-probability function (single final analysis, stratified backend)
+# 1) Function: Go probability for a single-stage design (stratified model)
+# ---------------------------------------------------------------------------
+
 go_prob_overall <- function(n,
                             p_true_vec,
                             p_beta_vec,
@@ -32,8 +37,10 @@ go_prob_overall <- function(n,
     analyses_list   = analyses,
     cohort_names    = c("p_1", "p_2"),
     evidence_levels = c(gamma, gamma),
-    boundary_rules  = quote(c(x[1] > p_beta_vec[1],
-                              x[2] > p_beta_vec[2])),
+    boundary_rules  = quote(c(
+      x[1] > p_beta_vec[1],
+      x[2] > p_beta_vec[2]
+    )),
     overall_min_gos = overall_min_gos
   )
   
@@ -43,7 +50,9 @@ go_prob_overall <- function(n,
   go_mat["Go", "overall"]
 }
 
-# Design settings --------------------------------------------------------------
+# 2) Global design settings
+# ---------------------------------------------------------------------------
+
 p0           <- c(0.30, 0.30)
 p1           <- c(0.45, 0.45)
 p_beta_vec   <- c(0.40, 0.40)
@@ -51,11 +60,15 @@ type_1_error <- 0.20
 power_min    <- 0.80
 n_trials_oc  <- 100
 
-# Coarse and fine grids (n from 10 to 40) --------------------------------------
+# 3) Coarse grid definitions (n and gamma)
+# ---------------------------------------------------------------------------
+
 n_grid_coarse     <- seq(10, 40, by = 5)
 gamma_grid_coarse <- seq(0.5, 0.95, by = 0.05)
 
-# Helper: compute an OC grid for given n/gamma sets and a Go-probability function
+# 4) Helper: compute operating characteristics on an n×gamma grid
+# ---------------------------------------------------------------------------
+
 compute_oc_grid <- function(n_grid,
                             gamma_grid,
                             p0,
@@ -105,7 +118,9 @@ compute_oc_grid <- function(n_grid,
 
 set.seed(2026)
 
-# 1) Coarse grid with stratified model -----------------------------------------
+# 5) Coarse grid: run OC computation with stratified model
+# ---------------------------------------------------------------------------
+
 oc_results_coarse <- compute_oc_grid(
   n_grid        = n_grid_coarse,
   gamma_grid    = gamma_grid_coarse,
@@ -120,7 +135,9 @@ oc_results_coarse <- compute_oc_grid(
 
 oc_results_coarse$resolution <- "Coarse"
 
-# 2) Define region-of-interest from coarse run and run a fine grid -------------
+# 6) Fine grid: zoom into the feasible region of the coarse grid
+# ---------------------------------------------------------------------------
+
 feas_coarse <- oc_results_coarse[oc_results_coarse$feasible, , drop = FALSE]
 
 if (nrow(feas_coarse) > 0L) {
@@ -158,7 +175,9 @@ if (nrow(feas_coarse) > 0L) {
   oc_results_fine$resolution <- "Fine"
 }
 
-# 3) Combine results and compute boundaries for each resolution ----------------
+# 7) Combine coarse and fine results, label feasibility, and build boundaries
+# ---------------------------------------------------------------------------
+
 oc_all <- bind_rows(oc_results_coarse, oc_results_fine)
 
 oc_all$feasible_factor <- ifelse(oc_all$feasible, "Feasible", "Not feasible")
@@ -192,8 +211,8 @@ calc_boundaries <- function(df) {
   )
   
   list(
-    min_n_per_gamma   = min_n_per_gamma,
-    min_gamma_per_n   = min_gamma_per_n
+    min_n_per_gamma = min_n_per_gamma,
+    min_gamma_per_n = min_gamma_per_n
   )
 }
 
@@ -203,29 +222,15 @@ bnd_fine   <- calc_boundaries(oc_results_fine)
 md_coarse <- oc_all[oc_all$resolution == "Coarse", , drop = FALSE]
 md_fine   <- oc_all[oc_all$resolution == "Fine",   , drop = FALSE]
 
-md_coarse_feas <- md_coarse %>% filter(feasible_factor == "Feasible")
-md_coarse_nfeas <- md_coarse %>% filter(feasible_factor == "Not feasible")
-md_fine_feas <- md_fine %>% filter(feasible_factor == "Feasible")
-md_fine_nfeas <- md_fine %>% filter(feasible_factor == "Not feasible")
-
-
-# 4) Plotly with toggle between coarse / fine / both ---------------------------
-
-
-bnd_coarse <- calc_boundaries(oc_results_coarse)
-bnd_fine   <- calc_boundaries(oc_results_fine)
-
-md_coarse <- oc_all[oc_all$resolution == "Coarse", , drop = FALSE]
-md_fine   <- oc_all[oc_all$resolution == "Fine",   , drop = FALSE]
-
-# Split data explicitly to control legend and toggles
 md_coarse_feas  <- md_coarse %>% filter(feasible_factor == "Feasible")
 md_coarse_nfeas <- md_coarse %>% filter(feasible_factor == "Not feasible")
 md_fine_feas    <- md_fine   %>% filter(feasible_factor == "Feasible")
 md_fine_nfeas   <- md_fine   %>% filter(feasible_factor == "Not feasible")
 
+# 8) Interactive Plotly: toggle between coarse / fine / both and feasibility
+# ---------------------------------------------------------------------------
+
 fig <- plot_ly() %>%
-  # 1) Coarse — Feasible (trace 1)
   add_trace(
     data  = md_coarse_feas,
     x     = ~n, y = ~gamma,
@@ -244,7 +249,6 @@ fig <- plot_ly() %>%
     ),
     visible = TRUE
   ) %>%
-  # 2) Coarse — Not feasible (trace 2)
   add_trace(
     data  = md_coarse_nfeas,
     x     = ~n, y = ~gamma,
@@ -263,7 +267,6 @@ fig <- plot_ly() %>%
     ),
     visible = TRUE
   ) %>%
-  # 3) Coarse boundary (trace 3)
   add_trace(
     data   = bnd_coarse$min_n_per_gamma,
     x      = ~n, y = ~gamma,
@@ -284,7 +287,6 @@ fig <- plot_ly() %>%
     showlegend = FALSE,
     visible = TRUE
   ) %>%
-  # 4) Fine — Feasible (trace 4)
   add_trace(
     data  = md_fine_feas,
     x     = ~n, y = ~gamma,
@@ -303,7 +305,6 @@ fig <- plot_ly() %>%
     ),
     visible = FALSE
   ) %>%
-  # 5) Fine — Not feasible (trace 5)
   add_trace(
     data  = md_fine_nfeas,
     x     = ~n, y = ~gamma,
@@ -322,7 +323,6 @@ fig <- plot_ly() %>%
     ),
     visible = FALSE
   ) %>%
-  # 6) Fine boundary (trace 6)
   add_trace(
     data   = bnd_fine$min_n_per_gamma,
     x      = ~n, y = ~gamma,
@@ -349,7 +349,6 @@ fig <- plot_ly() %>%
     yaxis = list(title = "Evidence level (gamma)", range = c(0.5, 0.95), fixedrange = TRUE),
     legend = list(title = list(text = "Designs")),
     updatemenus = list(
-      # (1) Resolution selector: controls VISIBILITY
       list(
         type = "dropdown", x = 1.12, y = 1,
         buttons = list(
@@ -357,7 +356,6 @@ fig <- plot_ly() %>%
             label = "Coarse only",
             method = "update",
             args = list(
-              # [1 C Feas, 2 C Not, 3 C Bound, 4 F Feas, 5 F Not, 6 F Bound]
               list(visible = c(TRUE, TRUE, TRUE,  FALSE, FALSE, FALSE)),
               list(title = "Feasible vs Non-feasible — Coarse")
             )
@@ -380,7 +378,6 @@ fig <- plot_ly() %>%
           )
         )
       ),
-      # (2) Feasibility selector: controls MARKER OPACITY ONLY (keeps resolution choice intact)
       list(
         type = "dropdown", x = 1.12, y = 0.92,
         buttons = list(
