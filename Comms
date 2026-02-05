@@ -1,9 +1,226 @@
-Alternative parameterizations
-Two parameters
-Mean and sample size
-The beta distribution may also be reparameterized in terms of its mean μ (0 < μ < 1) and the sum of the two shape parameters ν = α + β > 0([3] p. 83). Denoting by αPosterior and βPosterior the shape parameters of the posterior beta distribution resulting from applying Bayes' theorem to a binomial likelihood function and a prior probability, the interpretation of the addition of both shape parameters to be sample size = ν = α·Posterior + β·Posterior is only correct for the Haldane prior probability Beta(0,0). Specifically, for the Bayes (uniform) prior Beta(1,1) the correct interpretation would be sample size = α·Posterior + β Posterior − 2, or ν = (sample size) + 2. For sample size much larger than 2, the difference between these two priors becomes negligible. (See section Bayesian inference for further details.) ν = α + β is referred to as the "sample size" of a beta distribution, but one should remember that it is, strictly speaking, the "sample size" of a binomial likelihood function only when using a Haldane Beta(0,0) prior in Bayes' theorem.
-
-This parametrization may be useful in Bayesian parameter estimation. For example, one may administer a test to a number of individuals. If it is assumed that each person's score (0 ≤ θ ≤ 1) is drawn from a population-level beta distribution, then an important statistic is the mean of this population-level distribution. The mean and sample size parameters are related to the shape parameters α and β via[3]
-
-α = μν, β = (1 − μ)ν
-Under this parametrization, one may place an uninformative prior probability over the mean, and a vague prior probability (such as an exponential or gamma distribution) over the positive reals for the sample size, if they are independent, and prior data and/or beliefs justify it.
+getEstimates <- function (
+    
+  analyses_list,
+  add_parameters  = NULL,
+  point_estimator = "median",
+  alpha_level     = 0.05
+  
+) {
+  
+  error_analyses_list <-
+    "Providing an object of class 'analysis_list' for the argument 'analyses_list'"
+  error_add_parameters <- paste(
+    "Providing either NULL or a vector of strings for the argument 'add_parameters',",
+    "naming additional parameters of the applied model(s)"
+  )
+  error_point_estimator <-
+    "Providing either 'median' or 'mean' for the argument 'point_estimator'"
+  error_alpha_level <-
+    "Providing a numeric in (0, 1) for the argument 'alpha_level'"
+  
+  checkmate::assertClass(
+    analyses_list,
+    classes   = "analysis_list",
+    .var.name = error_analyses_list
+  )
+  
+  checkmate::assertCharacter(
+    add_parameters,
+    null.ok   = TRUE,
+    .var.name = error_add_parameters
+  )
+  
+  checkmate::assertChoice(
+    point_estimator,
+    choices   = c("median", "mean"),
+    .var.name = error_point_estimator
+  )
+  
+  checkmate::assertNumber(
+    alpha_level,
+    finite    = TRUE,
+    .var.name = error_alpha_level
+  )
+  checkmate::assertTRUE(
+    alpha_level > 0 & alpha_level < 1,
+    .var.name = error_alpha_level
+  )
+  
+  available_quantiles <- round(analyses_list[[1]]$analysis_parameters$quantiles, 9)
+  asked_quantiles     <- round(c(alpha_level / 2, 1 - alpha_level / 2), 9)
+  if (any(!asked_quantiles %in% available_quantiles)) {
+    stop(paste(
+      "The 'alpha_level' must be among the stored quantiles in 'analyses_list',",
+      "e.g. 1 - alpha_level must be among the evidence_levels in performAnalyses()"
+    ))
+  }
+  
+  ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
+  
+  cohort_names <- getAllCohortNames(analyses_list)
+  diff_indices <- grepl("diff", cohort_names)
+  
+  ## Filter for cohort names in add_parameters
+  add_parameters <- add_parameters[!grepl("p_", add_parameters)]
+  
+  ## Lists to hold the results
+  results_list <- vector(mode = "list", length = length(analyses_list))
+  names(results_list) <- names(analyses_list)
+  
+  for (s in seq_along(analyses_list)) {
+    
+    true_rr <- analyses_list[[s]]$scenario_data$response_rates
+    
+    ## calculate the historic response rates
+    hist_index <- true_rr <= 0 | true_rr >= 1
+    if (any(hist_index)) {
+      
+      hist_rr <- sapply(which(hist_index), function (x) {
+        true_rr[x] / analyses_list[[s]]$scenario_data$n_subjects[1, x]
+      })
+      
+      true_rr[hist_index] <- hist_rr
+      
+    }
+    
+    ## calculate the differences in true rr if necessary
+    if (any(diff_indices)) {
+      
+      diff_cohorts <- sapply(
+        strsplit(substrRight(cohort_names[diff_indices], 2), ""),
+        as.numeric
+      )
+      
+      true_diff_rr <- t(apply(diff_cohorts, 2, function (x) {
+        diff(true_rr[x])
+      }))
+      
+    } else {
+      
+      true_diff_rr <- NULL
+      
+    }
+    
+    ## must be after historic response rates
+    true_rr <- cbind(true_rr, true_diff_rr)
+    
+    ## prepare loop
+    method_names <- analyses_list[[s]]$analysis_parameters$method_names
+    
+    results_per_method_list <- vector(mode = "list", length = length(method_names))
+    names(results_per_method_list) <- method_names
+    
+    ## prepare check that additional parameters occur in at least one of the methods
+    if (!is.null(add_parameters)) {
+      occurences <- vector(length = length(method_names))
+    }
+    
+    for (n in seq_along(method_names)) {
+      
+      if (!is.null(add_parameters)) {
+        
+        add_index <- add_parameters %in%
+          colnames(analyses_list[[s]]$quantiles_list[[n]][[1]])
+        
+        if (any(add_index)) {
+          occurences[n] <- TRUE
+        }
+        
+        parameter_names <- c(cohort_names, add_parameters[add_index])
+        
+      } else {
+        
+        parameter_names <- cohort_names
+        
+      }
+      
+      ## Setting up gamma levels
+      n_parameters <- length(parameter_names)
+      
+      gamma_levels <- c(
+        rep("mean",              n_parameters),
+        rep("sd",                n_parameters),
+        rep(1 - alpha_level / 2, n_parameters),
+        rep(0.5,                 n_parameters),
+        rep(alpha_level / 2,     n_parameters)
+      )
+      
+      matrix_estimates <- do.call(
+        rbind,
+        getPosteriorGammaQuantiles(
+          method_name              = method_names[n],
+          gamma_levels             = gamma_levels,
+          quantiles                = analyses_list[[s]]$analysis_parameters$quantiles,
+          posterior_quantiles_list = analyses_list[[s]]$quantiles_list,
+          cohort_names             = rep(parameter_names, times = 5)
+        )
+      )
+      
+      ## Mean, SD & Quantiles
+      post_quantiles <- matrix(colMeans(matrix_estimates), ncol = 5)
+      
+      rownames(post_quantiles) <- parameter_names
+      colnames(post_quantiles) <- c(
+        "Mean", "SD",
+        paste0(c(alpha_level / 2, 0.5, 1 - alpha_level / 2) * 100, "%")
+      )
+      
+      ## Bias and MSE
+      if (point_estimator == "median") {
+        indices_point_est <- n_parameters * 3 + seq_len(n_parameters)
+      } else {
+        indices_point_est <- seq_len(n_parameters)
+      }
+      
+      matrix_estimates <- matrix_estimates[, indices_point_est]
+      
+      ## if only a single trial (i.e. a trial outcome) has been evaluated
+      if (is.null(dim(matrix_estimates))) {
+        
+        estimates <- post_quantiles
+        
+      } else {
+        
+        ## find all estimates for response rates
+        rr_index         <- grepl("p_", colnames(matrix_estimates))
+        matrix_estimates <- matrix_estimates[, rr_index]
+        
+        point_estimates  <- as.matrix(colMeans(matrix_estimates))
+        var_estimates    <- as.matrix(apply(matrix_estimates, 2, stats::var))
+        
+        bias_estimates <- point_estimates - t(true_rr)
+        mse_estimates  <- bias_estimates^2 + var_estimates
+        
+        colnames(bias_estimates) <- "Bias"
+        colnames(mse_estimates)  <- "MSE"
+        
+        ## Combine results
+        ## introduce NAs for all values that are not response rates
+        na_matrix      <- matrix(NA, nrow = sum(!rr_index), ncol = 1)
+        
+        bias_estimates <- rbind(bias_estimates, na_matrix)
+        mse_estimates  <- rbind(mse_estimates,  na_matrix)
+        
+        estimates <- cbind(post_quantiles, bias_estimates, mse_estimates)
+        
+      }
+      
+      ## Save results
+      results_per_method_list[[method_names[n]]] <- estimates
+      
+    }
+    
+    if (!is.null(add_parameters) && all(!occurences)) {
+      stop(paste(
+        "The additional parameters provided in 'add_parameters' do not occur",
+        "in any of the methods stored in 'analyses_list'"
+      ))
+    }
+    
+    results_list[[s]] <- results_per_method_list
+    
+  }
+  
+  return(listPerMethod(results_list))
+  
+}
