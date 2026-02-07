@@ -1,74 +1,16 @@
-uniq <- getUniqueTrialsNormal(
-  scenario_list = scenario_list_normal,
-  nbins         = 4   # or whatever you used
-)
-
-str(uniq)           # just to see the structure
-uniq$groups         # group_id, rep_scenario, rep_trial, n_members
-uniq$map            # scenario_index, trial_index, group_id, signature
-uniq$breaks         # bin boundaries per cohort
-
-means_list <- list()
-scen_idx   <- integer(0)
-trial_idx  <- integer(0)
-
-for (s in seq_along(scenario_list_normal)) {
-  trials <- scenario_list_normal[[s]]$trials
-  
-  for (t in seq_along(trials)) {
-    y_list <- trials[[t]]$y_list
-    
-    # mean per cohort in this trial
-    m <- vapply(y_list, mean, numeric(1))
-    
-    means_list[[length(means_list) + 1L]] <- m
-    scen_idx  <- c(scen_idx, s)
-    trial_idx <- c(trial_idx, t)
-  }
-}
-
-all_cohorts <- unique(unlist(lapply(means_list, names), use.names = FALSE))
-
-means_mat <- t(vapply(means_list, function(v) {
-  out <- rep(NA_real_, length(all_cohorts))
-  names(out) <- all_cohorts
-  out[names(v)] <- v
-  out
-}, numeric(length(all_cohorts))))
-
-colnames(means_mat) <- all_cohorts
-
-head(means_mat)
-head(cbind(scenario_index = scen_idx,
-           trial_index    = trial_idx,
-           means_mat))
-
-debug_df <- data.frame(
-  scenario_index = scen_idx,
-  trial_index    = trial_idx,
-  means_mat,
-  group_id  = uniq$map$group_id,
-  signature = uniq$map$signature,
-  stringsAsFactors = FALSE
-)
-
-# Look at first 10 rows
-head(debug_df, 10)
-
-debug_df[debug_df$group_id == 2, ]
-
-uniq$breaks  # list per cohort
-
-uniq$breaks$c_1  # breaks for cohort c_1
-uniq$breaks$c_2  # breaks for cohort c_2
-
-row_i <- debug_df[debug_df$group_id == 2, ][1, ]
-
-row_i$c_1
-uniq$breaks$c_1
-row_i$c_2
-uniq$breaks$c_2
-
-
-
-I want to write a paragraph that stars with something like: I wanted to talk a bit abiut the tasks and requirements for this role and why I believe I could be a good fit. I have been studing statistics since my bachelors and have constantly been in touch with it, even for my work right now i require it on a day to day basis. I am proficient in R and am currently working on validating programs. I know that validation is an important part of the companies work process and that there are problems when a software isnt validated and so you cant use it. So if and when required I can test programs. Also I for my current work I have been coordinating with my supervisor and some other people from his team to generate diagrams and visualizations. I know that as programmers and data engineers we try to be standardized and this way not only we make the analysis easy and comparable but also FDA compliant. I am aware of the roles of the statistical programmer and how the TPROG and TSTAT work together. I am aware of the workflow for the data collection and transformation. First the eCRF, then the SDTM data transformation procedures which the clinical data engineers are mostly working with and then we have the ADAM data structure and finaly outputs based on requirement. So I do have basic CDISC knowledge and it really interests me so I would love to learn from the team.
+Tasks & responsibilities
+As a Clinical Data Scientist with a focus on Statistical Programming, you will support statistical analyses in clinical trials and projects, prepare CDISC‑ready datasets from clinical data, and contribute to reporting deliverables. 
+You will support implementing modern statistical and data‑driven approaches to increase the quality and efficiency of our analyses.
+Furthermore, you will perform validation and support oversight processes to ensure high data quality.
+You will contribute to compliant documentation for submissions, e.g., by reviewing ADaM specifications, define.xml inputs, and the ADaM Reviewer’s Guide, ensuring submission‑ready deliverables.
+In this role you will also contribute to evidence generation along the human pharma value chain by visualizing clinical data to generate insights and trigger actions that make a difference to our patients. 
+Moreover, you will work closely with other Clinical Data Scientists, Clinical Data Engineers, and additional experts across clinical development.
+Additionally, you will be part of a global biostatistics and data sciences organization covering statistical programming activities from PoC through later development phases.
+Requirements
+Bachelor of Science (BSc), Master of Science (MSc) or Doctoral Degree (PhD) in Statistics, Mathematics, Computer Science or related field (Data Science, Natural Science, Psychology, Finance, etc)
+Knowledge and hands-on experience in relevant software languages in recent years, in particular SAS and R
+Basic knowledge of CDISC standards, statistical methodology, design of clinical trials, medical terminology and processing clinical trial information
+Experience in pharmaceutical development
+Ability to pro-actively identify issues and solutions and to interact with internal and external bodies on routine clinical data science issues
+Oral and written communication skills to interact in interdisciplinary teams as well as the ability to explain, visualize and communicate complex data science aspects
+Fluency in written and spoken English
