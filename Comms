@@ -1,41 +1,36 @@
-Failure (test-Misc.R:260:3): getBlankString returns requested number of spaces ──
-getBlankString(0) (`actual`) not identical to "" (`expected`).
+test_that("getBlankString returns requested number of spaces", {
+  out0 <- getBlankString(0)
+  expect_type(out0, "character")
+  expect_length(out0, 0)
 
-`actual`:     
-`expected`: ""
+  out5 <- getBlankString(5)
+  expect_identical(out5, "     ")
+  expect_type(out5, "character")
+  expect_length(out5, 1)
+})
 
-── Warning (test-Misc.R:488:3): listPerMethod reshapes scenario-first lists into method-first lists ──
-NAs introduced by coercion
-Backtrace:
-    ▆
- 1. └─bhmbasket:::listPerMethod(per_scenario) at test-Misc.R:488:3
- 2.   ├─base::paste0("scenario_", getScenarioNumbers(list_per_scenario)) at bhmbasket/R/Misc.R:174:5
- 3.   └─bhmbasket:::getScenarioNumbers(list_per_scenario) at bhmbasket/R/Misc.R:174:5
+test_that("listPerMethod reshapes scenario-first lists into method-first lists", {
 
-── Warning (test-Misc.R:488:3): listPerMethod reshapes scenario-first lists into method-first lists ──
-NAs introduced by coercion
-Backtrace:
-    ▆
- 1. └─bhmbasket:::listPerMethod(per_scenario) at test-Misc.R:488:3
- 2.   ├─base::paste0("scenario_", getScenarioNumbers(list_per_scenario)) at bhmbasket/R/Misc.R:174:5
- 3.   └─bhmbasket:::getScenarioNumbers(list_per_scenario) at bhmbasket/R/Misc.R:174:5
+  per_scenario <- list(
+    scenario_1 = list(
+      berry      = matrix(1:4, nrow = 2),
+      stratified = matrix(5:8, nrow = 2)
+    ),
+    scenario_2 = list(
+      berry      = matrix(9:12,  nrow = 2),
+      stratified = matrix(13:16, nrow = 2)
+    )
+  )
 
-── Failure (test-Misc.R:491:3): listPerMethod reshapes scenario-first lists into method-first lists ──
-names(per_method) (`actual`) and `method_names_from_obj` (`expected`) don't have the same values.
-* Only in `actual`: "scenario_1", "scenario_2"
-* Only in `expected`: "berry", "stratified"
+  per_method <- listPerMethod(per_scenario)
 
+  expect_setequal(names(per_method), c("berry", "stratified"))
+  expect_setequal(names(per_method$berry), c("scenario_1", "scenario_2"))
+  expect_setequal(names(per_method$stratified), c("scenario_1", "scenario_2"))
 
-── Warning (test-Misc.R:495:3): listPerMethod reshapes scenario-first lists into method-first lists ──
-NAs introduced by coercion
-Backtrace:
-    ▆
- 1. └─bhmbasket:::getScenarioNumbers(per_scenario) at test-Misc.R:495:3
+  expect_equal(per_method$berry$scenario_1, per_scenario$scenario_1$berry)
+  expect_equal(per_method$berry$scenario_2, per_scenario$scenario_2$berry)
 
-── Error (test-Misc.R:498:5): listPerMethod reshapes scenario-first lists into method-first lists ──
-Error in `expect_setequal(names(per_method[[m]]), expected_scen_names)`: `object` and `expected` must both be vectors
-Backtrace:
-    ▆
- 1. └─testthat::expect_setequal(names(per_method[[m]]), expected_scen_names) at test-Misc.R:498:5
- 2.   └─rlang::abort("`object` and `expected` must both be vectors")
-[ FAIL 3 | WARN 3 | SKIP 0 | PASS 69 ]
+  expect_equal(per_method$stratified$scenario_1, per_scenario$scenario_1$stratified)
+  expect_equal(per_method$stratified$scenario_2, per_scenario$scenario_2$stratified)
+})
