@@ -1,78 +1,41 @@
-# Tests for listPerMethod ------------------------------------------------------
+Failure (test-Misc.R:260:3): getBlankString returns requested number of spaces ──
+getBlankString(0) (`actual`) not identical to "" (`expected`).
 
-# ------------------------------------------------------------------
-# Test: listPerMethod reshapes per-scenario results into per-method list
-# Input:
-#   - analyses_list created via simulateScenarios() + performAnalyses()
-# Behaviour:
-#   - getEstimates() returns a list per scenario with method sublists
-#   - listPerMethod() converts to: out[[method]][[scenario]] structure
-# Expectations:
-#   - method names match analysis_parameters$method_names
-#   - scenario names match scenario numbers
-#   - contents for each method+scenario are identical before vs after reshaping
-# Why:
-#   - listPerMethod is used to reorganize results for downstream plotting/reporting.
-# ------------------------------------------------------------------
-test_that("listPerMethod reshapes scenario-first lists into method-first lists", {
-  
-  skip_if_not_installed("bhmbasket")
-  skip_if_not_installed("foreach")
-  foreach::registerDoSEQ()
-  set.seed(123)
-  
-  method_names <- c("stratified", "berry")
-  target_rates <- c(0.5, 0.5)
-  
-  scen <- simulateScenarios(
-    n_subjects_list     = list(c(10, 10), c(20, 20)),
-    response_rates_list = list(c(0.4, 0.4), c(0.6, 0.6)),
-    n_trials            = 5
-  )
-  
-  analyses <- performAnalyses(
-    scenario_list      = scen,
-    evidence_levels    = c(0.5, 0.9),
-    target_rates       = target_rates,
-    method_names       = method_names,
-    n_mcmc_iterations  = 200,
-    verbose            = FALSE
-  )
-  
-  method_names_from_obj <- analyses$scenario_1$analysis_parameters$method_names
-  expect_true(all(method_names %in% method_names_from_obj))
-  
-  # This gives: results_list[[scenario_k]][[method_name]] = matrix of estimates
-  per_scenario <- getEstimates(
-    analyses_list     = analyses,
-    add_parameters    = NULL,
-    point_estimator   = "median",
-    alpha_level       = 0.10
-  )
-  
-  # Reshape into: out[[method_name]][[scenario_k]]
-  per_method <- listPerMethod(per_scenario)
-  
-  # Check names
-  expect_setequal(names(per_method), method_names_from_obj)
-  expect_setequal(names(per_scenario), names(per_scenario))
-  
-  # Check scenario naming matches scenario numbers
-  scen_nums <- getScenarioNumbers(per_scenario)
-  expected_scen_names <- paste0("scenario_", scen_nums)
-  for (m in method_names_from_obj) {
-    expect_setequal(names(per_method[[m]]), expected_scen_names)
-  }
-  
-  # Check content identity for each scenario and method
-  for (s in seq_along(per_scenario)) {
-    s_name <- names(per_scenario)[s]
-    for (m in names(per_scenario[[s]])) {
-      expect_equal(
-        per_method[[m]][[s_name]],
-        per_scenario[[s]][[m]]
-      )
-    }
-  }
-  
-})
+`actual`:     
+`expected`: ""
+
+── Warning (test-Misc.R:488:3): listPerMethod reshapes scenario-first lists into method-first lists ──
+NAs introduced by coercion
+Backtrace:
+    ▆
+ 1. └─bhmbasket:::listPerMethod(per_scenario) at test-Misc.R:488:3
+ 2.   ├─base::paste0("scenario_", getScenarioNumbers(list_per_scenario)) at bhmbasket/R/Misc.R:174:5
+ 3.   └─bhmbasket:::getScenarioNumbers(list_per_scenario) at bhmbasket/R/Misc.R:174:5
+
+── Warning (test-Misc.R:488:3): listPerMethod reshapes scenario-first lists into method-first lists ──
+NAs introduced by coercion
+Backtrace:
+    ▆
+ 1. └─bhmbasket:::listPerMethod(per_scenario) at test-Misc.R:488:3
+ 2.   ├─base::paste0("scenario_", getScenarioNumbers(list_per_scenario)) at bhmbasket/R/Misc.R:174:5
+ 3.   └─bhmbasket:::getScenarioNumbers(list_per_scenario) at bhmbasket/R/Misc.R:174:5
+
+── Failure (test-Misc.R:491:3): listPerMethod reshapes scenario-first lists into method-first lists ──
+names(per_method) (`actual`) and `method_names_from_obj` (`expected`) don't have the same values.
+* Only in `actual`: "scenario_1", "scenario_2"
+* Only in `expected`: "berry", "stratified"
+
+
+── Warning (test-Misc.R:495:3): listPerMethod reshapes scenario-first lists into method-first lists ──
+NAs introduced by coercion
+Backtrace:
+    ▆
+ 1. └─bhmbasket:::getScenarioNumbers(per_scenario) at test-Misc.R:495:3
+
+── Error (test-Misc.R:498:5): listPerMethod reshapes scenario-first lists into method-first lists ──
+Error in `expect_setequal(names(per_method[[m]]), expected_scen_names)`: `object` and `expected` must both be vectors
+Backtrace:
+    ▆
+ 1. └─testthat::expect_setequal(names(per_method[[m]]), expected_scen_names) at test-Misc.R:498:5
+ 2.   └─rlang::abort("`object` and `expected` must both be vectors")
+[ FAIL 3 | WARN 3 | SKIP 0 | PASS 69 ]
