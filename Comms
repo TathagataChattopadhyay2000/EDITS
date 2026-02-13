@@ -1,348 +1,670 @@
-## R CMD check appeasement for forach loop
-utils::globalVariables("k")
-utils::globalVariables("i")
+# tests/testthat/test-UtilityFunctions.R
 
-## Code inspired by https://stackoverflow.com/questions/3318333/split-a-vector-into-chunks
-## Answer by mathheadinclouds
-chunkVector <- function(x, n_chunks) {
-  
-  if (n_chunks <= 1) {
-    
-    chunk_list <- list(x)
-    
-  } else {
-    
-    chunk_list <- unname(split(x, cut(seq_along(x), n_chunks, labels = FALSE)))
-    
-  }
-  
-  return (chunk_list)
-  
-}
+# Tests for chunkVector --------------------------------------------------------
 
-convertVector2Matrix <- function (vector) {
+# ------------------------------------------------------------------
+# Test: chunkVector returns a single chunk when n_chunks <= 1
+# Input:
+#   - x = 1:10
+#   - n_chunks = 1
+# Behaviour:
+#   - returns list(x) (one chunk containing all elements)
+# Expectations:
+#   - output is a list of length 1
+#   - the only element equals x exactly
+# Why:
+#   - ensures the "no chunking" path is stable and predictable.
+# ------------------------------------------------------------------
+test_that("chunkVector returns single chunk when n_chunks <= 1", {
   
-  if (is.null(dim(vector))) {
-    vector <- t(as.matrix(vector))
-  }
+  x <- 1:10
   
-  return (vector)
+  out <- chunkVector(x, n_chunks = 1)
   
-}
+  expect_type(out, "list")
+  
+  expect_length(out, 1)
+  
+  expect_identical(out[[1]], x)
+  
+})
 
-## Code inspired by https://www.r-bloggers.com/2019/01/hash-me-if-you-can/ 
-createHashTable <- function (keys, values, size = length(keys)) {
+# ------------------------------------------------------------------
+# Test: chunkVector splits into multiple chunks and preserves all elements
+# Input:
+#   - x = 1:10
+#   - n_chunks = 2, 3
+# Behaviour:
+#   - splits x into n_chunks chunks (using cut over indices)
+# Expectations:
+#   - output is a list with requested length
+#   - unlisted output contains exactly the original elements (order-preserving
+#     within chunks is fine; overall we check set equality via sort)
+# Why:
+#   - verifies chunking doesn't drop or duplicate elements.
+# ------------------------------------------------------------------
+test_that("chunkVector splits into multiple chunks and preserves elements", {
   
-  # initialize environment to store key - value assignments, i.e. hash table
-  hash <- new.env(hash = TRUE, parent = emptyenv(), size = length(keys))
+  x <- 1:10
   
-  # assign values to keys
-  assignHashes <- Vectorize(assign, vectorize.args = c("x", "value"))
-  assignHashes(x = keys, value = values, envir = hash)
+  out2 <- chunkVector(x, n_chunks = 2)
   
-  return (hash)
+  expect_type(out2, "list")
+  expect_length(out2, 2)
+  expect_identical(sort(unlist(out2)), x)
   
-}
-
-cummulativeMovingAverage <- function (x) {
-  return (cumsum(x) / seq_along(x))
-}
-
-firstUpper <- function (string) {
+  out3 <- chunkVector(x, n_chunks = 3)
   
-  substr(string, 1, 1) <- toupper(substr(string, 1, 1))
-  return (string)
+  expect_type(out3, "list")
+  expect_length(out3, 3)
+  expect_identical(sort(unlist(out3)), x)
   
-}
-
-getBlankString <- function (length) {
-  
-  do.call(paste0, as.list(rep(" ", length)))
-  
-}
-
-getHashKeys <- function (x) {
-  
-  x <- convertVector2Matrix(x)
-  
-  # apply(x, 1, rlang::hash)
-  
-  if (is.null(colnames(x))) {
-    
-    colnames_x <- as.character(paste0("x", seq_len(ncol(x))))
-    
-  } else {
-    
-    colnames_x <- colnames(x)
-    
-  }
-  
-  apply(x, 1, function (y) paste0(colnames_x, ":", as.character(y), collapse = "|"))
-  
-}
-
-## Code inspired by https://www.r-bloggers.com/2019/01/hash-me-if-you-can/ 
-getHashValues <- function(search_keys, hash_table) {
-  
-  unname(mget(search_keys, hash_table))
-  
-}
+})
 
 
-getListLevel <- function (
-  
-  list
-  
-) {
-  
-  if (!is.list(list)) {
-    
-    return (0)
-    
-  } else {
-    
-    list <- list[[1]]
-    
-    return (1 + getListLevel(list))
-    
-  }
-  
-}
+# Tests for convertVector2Matrix -----------------------------------------------
 
-getRowIndexOfVectorInMatrix <- function (
+# ------------------------------------------------------------------
+# Test: convertVector2Matrix converts a vector to a 1-row matrix
+# Input:
+#   - vector = c(1,2,3,4)
+# Behaviour:
+#   - wraps into a matrix and transposes to 1 x length(vector)
+# Expectations:
+#   - result is a matrix with dim (1,4)
+#   - content equals the original vector
+# Why:
+#   - many downstream functions assume matrix input for apply()/indexing.
+# ------------------------------------------------------------------
+test_that("convertVector2Matrix converts vector to 1-row matrix", {
   
-  vector_to_be_found,
-  matrix_to_be_searched
+  v <- 1:4
   
-) {
+  out <- convertVector2Matrix(v)
   
-  n_col <- ncol(matrix_to_be_searched)
+  expect_true(is.matrix(out))
   
-  if (length(vector_to_be_found) != n_col) {
-    stop ("The length of the vector must be equal to the number of columns of the matrix")
-  }
+  expect_equal(dim(out), c(1, 4))
   
-  index <- apply(convertVector2Matrix(sapply(seq_len(n_col), function (i) {
-    
-    matrix_to_be_searched[, i] %in% vector_to_be_found[i]
-    
-  })), 1, all)
+  expect_identical(as.integer(out[1, ]), v)
   
-  return (which(index))
-  
-}
+})
 
-#' @title invLogit
-#' @description This function returns the inverse logit of the input argument.
-#' @param theta A numeric
-#' @details This function is an alias for `stats::binomial()$linkinv`
-#' @return Inverse logit of theta
-#' @rdname invlogit
-#' @author Stephan Wojciekowski
-#' @examples
-#' invLogit(logit(0.3))
-#' invLogit(c(-Inf, 0, Inf))
-#' @seealso
-#'  \code{\link[stats]{family}}
-#' @export
-invLogit <- function (theta) {
+# ------------------------------------------------------------------
+# Test: convertVector2Matrix returns matrix unchanged
+# Input:
+#   - matrix input
+# Behaviour:
+#   - should not modify an existing matrix
+# Expectations:
+#   - identical to the original matrix
+# Why:
+#   - prevents accidental reshaping when caller already provides a matrix.
+# ------------------------------------------------------------------
+test_that("convertVector2Matrix leaves matrices unchanged", {
   
-  error_theta <- simpleError("Please provide a numeric for the argument 'theta'")
+  m <- matrix(1:6, nrow = 2)
   
-  if (missing(theta))     stop (error_theta)
-  if (!is.numeric(theta)) stop (error_theta)
+  out <- convertVector2Matrix(m)
   
-  stats::binomial()$linkinv(theta)
+  expect_true(is.matrix(out))
   
-}
+  expect_identical(out, m)
+  
+})
 
-listPerMethod <- function (
-  
-  list_per_scenario
-  
-) {
-  
-  all_method_names <- unique(as.vector(sapply(list_per_scenario, names)))
-  
-  ## Create list to hold output
-  out_list <- vector(mode = "list", length = length(all_method_names))
-  names(out_list) <- all_method_names
-  
-  for (n in seq_along(out_list)) {
-    
-    out_list[[n]] <- vector(mode = "list", length = length(list_per_scenario))
-    names(out_list[[n]]) <- paste0("scenario_", getScenarioNumbers(list_per_scenario))
-    
-  }
-  
-  ## Copy contents to new output list
-  for (name in all_method_names) {
-    
-    for (s in seq_along(list_per_scenario)) {
-      
-      out_list[[name]][[s]] <- list_per_scenario[[s]][[name]]
-      
-    }
-    
-  }
-  
-  return (out_list)
-  
-}
 
-#' @title logit
-#' @description This function returns the logit of the input argument.
-#' @param p A numeric in (0, 1)
-#' @details This function is an alias for `stats::binomial()$linkfun`
-#' @return logit of p
-#' @rdname logit
-#' @author Stephan Wojciekowski
-#' @examples
-#' logit(invLogit(0.3))
-#' logit(c(0, 0.5, 1))
-#' @seealso
-#'  \code{\link[stats]{family}}
-#' @export
-logit <- function (p) {
+# Tests for createHashTable + getHashValues ------------------------------------
 
-  error_p <- simpleError("Please provide a numeric in (0, 1) for the argument 'p'")
+# ------------------------------------------------------------------
+# Test: createHashTable stores key-value pairs retrievable via getHashValues
+# Input:
+#   - keys = c("a","b","c")
+#   - values = list(10,20,30)
+# Behaviour:
+#   - creates environment-based hash and assigns values to keys
+# Expectations:
+#   - returned object is an environment
+#   - getHashValues returns values in the requested key order
+# Why:
+#   - mapUniqueTrials relies on deterministic retrieval from hashed keys.
+# ------------------------------------------------------------------
+test_that("createHashTable and getHashValues store and retrieve values", {
+  
+  keys <- c("a", "b", "c")
+  vals <- list(10, 20, 30)
+  
+  h <- createHashTable(keys, vals)
+  
+  expect_true(is.environment(h))
+  
+  out <- getHashValues(c("b", "a"), h)
+  
+  expect_type(out, "list")
+  
+  expect_equal(out, list(20, 10))
+  
+})
 
-  if (missing(p))                          stop (error_p)
-  if (any(!is.numeric(p) | p < 0 | p > 1)) stop (error_p)
 
-  stats::binomial()$linkfun(p)
+# Tests for getHashKeys ---------------------------------------------------------
 
-}
+# ------------------------------------------------------------------
+# Test: getHashKeys uses default x1..xp names if colnames are missing
+# Input:
+#   - 2x2 matrix without colnames
+# Behaviour:
+#   - returns character keys "x1:<val>|x2:<val>" per row
+# Expectations:
+#   - correct key strings for each row
+# Why:
+#   - hashing must be stable even when matrices lack colnames.
+# ------------------------------------------------------------------
+test_that("getHashKeys uses default x* names without colnames", {
+  
+  x <- matrix(c(1, 2, 3, 4), nrow = 2, byrow = TRUE)
+  
+  out <- getHashKeys(x)
+  
+  expect_type(out, "character")
+  expect_length(out, 2)
+  
+  expect_identical(out[1], "x1:1|x2:2")
+  expect_identical(out[2], "x1:3|x2:4")
+  
+})
 
-roundList <- function (list, round_digits, list_levels) {
+# ------------------------------------------------------------------
+# Test: getHashKeys uses existing colnames when present
+# Input:
+#   - 2x2 matrix with colnames c("A","B")
+# Behaviour:
+#   - returns "A:<val>|B:<val>" per row
+# Expectations:
+#   - correct key strings for each row
+# Why:
+#   - ensures keys remain interpretable and consistent when names exist.
+# ------------------------------------------------------------------
+test_that("getHashKeys uses colnames when present", {
   
-  if (is.null(round_digits)) return (list)
+  x <- matrix(c(1, 2, 3, 4), nrow = 2, byrow = TRUE)
+  colnames(x) <- c("A", "B")
   
-  round_expression <- quote({
-    if (is.numeric(a)) {
-      round(a, round_digits)
-    } else {
-      stop (simpleError("The list must contain numerics"))
-    }
-  })
+  out <- getHashKeys(x)
   
-  if (list_levels == 1) {
-    
-    return (lapply(list, function (a) eval(round_expression)))
-    
-  } else if (list_levels == 2) {
-    
-    return (lapply(list, function (x)
-      lapply(x, function (a) eval(round_expression))))
-    
-  } else if (list_levels == 3) {
-    
-    return (lapply(list, function (x)
-      lapply(x, function (y)
-        lapply(y, function (a) eval(round_expression)))))
-    
-  } else {
-    
-    stop ("lists with a nested depth greater than 3 are not supported")
-    
-  }
+  expect_identical(out[1], "A:1|B:2")
+  expect_identical(out[2], "A:3|B:4")
   
-}
+})
 
-scaleList <- function (list, scale_param, list_levels) {
-  
-  scale_expression <- quote({
-    if (is.numeric(a)) {
-      a * scale_param
-    } else {
-      stop (simpleError("The list must contain numerics"))
-    }
-  })
-  
-  if (list_levels == 1) {
-    
-    return (lapply(list, function (a) eval(scale_expression)))
-    
-  } else if (list_levels == 2) {
-    
-    return (lapply(list, function (x)
-      lapply(x, function (a) eval(scale_expression))))
-    
-  } else if (list_levels == 3) {
-    
-    return (lapply(list, function (x)
-      lapply(x, function (y)
-        lapply(y, function (a) eval(scale_expression)))))
-    
-  } else {
-    
-    stop ("lists with a nested depth greater than 3 are not supported")
-    
-  }
-  
-}
 
-#' @title scaleRoundList
-#' @description This function applies scaling and rounding to each item of a list of numerics
-#' @param list The list to which the scaling and rounding should be applied to.
-#' @param scale_param A numeric for the scaling of each item of the list, Default: `1`
-#' @param round_digits An integer for the number of digits.
-#' If `NULL`, no rounding will be applied, Default: `NULL`
-#' @return A list of scaled and rounded numerics
-#' @rdname scaleRoundList
-#' @author Stephan Wojciekowski
-#' @examples
-#' some_list <- as.list(runif(5))
-#' scaleRoundList(some_list, scale_param = 100, round_digits = 2)
-#'
-#' scenarios_list <- simulateScenarios(
-#'   n_subjects_list     = list(c(10, 20, 30)),
-#'   response_rates_list = list(c(0.1, 0.2, 0.3)),
-#'   n_trials            = 10)
-#'
-#' analyses_list <- performAnalyses(
-#'   scenario_list       = scenarios_list,
-#'   target_rates        = rep(0.5, 3),
-#'   n_mcmc_iterations   = 100)
-#'
-#' scaleRoundList(
-#'   list         = getEstimates(analyses_list),
-#'   scale_param  = 100,
-#'   round_digits = 2)
-#' @export
-scaleRoundList <- function(
-  
-  list,
-  scale_param  = 1,
-  round_digits = NULL
-  
-) {
-  
-  error_list  <- simpleError(
-    "Please provide a list (of lists) of numerics for the argument 'list'")
-  error_scale_param <- simpleError(
-    "Please provide a positive numeric for the argument 'scale_param'")
-  error_round_digits <- simpleError(
-    "Please provide a positive integer for the argument 'round_digits'")
-  
-  if (missing(list))                                     stop (error_list)
-  
-  if (!is.list(list))                                    stop (error_list)
-  if (!is.single.positive.numeric(scale_param))          stop (scale_param)
-  if (!is.null(round_digits) &&
-      !is.single.non.negative.wholenumber(round_digits)) stop (error_round_digits)
-  
-  ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
-  
-  list_levels <- getListLevel(list)
-  
-  out_list    <- roundList(scaleList(list, scale_param, list_levels),
-                           round_digits, list_levels)
-  
-  return (out_list)
-  
-}
+# Tests for cummulativeMovingAverage -------------------------------------------
 
-substrRight <- function (x, n) {
-  substr(x, nchar(x) - n + 1, nchar(x))
-}
+# ------------------------------------------------------------------
+# Test: cummulativeMovingAverage returns running mean
+# Input:
+#   - x = c(2,4,6,8)
+# Behaviour:
+#   - returns cumsum(x) / seq_along(x)
+# Expectations:
+#   - equals c(2,3,4,5)
+# Why:
+#   - sanity check for helper used in summaries / convergence-like displays.
+# ------------------------------------------------------------------
+test_that("cummulativeMovingAverage returns running mean", {
+  
+  x <- c(2, 4, 6, 8)
+  
+  out <- cummulativeMovingAverage(x)
+  
+  expect_equal(out, c(2, 3, 4, 5))
+  
+})
+
+
+# Tests for firstUpper ----------------------------------------------------------
+
+# ------------------------------------------------------------------
+# Test: firstUpper capitalizes only the first character
+# Input:
+#   - "hello", "Hello", "h"
+# Behaviour:
+#   - replaces first character with uppercase
+# Expectations:
+#   - correct transformed strings
+# Why:
+#   - small utility; ensures string formatting is deterministic.
+# ------------------------------------------------------------------
+test_that("firstUpper capitalizes first character", {
+  
+  expect_identical(firstUpper("hello"), "Hello")
+  expect_identical(firstUpper("Hello"), "Hello")
+  expect_identical(firstUpper("h"), "H")
+  
+})
+
+
+# Tests for getBlankString ------------------------------------------------------
+
+# ------------------------------------------------------------------
+# Test: getBlankString returns a string of spaces of requested length
+# Input:
+#   - length = 0, 3, 10
+# Behaviour:
+#   - concatenates that many " " characters
+# Expectations:
+#   - correct string and nchar
+# Why:
+#   - used for formatting and alignment in text outputs.
+# ------------------------------------------------------------------
+test_that("getBlankString returns requested number of spaces", {
+  
+  expect_identical(getBlankString(0), "")
+  
+  expect_identical(getBlankString(3), "   ")
+  
+  expect_equal(nchar(getBlankString(10)), 10)
+  
+})
+
+
+# Tests for getListLevel --------------------------------------------------------
+
+# ------------------------------------------------------------------
+# Test: getListLevel returns nesting depth
+# Input:
+#   - non-list and nested lists
+# Behaviour:
+#   - returns 0 for non-list; otherwise 1 + depth of first element
+# Expectations:
+#   - correct depths for 0..3 levels
+# Why:
+#   - scaleRoundList relies on correct depth to traverse lists.
+# ------------------------------------------------------------------
+test_that("getListLevel returns correct nesting depth", {
+  
+  expect_identical(getListLevel(1), 0)
+  expect_identical(getListLevel(list(1)), 1)
+  expect_identical(getListLevel(list(list(1))), 2)
+  expect_identical(getListLevel(list(list(list(1)))), 3)
+  
+})
+
+
+# Tests for getRowIndexOfVectorInMatrix ----------------------------------------
+
+# ------------------------------------------------------------------
+# Test: getRowIndexOfVectorInMatrix finds exact matching row
+# Input:
+#   - matrix with known rows
+#   - vectors equal to those rows
+# Behaviour:
+#   - returns the indices of rows where all columns match
+# Expectations:
+#   - correct row index returned; empty integer for no match
+# Why:
+#   - used to map trial patterns to unique rows.
+# ------------------------------------------------------------------
+test_that("getRowIndexOfVectorInMatrix finds matching rows", {
+  
+  m <- matrix(
+    c(1, 2,
+      3, 4,
+      1, 9),
+    ncol  = 2,
+    byrow = TRUE
+  )
+  
+  expect_identical(getRowIndexOfVectorInMatrix(c(1, 2), m), 1L)
+  expect_identical(getRowIndexOfVectorInMatrix(c(3, 4), m), 2L)
+  expect_identical(getRowIndexOfVectorInMatrix(c(1, 9), m), 3L)
+  
+  expect_length(getRowIndexOfVectorInMatrix(c(7, 7), m), 0)
+  
+})
+
+# ------------------------------------------------------------------
+# Test: getRowIndexOfVectorInMatrix errors if vector length != ncol(matrix)
+# Input:
+#   - vector of wrong length
+# Behaviour:
+#   - stops with informative error
+# Expectations:
+#   - error is thrown
+# Why:
+#   - prevents silent partial matching / wrong indexing.
+# ------------------------------------------------------------------
+test_that("getRowIndexOfVectorInMatrix errors on length mismatch", {
+  
+  m <- matrix(1:4, ncol = 2)
+  
+  expect_error(
+    getRowIndexOfVectorInMatrix(c(1, 2, 3), m),
+    "length of the vector must be equal"
+  )
+  
+})
+
+
+# Tests for invLogit ------------------------------------------------------------
+
+# ------------------------------------------------------------------
+# Test: invLogit matches stats::binomial()$linkinv and inverts logit
+# Input:
+#   - theta = 0 and theta = logit(p)
+# Behaviour:
+#   - returns inverse logit
+# Expectations:
+#   - invLogit(0) = 0.5
+#   - invLogit(logit(p)) = p
+# Why:
+#   - core link utilities must be numerically correct.
+# ------------------------------------------------------------------
+test_that("invLogit returns correct inverse-logit values", {
+  
+  expect_equal(invLogit(0), 0.5)
+  
+  p <- c(0.1, 0.25, 0.8)
+  
+  expect_equal(invLogit(logit(p)), p, tolerance = 1e-12)
+  
+})
+
+# ------------------------------------------------------------------
+# Test: invLogit validates inputs
+# Input:
+#   - missing theta, non-numeric theta
+# Behaviour:
+#   - stops with the documented error
+# Expectations:
+#   - error thrown
+# Why:
+#   - consistent input validation prevents silent misuse.
+# ------------------------------------------------------------------
+test_that("invLogit errors for missing or non-numeric input", {
+  
+  expect_error(invLogit(), "Please provide a numeric")
+  expect_error(invLogit("x"), "Please provide a numeric")
+  
+})
+
+
+# Tests for logit ---------------------------------------------------------------
+
+# ------------------------------------------------------------------
+# Test: logit matches stats::binomial()$linkfun and inverts invLogit
+# Input:
+#   - p = 0.5 and random p values in (0,1)
+# Behaviour:
+#   - returns log(p/(1-p))
+# Expectations:
+#   - logit(0.5) = 0
+#   - invLogit(logit(p)) = p
+# Why:
+#   - correctness of link function is fundamental for Berry/ExNex models.
+# ------------------------------------------------------------------
+test_that("logit returns correct log-odds and inverts invLogit", {
+  
+  expect_equal(logit(0.5), 0)
+  
+  p <- c(0.1, 0.25, 0.8)
+  
+  expect_equal(invLogit(logit(p)), p, tolerance = 1e-12)
+  
+})
+
+# ------------------------------------------------------------------
+# Test: logit validates inputs
+# Input:
+#   - missing p, non-numeric p, p outside [0,1]
+# Behaviour:
+#   - stops with the documented error
+# Expectations:
+#   - error thrown
+# Why:
+#   - prevents invalid probability inputs leaking into models.
+# ------------------------------------------------------------------
+test_that("logit errors for invalid input", {
+  
+  expect_error(logit(), "Please provide a numeric")
+  expect_error(logit("x"), "Please provide a numeric")
+  expect_error(logit(c(-0.1, 0.2)), "Please provide a numeric")
+  expect_error(logit(c(0.2, 1.2)), "Please provide a numeric")
+  
+})
+
+
+# Tests for listPerMethod -------------------------------------------------------
+
+# ------------------------------------------------------------------
+# Test: listPerMethod reorganizes scenario->method lists into method->scenario lists
+# Input:
+#   - list_per_scenario with 2 scenarios and overlapping method names
+# Behaviour:
+#   - output has one element per unique method
+#   - each method contains one entry per scenario, named scenario_<number>
+# Expectations:
+#   - correct top-level method names
+#   - correct scenario naming and value placement
+# Why:
+#   - several high-level API functions depend on consistent list reformatting.
+# ------------------------------------------------------------------
+test_that("listPerMethod reorganizes list per scenario into list per method", {
+  
+  skip_if_not_installed("checkmate")
+  
+  s1 <- list(methodA = "A1", methodB = "B1")
+  s2 <- list(methodA = "A2")
+  
+  inp <- list(
+    scenario_1 = s1,
+    scenario_2 = s2
+  )
+  
+  class(inp) <- "list"  # listPerMethod doesn't require scenario_list class
+  
+  out <- listPerMethod(inp)
+  
+  expect_true(all(c("methodA", "methodB") %in% names(out)))
+  
+  expect_true(all(c("scenario_1", "scenario_2") %in% names(out$methodA)))
+  
+  expect_identical(out$methodA$scenario_1, "A1")
+  expect_identical(out$methodA$scenario_2, "A2")
+  
+  expect_identical(out$methodB$scenario_1, "B1")
+  expect_true(is.null(out$methodB$scenario_2) || is.na(out$methodB$scenario_2))
+  
+})
+
+
+# Tests for roundList -----------------------------------------------------------
+
+# ------------------------------------------------------------------
+# Test: roundList rounds numerics for nesting levels 1..3
+# Input:
+#   - list structures with depths 1, 2, 3
+# Behaviour:
+#   - rounds each numeric entry to round_digits
+# Expectations:
+#   - correct rounded outputs
+# Why:
+#   - ensures list traversal is correct for supported nesting depths.
+# ------------------------------------------------------------------
+test_that("roundList rounds list entries for levels 1..3", {
+  
+  l1 <- list(1.234, 2.345)
+  expect_equal(roundList(l1, round_digits = 1, list_levels = 1), list(1.2, 2.3))
+  
+  l2 <- list(a = list(1.234), b = list(2.345))
+  expect_equal(roundList(l2, round_digits = 2, list_levels = 2), list(a = list(1.23), b = list(2.35)))
+  
+  l3 <- list(a = list(b = list(1.234)))
+  expect_equal(roundList(l3, round_digits = 0, list_levels = 3), list(a = list(b = list(1))))
+  
+})
+
+# ------------------------------------------------------------------
+# Test: roundList errors for non-numeric entries and unsupported depth
+# Input:
+#   - list containing non-numeric
+#   - list_levels > 3
+# Behaviour:
+#   - stops with informative error
+# Expectations:
+#   - error thrown
+# Why:
+#   - avoids silently returning wrong types.
+# ------------------------------------------------------------------
+test_that("roundList errors for non-numerics and unsupported depth", {
+  
+  expect_error(roundList(list("x"), round_digits = 1, list_levels = 1), "must contain numerics")
+  
+  expect_error(roundList(list(1), round_digits = 1, list_levels = 4), "greater than 3")
+  
+})
+
+
+# Tests for scaleList -----------------------------------------------------------
+
+# ------------------------------------------------------------------
+# Test: scaleList scales numerics for nesting levels 1..3
+# Input:
+#   - list structures with depths 1, 2, 3
+# Behaviour:
+#   - multiplies each numeric by scale_param
+# Expectations:
+#   - correct scaled outputs
+# Why:
+#   - used by scaleRoundList; must behave deterministically.
+# ------------------------------------------------------------------
+test_that("scaleList scales list entries for levels 1..3", {
+  
+  l1 <- list(1, 2)
+  expect_equal(scaleList(l1, scale_param = 10, list_levels = 1), list(10, 20))
+  
+  l2 <- list(a = list(1), b = list(2))
+  expect_equal(scaleList(l2, scale_param = 0.5, list_levels = 2), list(a = list(0.5), b = list(1)))
+  
+  l3 <- list(a = list(b = list(2)))
+  expect_equal(scaleList(l3, scale_param = 3, list_levels = 3), list(a = list(b = list(6))))
+  
+})
+
+# ------------------------------------------------------------------
+# Test: scaleList errors for non-numeric entries and unsupported depth
+# Input:
+#   - list containing non-numeric
+#   - list_levels > 3
+# Behaviour:
+#   - stops with informative error
+# Expectations:
+#   - error thrown
+# Why:
+#   - protects against silent type coercion.
+# ------------------------------------------------------------------
+test_that("scaleList errors for non-numerics and unsupported depth", {
+  
+  expect_error(scaleList(list("x"), scale_param = 2, list_levels = 1), "must contain numerics")
+  
+  expect_error(scaleList(list(1), scale_param = 1, list_levels = 4), "greater than 3")
+  
+})
+
+
+# Tests for scaleRoundList ------------------------------------------------------
+
+# ------------------------------------------------------------------
+# Test: scaleRoundList applies scaling then rounding
+# Input:
+#   - list of numerics
+# Behaviour:
+#   - scales by scale_param then rounds to round_digits
+# Expectations:
+#   - correct scaled+rounded values
+# Why:
+#   - user-facing helper; expected to behave consistently.
+# ------------------------------------------------------------------
+test_that("scaleRoundList scales then rounds list entries", {
+  
+  skip_if_not_installed("checkmate")
+  
+  l <- list(1.234, 2.345)
+  
+  out <- scaleRoundList(list = l, scale_param = 10, round_digits = 1)
+  
+  expect_equal(out, list(12.3, 23.5))
+  
+})
+
+# ------------------------------------------------------------------
+# Test: scaleRoundList returns unchanged list if round_digits is NULL
+# Input:
+#   - list of numerics, round_digits = NULL
+# Behaviour:
+#   - scales by scale_param, does no rounding when round_digits is NULL
+# Expectations:
+#   - equals scaled values (or original if scale_param = 1)
+# Why:
+#   - matches documented behaviour and avoids surprising rounding.
+# ------------------------------------------------------------------
+test_that("scaleRoundList skips rounding when round_digits is NULL", {
+  
+  skip_if_not_installed("checkmate")
+  
+  l <- list(1.234, 2.345)
+  
+  out <- scaleRoundList(list = l, scale_param = 1, round_digits = NULL)
+  
+  expect_equal(out, l)
+  
+})
+
+# ------------------------------------------------------------------
+# Test: scaleRoundList validates inputs
+# Input:
+#   - missing list / non-list
+#   - invalid scale_param
+#   - invalid round_digits
+# Behaviour:
+#   - stops with informative errors
+# Expectations:
+#   - error thrown
+# Why:
+#   - ensures correct user-facing input checks.
+# ------------------------------------------------------------------
+test_that("scaleRoundList errors for invalid inputs", {
+  
+  skip_if_not_installed("checkmate")
+  
+  expect_error(scaleRoundList(), "Please provide a list")
+  expect_error(scaleRoundList(list = 1), "Please provide a list")
+  
+  l <- list(1.234)
+  
+  expect_error(scaleRoundList(list = l, scale_param = -1))
+  expect_error(scaleRoundList(list = l, round_digits = -1))
+  
+})
+
+
+# Tests for substrRight ---------------------------------------------------------
+
+# ------------------------------------------------------------------
+# Test: substrRight returns rightmost n characters
+# Input:
+#   - x = "abcdef", n = 1,2,6
+# Behaviour:
+#   - returns substring from the right
+# Expectations:
+#   - correct suffixes
+# Why:
+#   - used for parsing parameter/cohort suffix indices.
+# ------------------------------------------------------------------
+test_that("substrRight returns rightmost n characters", {
+  
+  expect_identical(substrRight("abcdef", 1), "f")
+  expect_identical(substrRight("abcdef", 2), "ef")
+  expect_identical(substrRight("abcdef", 6), "abcdef")
+  
+})
