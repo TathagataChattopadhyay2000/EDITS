@@ -9,28 +9,75 @@ test_that("getBlankString returns requested number of spaces", {
   expect_length(out5, 1)
 })
 
+# Tests for listPerMethod ------------------------------------------------------
+
+# ------------------------------------------------------------------
+# Test: listPerMethod reshapes scenario-first lists into method-first lists
+# Input:
+#   - analyses_list created via simulateScenarios() + performAnalyses()
+#   - estimates_per_method from getEstimates() (method-first)
+#   - scenario-first object reconstructed from estimates_per_method
+# Behaviour:
+#   - listPerMethod() should convert scenario-first -> method-first
+# Expectations:
+#   - Output equals estimates_per_method (same methods, same scenarios, same matrices)
+# Why:
+#   - Verifies listPerMethod performs pure reshaping on real package outputs.
+# ------------------------------------------------------------------
 test_that("listPerMethod reshapes scenario-first lists into method-first lists", {
 
-  per_scenario <- list(
-    scenario_1 = list(
-      berry      = matrix(1:4, nrow = 2),
-      stratified = matrix(5:8, nrow = 2)
-    ),
-    scenario_2 = list(
-      berry      = matrix(9:12,  nrow = 2),
-      stratified = matrix(13:16, nrow = 2)
-    )
+  skip_if_not_installed("foreach")
+  foreach::registerDoSEQ()
+  set.seed(123)
+
+  method_names <- c("pooled", "stratified")
+  target_rates <- c(0.5, 0.5)
+
+  scen <- simulateScenarios(
+    n_subjects_list     = list(c(10, 10), c(20, 20)),
+    response_rates_list = list(c(0.4, 0.4), c(0.6, 0.6)),
+    n_trials            = 5
   )
 
-  per_method <- listPerMethod(per_scenario)
+  analyses <- performAnalyses(
+    scenario_list      = scen,
+    evidence_levels    = c(0.05, 0.5, 0.95),
+    target_rates       = target_rates,
+    method_names       = method_names,
+    n_mcmc_iterations  = 200,
+    verbose            = FALSE
+  )
 
-  expect_setequal(names(per_method), c("berry", "stratified"))
-  expect_setequal(names(per_method$berry), c("scenario_1", "scenario_2"))
-  expect_setequal(names(per_method$stratified), c("scenario_1", "scenario_2"))
+  estimates_per_method <- getEstimates(
+    analyses_list   = analyses,
+    point_estimator = "median",
+    alpha_level     = 0.10
+  )
 
-  expect_equal(per_method$berry$scenario_1, per_scenario$scenario_1$berry)
-  expect_equal(per_method$berry$scenario_2, per_scenario$scenario_2$berry)
+  method_names_from_obj <- names(estimates_per_method)
+  scenario_names        <- names(estimates_per_method[[1]])
 
-  expect_equal(per_method$stratified$scenario_1, per_scenario$scenario_1$stratified)
-  expect_equal(per_method$stratified$scenario_2, per_scenario$scenario_2$stratified)
+  expect_true(all(grepl("^scenario_[0-9]+$", scenario_names)))
+
+  scenario_first <- vector("list", length = length(scenario_names))
+  names(scenario_first) <- scenario_names
+
+  for (s in scenario_names) {
+    scenario_first[[s]] <- lapply(
+      method_names_from_obj,
+      function(m) estimates_per_method[[m]][[s]]
+    )
+    names(scenario_first[[s]]) <- method_names_from_obj
+  }
+
+  reshaped <- listPerMethod(scenario_first)
+
+  expect_setequal(names(reshaped), method_names_from_obj)
+  expect_setequal(names(reshaped[[method_names_from_obj[1]]]), scenario_names)
+
+  for (m in method_names_from_obj) {
+    for (s in scenario_names) {
+      expect_equal(reshaped[[m]][[s]], estimates_per_method[[m]][[s]])
+    }
+  }
 })
