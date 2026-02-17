@@ -1,184 +1,170 @@
-#' @title getUniqueTrialsNormal
-#' @description Create unique trial groups for normal endpoints by binning
-#'   trial-level sample means per cohort.
-#' @param scenario_list Object of class `scenario_list_normal`.
-#' @param nbins Positive integer: number of bins per cohort (if `bin_breaks` is NULL).
-#' @param bin_breaks Optional list of numeric vectors of breaks per cohort
-#'   (names must match the cohort names in `y_list`), used instead of `nbins`.
-#' @return A list with
-#'   \item{groups}{data.frame with one row per group:
-#'         `group_id`, `signature`, `n_members`.}
-#'   \item{map}{data.frame mapping each (scenario, trial) to its `group_id`.}
-#'   \item{breaks}{list of breaks per cohort actually used.}
-getUniqueTrialsNormal <- function(
+performAnalysesNormal <- function(
     scenario_list,
-    nbins      = 5,
-    bin_breaks = NULL
+    evidence_levels         = c(0.025, 0.05, 0.5, 0.8, 0.9, 0.95, 0.975),
+    calc_differences        = NULL,
+    n_mcmc_iterations       = 1e4,
+    prior_parameters_normal = NULL,
+    nbins                   = 5,
+    bin_breaks              = NULL,
+    verbose                 = TRUE
 ) {
-  if (missing(scenario_list)) {
-    stop("Please provide 'scenario_list' for getUniqueTrialsNormal().")
-  }
-  if (!is.scenario_list_normal(scenario_list)) {
-    stop("scenario_list must be of class 'scenario_list_normal'.")
-  }
-  if (!is.null(bin_breaks) && !is.list(bin_breaks)) {
-    stop("'bin_breaks' must be a list or NULL.")
-  }
-  if (is.null(bin_breaks) && (!is.numeric(nbins) || length(nbins) != 1L || nbins < 1)) {
-    stop("'nbins' must be a positive integer if 'bin_breaks' is NULL.")
-  }
+  error_scenario_list <- simpleError(
+    "Please provide an object of class 'scenario_list_normal' for 'scenario_list'")
+  error_evidence_levels <- simpleError(
+    "Please provide a vector of numerics in (0, 1) for the argument 'evidence_levels'")
+  error_n_mcmc_iterations <- simpleError(
+    "Please provide a positive integer for the argument 'n_mcmc_iterations'")
+  error_verbose <- simpleError(
+    "Please provide a logical for the argument 'verbose'")
   
-  means_list <- list()
-  scen_idx   <- integer(0)
-  trial_idx  <- integer(0)
+  if (missing(scenario_list)) stop(error_scenario_list)
+  if (!is.scenario_list_normal(scenario_list)) stop(error_scenario_list)
   
-  # 1) Collect per-cohort means for each trial
-  for (s in seq_along(scenario_list)) {
-    trials <- scenario_list[[s]]$trials
-    if (is.null(trials) || !length(trials)) {
-      stop("scenario_list[[", s, "]] has no trials.")
-    }
-    
-    for (t in seq_along(trials)) {
-      y_list <- trials[[t]]$y_list
-      if (!is.list(y_list) || !length(y_list)) {
-        stop("scenario_list[[", s, "]]$trials[[", t, "]]$y_list must be a non-empty list.")
-      }
-      m <- vapply(y_list, mean, numeric(1))
-      means_list[[length(means_list) + 1L]] <- m
-      scen_idx  <- c(scen_idx, s)
-      trial_idx <- c(trial_idx, t)
-    }
+  if (!is.numeric.in.zero.one(evidence_levels)) stop(error_evidence_levels)
+  if (!is.single.positive.wholenumber(n_mcmc_iterations)) stop(error_n_mcmc_iterations)
+  if (!is.logical(verbose) || length(verbose) != 1L) stop(error_verbose)
+  
+  if (!is.null(calc_differences)) {
+    calc_differences <- convertVector2Matrix(calc_differences)
   }
   
-  # 2) Align cohorts across all trials
-  all_cohorts <- unique(unlist(lapply(means_list, names), use.names = FALSE))
-  if (is.null(all_cohorts) || !length(all_cohorts)) {
-    stop("Could not determine cohort names from y_list.")
+  quantiles <- sort(unique(round(
+    1 - c(0.025, 0.05, 0.5, 0.8, 0.9, 0.95, 0.975, evidence_levels),
+    9
+  )))
+  
+  if (is.null(prior_parameters_normal)) {
+    prior_parameters_normal <- getPriorParametersNormal()
   }
   
-  means_mat <- t(vapply(means_list, function(v) {
-    out <- rep(NA_real_, length(all_cohorts))
-    names(out) <- all_cohorts
-    out[names(v)] <- v
-    out
-  }, numeric(length(all_cohorts))))
-  colnames(means_mat) <- all_cohorts
-  
-  index_df <- data.frame(
-    scenario_index = scen_idx,
-    trial_index    = trial_idx,
-    stringsAsFactors = FALSE
-  )
-  
-  # 3) Build breaks
-  if (is.null(bin_breaks)) {
-    breaks <- lapply(seq_len(ncol(means_mat)), function(j) {
-      r <- range(means_mat[, j], finite = TRUE)
-      if (r[1L] == r[2L]) r <- r + c(-0.5, 0.5)
-      seq(from = r[1L], to = r[2L], length.out = nbins + 1L)
-    })
-    names(breaks) <- all_cohorts
-  } else {
-    if (!all(all_cohorts %in% names(bin_breaks))) {
-      stop("All cohorts must appear as names in 'bin_breaks'. Missing: ",
-           paste(setdiff(all_cohorts, names(bin_breaks)), collapse = ", "))
-    }
-    breaks <- bin_breaks[all_cohorts]
-  }
-  
-  # 4) Bin per cohort and create signatures
-  bin_codes <- lapply(seq_len(ncol(means_mat)), function(j) {
-    cut(means_mat[, j],
-        breaks         = breaks[[j]],
-        include.lowest = TRUE,
-        labels         = FALSE)
-  })
-  bin_codes <- as.data.frame(bin_codes, check.names = FALSE)
-  colnames(bin_codes) <- all_cohorts
-  
-  signature <- apply(bin_codes, 1L, function(z) paste(z, collapse = "-"))
-  
-  # one group = one bin-pattern (signature) across cohorts
-  sig_levels <- unique(signature)
-  group_id   <- match(signature, sig_levels)
-  
-  groups_df <- data.frame(
-    group_id  = seq_along(sig_levels),
-    signature = sig_levels,
-    n_members = as.integer(tabulate(group_id, nbins = length(sig_levels))),
-    stringsAsFactors = FALSE
-  )
-  
-  map_df <- data.frame(
-    scenario_index = index_df$scenario_index,
-    trial_index    = index_df$trial_index,
-    group_id       = group_id,
-    signature      = signature,
-    stringsAsFactors = FALSE
-  )
-  
-  list(
-    groups = groups_df,
-    map    = map_df,
-    breaks = breaks
-  )
-}
-
-#' @title mapUniqueTrialsNormal
-#' @description Map group-level posterior summaries back to all trials
-#'   for normal endpoints.
-#' @param scenario_list Object of class `scenario_list_normal`.
-#' @param method_quantiles_by_group List of length = number of groups,
-#'   each element is the posterior summary for that group's pooled data.
-#' @param unique_info Output from getUniqueTrialsNormal() (`groups`, `map`).
-#' @return A list of length(scenario_list); each element is a list of length
-#'   `n_trials` with the corresponding posterior quantiles.
-mapUniqueTrialsNormal <- function(
-    scenario_list,
-    method_quantiles_by_group,
-    unique_info
-) {
-  if (missing(scenario_list)) {
-    stop("Please provide 'scenario_list' for mapUniqueTrialsNormal().")
-  }
-  if (!is.scenario_list_normal(scenario_list)) {
-    stop("scenario_list must be of class 'scenario_list_normal'.")
-  }
-  if (missing(method_quantiles_by_group)) {
-    stop("Please provide 'method_quantiles_by_group' (one result per group).")
-  }
-  if (missing(unique_info) || !is.list(unique_info) ||
-      is.null(unique_info$map) || is.null(unique_info$groups)) {
-    stop("Please provide 'unique_info' as returned by getUniqueTrialsNormal().")
-  }
-  
-  mapping  <- unique_info$map
-  groups   <- unique_info$groups
-  n_groups <- nrow(groups)
-  
-  if (length(method_quantiles_by_group) != n_groups) {
-    stop("Length of 'method_quantiles_by_group' must equal nrow(unique_info$groups).")
-  }
+  prep         <- prepareAnalysisNormal(prior_parameters = prior_parameters_normal)
+  j_parameters <- prep$j_parameters
+  j_model_file <- prep$j_model_file
+  j_data_fixed <- prep$j_data
   
   scenario_numbers <- sapply(scenario_list, function(x) x$scenario_number)
-  out <- vector("list", length(scenario_list))
-  names(out) <- paste0("scenario_", scenario_numbers)
   
-  for (s in seq_along(scenario_list)) {
-    n_trials_s <- length(scenario_list[[s]]$trials)
-    qlist_s    <- vector("list", n_trials_s)
-    
-    map_s <- mapping[mapping$scenario_index == s, , drop = FALSE]
-    
-    for (i in seq_len(nrow(map_s))) {
-      t_idx <- map_s$trial_index[i]
-      g     <- map_s$group_id[i]
-      qlist_s[[t_idx]] <- method_quantiles_by_group[[g]]
-    }
-    
-    out[[s]] <- qlist_s
+  # --- 1) Build unique groups based on per-cohort means & bins ---
+  unique_info <- getUniqueTrialsNormal(
+    scenario_list = scenario_list,
+    nbins         = nbins,
+    bin_breaks    = bin_breaks
+  )
+  
+  groups    <- unique_info$groups
+  mapping   <- unique_info$map
+  n_groups  <- nrow(groups)
+  
+  # Get cohort structure from first trial
+  y_example    <- scenario_list[[1]]$trials[[1]]$y_list
+  n_cohorts    <- length(y_example)
+  cohort_names <- names(y_example)
+  if (is.null(cohort_names)) {
+    cohort_names <- paste0("c_", seq_len(n_cohorts))
   }
   
-  out
+  if (verbose) {
+    message(
+      format(Sys.time(), "%d-%b-%Y"),
+      " Performing Analyses (normal endpoint)"
+    )
+    message(
+      "   Analyzing ",
+      length(scenario_numbers), " scenario",
+      ifelse(length(scenario_numbers) == 1, "", "s"),
+      " (", n_groups, " unique trial group",
+      ifelse(n_groups == 1, "", "s"), ")"
+    )
+  }
+  
+  # --- 2) Build pooled y_list per group and run JAGS once per group ---
+  if (verbose) {
+    start_time <- Sys.time()
+    message("   Running bhm_normal model on pooled groups ...")
+  }
+  
+  method_quantiles_by_group <- vector("list", n_groups)
+  
+  for (g in seq_len(n_groups)) {
+    members <- mapping$group_id == g
+    scen_g  <- mapping$scenario_index[members]
+    trial_g <- mapping$trial_index[members]
+    
+    # pool values within each cohort over all member trials
+    y_group <- vector("list", n_cohorts)
+    for (k in seq_len(n_cohorts)) {
+      vals <- numeric(0)
+      for (idx in seq_along(scen_g)) {
+        y_list_k <- scenario_list[[scen_g[idx]]]$trials[[trial_g[idx]]]$y_list[[k]]
+        vals     <- c(vals, y_list_k)
+      }
+      y_group[[k]] <- vals
+    }
+    names(y_group) <- cohort_names
+    
+    # run JAGS once for this group's pooled data
+    method_quantiles_by_group[[g]] <- getPostQuantilesOfTrialNormal(
+      y_list            = y_group,
+      j_data            = j_data_fixed,
+      j_parameters      = j_parameters,
+      j_model_file      = j_model_file,
+      method_name       = "normal",
+      quantiles         = quantiles,
+      calc_differences  = calc_differences,
+      n_mcmc_iterations = n_mcmc_iterations,
+      save_path         = NULL,
+      save_trial        = FALSE
+    )
+  }
+  
+  if (verbose) {
+    message(
+      "       finished after ",
+      round(Sys.time() - start_time, 1), " ",
+      units(Sys.time() - start_time), "."
+    )
+  }
+  
+  # --- 3) Map group-level posteriors back to all trials ---
+  if (verbose) {
+    start_time <- Sys.time()
+    message("   Processing scenarios (mapping group results) ...")
+  }
+  
+  scenario_method_quantiles_list <- mapUniqueTrialsNormal(
+    scenario_list            = scenario_list,
+    method_quantiles_by_group = method_quantiles_by_group,
+    unique_info              = unique_info
+  )
+  
+  if (verbose) {
+    message(
+      "       finished after ",
+      round(Sys.time() - start_time, 1), " ",
+      units(Sys.time() - start_time), "."
+    )
+  }
+  
+  # --- 4) Wrap up in analysis_list_normal (unchanged structure) ---
+  analyses_list        <- vector("list", length(scenario_numbers))
+  names(analyses_list) <- paste0("scenario_", scenario_numbers)
+  
+  for (s in seq_along(scenario_numbers)) {
+    analyses_list[[s]] <- list(
+      quantiles_list      = list(normal = scenario_method_quantiles_list[[s]]),
+      scenario_data       = scenario_list[[s]],
+      analysis_parameters = list(
+        quantiles               = quantiles,
+        evidence_levels         = evidence_levels,
+        method_names            = "normal",
+        prior_parameters_normal = prior_parameters_normal,
+        n_mcmc_iterations       = n_mcmc_iterations,
+        nbins                   = nbins,
+        bin_breaks              = unique_info$breaks
+      )
+    )
+  }
+  
+  class(analyses_list) <- "analysis_list_normal"
+  analyses_list
 }
