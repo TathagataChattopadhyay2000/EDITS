@@ -1,129 +1,13 @@
-getUniqueTrialsNormal <- function(
-    scenario_list,
-    nbins      = 5,
-    bin_breaks = NULL
-) {
-  if (missing(scenario_list)) {
-    stop("Please provide 'scenario_list' for getUniqueTrialsNormal().")
-  }
-  if (!is.scenario_list_normal(scenario_list)) {
-    stop("scenario_list must be of class 'scenario_list_normal'.")
-  }
-  if (!is.null(bin_breaks) && !is.list(bin_breaks)) {
-    stop("'bin_breaks' must be a list or NULL.")
-  }
-  if (is.null(bin_breaks) && (!is.numeric(nbins) || length(nbins) != 1L || nbins < 1)) {
-    stop("'nbins' must be a positive integer if 'bin_breaks' is NULL.")
-  }
-
-  ybar_list <- list()
-  scen_idx  <- integer(0)
-  trial_idx <- integer(0)
-
-  # 1) Collect per-cohort summary means (already computed in simulateScenariosNormal)
-  for (s in seq_along(scenario_list)) {
-    trials <- scenario_list[[s]]$trials
-    if (is.null(trials) || !length(trials)) {
-      stop("scenario_list[[", s, "]] has no trials.")
+model {
+  
+  for (j in 1:J) {
+    for (i in 1:n[j]) {
+      y[j,i] ~ dnorm(mu[j], prec_sigma)
     }
-
-    for (t in seq_along(trials)) {
-      y_bar <- trials[[t]]$y_bar
-
-      if (is.null(y_bar) || !is.numeric(y_bar) || length(y_bar) == 0L) {
-        stop(
-          "scenario_list[[", s, "]]$trials[[", t, "]]$y_bar must be a non-empty numeric vector.\n",
-          "Tip: compute y_bar during simulation and store it per trial."
-        )
-      }
-
-      # ensure names exist
-      if (is.null(names(y_bar))) {
-        names(y_bar) <- paste0("c_", seq_along(y_bar))
-      }
-
-      ybar_list[[length(ybar_list) + 1L]] <- y_bar
-      scen_idx  <- c(scen_idx, s)
-      trial_idx <- c(trial_idx, t)
-    }
+    mu[j] ~ dnorm(mu_pop, prec_tau)
   }
 
-  # 2) Align cohorts across all trials (safe even if names differ)
-  all_cohorts <- unique(unlist(lapply(ybar_list, names), use.names = FALSE))
-  if (is.null(all_cohorts) || !length(all_cohorts)) {
-    stop("Could not determine cohort names from y_bar.")
-  }
-
-  ybar_mat <- t(vapply(ybar_list, function(v) {
-    out <- rep(NA_real_, length(all_cohorts))
-    names(out) <- all_cohorts
-    out[names(v)] <- v
-    out
-  }, numeric(length(all_cohorts))))
-  colnames(ybar_mat) <- all_cohorts
-
-  index_df <- data.frame(
-    scenario_index   = scen_idx,
-    trial_index      = trial_idx,
-    stringsAsFactors = FALSE
-  )
-
-  # 3) Build breaks per cohort
-  if (is.null(bin_breaks)) {
-    breaks <- lapply(seq_len(ncol(ybar_mat)), function(j) {
-      r <- range(ybar_mat[, j], finite = TRUE)
-      if (!all(is.finite(r))) {
-        stop("Non-finite y_bar values found; cannot create bins.")
-      }
-      if (r[1L] == r[2L]) r <- r + c(-0.5, 0.5)
-      seq(from = r[1L], to = r[2L], length.out = nbins + 1L)
-    })
-    names(breaks) <- all_cohorts
-  } else {
-    if (!all(all_cohorts %in% names(bin_breaks))) {
-      stop(
-        "All cohorts must appear as names in 'bin_breaks'. Missing: ",
-        paste(setdiff(all_cohorts, names(bin_breaks)), collapse = ", ")
-      )
-    }
-    breaks <- bin_breaks[all_cohorts]
-  }
-
-  # 4) Bin each cohort mean and create a signature per trial
-  bin_codes <- lapply(seq_len(ncol(ybar_mat)), function(j) {
-    cut(
-      ybar_mat[, j],
-      breaks         = breaks[[j]],
-      include.lowest = TRUE,
-      labels         = FALSE
-    )
-  })
-  bin_codes <- as.data.frame(bin_codes, check.names = FALSE)
-  colnames(bin_codes) <- all_cohorts
-
-  signature <- apply(bin_codes, 1L, function(z) paste(z, collapse = "-"))
-
-  sig_levels <- unique(signature)
-  group_id   <- match(signature, sig_levels)
-
-  groups_df <- data.frame(
-    group_id  = seq_along(sig_levels),
-    signature = sig_levels,
-    n_members = as.integer(tabulate(group_id, nbins = length(sig_levels))),
-    stringsAsFactors = FALSE
-  )
-
-  map_df <- data.frame(
-    scenario_index   = index_df$scenario_index,
-    trial_index      = index_df$trial_index,
-    group_id         = group_id,
-    signature        = signature,
-    stringsAsFactors = FALSE
-  )
-
-  list(
-    groups = groups_df,
-    map    = map_df,
-    breaks = breaks
-  )
+  mu_pop     ~ dnorm(mu_pop_mean, prec_mu_pop)
+  prec_tau   ~ dgamma(tau_shape,   tau_rate)
+  prec_sigma ~ dgamma(sigma_shape, sigma_rate)
 }
