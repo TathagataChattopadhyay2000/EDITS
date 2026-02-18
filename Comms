@@ -2,8 +2,6 @@ for (t in seq_len(n_trials)) {
 
   y_list <- vector("list", K)
   y_bar  <- numeric(K)
-  y_sum  <- numeric(K)
-  y_sum_sq <- numeric(K)
 
   for (k in seq_len(K)) {
 
@@ -15,23 +13,15 @@ for (t in seq_len(n_trials)) {
 
     y_list[[k]] <- y
 
-    # --- summary statistics (what we care about later) ---
     y_bar[k]    <- mean(y)
-    y_sum[k]    <- sum(y)
-    y_sum_sq[k] <- sum(y^2)
   }
 
   names(y_list)  <- paste0("c_", cohort_names_chr)
   names(y_bar)   <- paste0("c_", cohort_names_chr)
-  names(y_sum)   <- paste0("c_", cohort_names_chr)
-  names(y_sum_sq)<- paste0("c_", cohort_names_chr)
 
   trials[[t]] <- list(
-    y_list   = y_list,          # keep for now (backward compatible)
-    y_bar    = y_bar,           # NEW: per-cohort sample mean
-    y_sum    = y_sum,           # NEW: optional
-    y_sum_sq = y_sum_sq,        # NEW: optional
-    n_subjects = n_subjects      # as before
+    y_bar    = y_bar,          
+    n_subjects = n_subjects
   )
 }
 
