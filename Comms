@@ -1,50 +1,52 @@
-> scene
-$scenario_1
-$scenario_1$scenario_number
-[1] 1
-
-$scenario_1$n_subjects
-     [,1] [,2]
-[1,]   10   20
-[2,]   10   20
-
-$scenario_1$trials
-$scenario_1$trials[[1]]
-$scenario_1$trials[[1]]$y_bar
-        c_1         c_2 
--0.01506397 -0.09937377 
-
-$scenario_1$trials[[1]]$n_subjects
-[1] 10 20
-
-
-$scenario_1$trials[[2]]
-$scenario_1$trials[[2]]$y_bar
-      c_1       c_2 
-0.7421677 1.4386323 
-
-$scenario_1$trials[[2]]$n_subjects
-[1] 10 20
-
-
-
-$scenario_1$previous_analyses
-$scenario_1$previous_analyses$go_decisions
-     [,1]
-[1,]    1
-[2,]    1
-
-$scenario_1$previous_analyses$post_quantiles
-NULL
-
-
-
-attr(,"class")
-[1] "scenario_list_normal"
-> 
-
-
-
-scene <- simulateScenariosNormal(
-
-
+#' @export
+print.scenario_list_normal <- function(x, ...) {
+  
+  n_scen <- length(x)
+  scen_names <- names(x)
+  
+  # infer K from first scenario
+  K <- ncol(x[[1]]$n_subjects)
+  cohort_names <- paste0("c_", seq_len(K))
+  
+  cat("scenario_list_normal\n")
+  cat("  Scenarios:", n_scen, "\n")
+  cat("  Cohorts:  ", K, "(", paste(cohort_names, collapse = ", "), ")\n\n", sep = "")
+  
+  for (sname in scen_names) {
+    sc <- x[[sname]]
+    
+    n_trials <- length(sc$trials)
+    n_subj_avg <- colMeans(sc$n_subjects)
+    
+    cat("-", sname, "(scenario_number =", sc$scenario_number, ")\n")
+    cat("  Trials: ", n_trials, "\n", sep = "")
+    
+    # planned sample sizes
+    cat("  Planned n per cohort (avg):\n")
+    tmp_n <- data.frame(cohort = cohort_names, n_avg = as.numeric(n_subj_avg))
+    print(tmp_n, row.names = FALSE)
+    
+    # true parameters if available
+    if (!is.null(sc$means)) {
+      cat("  True means:\n")
+      tmp_mu <- data.frame(cohort = cohort_names, mean = as.numeric(sc$means))
+      print(tmp_mu, row.names = FALSE)
+    }
+    if (!is.null(sc$sd)) {
+      cat("  True SDs:\n")
+      tmp_sd <- data.frame(cohort = cohort_names, sd = as.numeric(sc$sd))
+      print(tmp_sd, row.names = FALSE)
+    }
+    
+    # show first few y_bar values
+    ybar_mat <- do.call(rbind, lapply(sc$trials, function(tr) tr$y_bar))
+    colnames(ybar_mat) <- cohort_names
+    
+    cat("  First 3 trial summary outcomes (y_bar):\n")
+    print(head(as.data.frame(ybar_mat), 3), row.names = FALSE)
+    
+    cat("\n")
+  }
+  
+  invisible(x)
+}
