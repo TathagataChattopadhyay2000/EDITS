@@ -1,14 +1,62 @@
-> names(attr(tu, "bin_breaks"))
-[1] "y_1" "y_2" "y_3"
-> range(scene1$scenario_1$y[, 1])
-[1] 1.405574 2.341674
-> range(attr(tu, "bin_breaks")[["theta_1"]])
-[1]  Inf -Inf
-Warning messages:
-1: In min(x, na.rm = na.rm) :
-  no non-missing arguments to min; returning Inf
-2: In max(x, na.rm = na.rm) :
-  no non-missing arguments to max; returning -Inf
-
-> range(attr(tu, "bin_breaks")[["y_1"]])
-[1] 1.405574 2.341674
+> breaks <- attr(tu, "bin_breaks")[["y_1"]]
+> mids   <- (breaks[-length(breaks)] + breaks[-1]) / 2
+> y_raw <- scene1$scenario_1$y[, 1]
+> bin_id <- cut(y_raw, breaks = breaks, include.lowest = TRUE, labels = FALSE)
+> y_mid_manual <- mids[bin_id]
+> cbind(y_raw = y_raw, y_mid_manual = y_mid_manual)[1:20, ]
+         y_raw y_mid_manual
+ [1,] 1.631625     1.686404
+ [2,] 1.868771     1.873624
+ [3,] 1.778263     1.686404
+ [4,] 1.798538     1.873624
+ [5,] 1.984482     2.060844
+ [6,] 2.170789     2.248064
+ [7,] 1.405574     1.499184
+ [8,] 1.740564     1.686404
+ [9,] 1.749651     1.686404
+[10,] 2.047797     2.060844
+[11,] 2.341674     2.248064
+[12,] 2.021617     2.060844
+[13,] 1.806686     1.873624
+[14,] 1.889012     1.873624
+[15,] 2.204515     2.248064
+[16,] 1.758678     1.686404
+[17,] 2.059653     2.060844
+[18,] 2.244818     2.248064
+[19,] 2.104391     2.060844
+[20,] 1.886637     1.873624
+> tu_keys <- getHashKeys(tu)
+> breaks
+[1] 1.405574 1.592794 1.780014 1.967234 2.154454 2.341674
+> tu_keys <- getHashKeys(tu)
+> # Take two raw trials that land in same bin for cohort 1 but have different n_subjects
+> y_raw_all <- scene1$scenario_1$y
+> n_all     <- scene1$scenario_1$n_subjects
+> # Build the same binned-mid matrix used in unique trials
+> breaks_all <- attr(tu, "bin_breaks")
+> y_mid <- y_raw_all
+> for (j in 1:ncol(y_mid)) {
++   b <- breaks_all[[paste0("theta_", j)]]
++   mids <- (b[-length(b)] + b[-1]) / 2
++   y_mid[, j] <- mids[cut(y_raw_all[, j], breaks = b, include.lowest = TRUE, labels = FALSE)]
++ }
+> mat_all <- cbind(y_mid, n_all, go_flag = scene1$scenario_1$previous_analyses$go_decisions[,1])
+> # Compare two rows
+> i1 <- 1
+> i2 <- 2
+> getHashKeys(mat_all[c(i1, i2), ])
+[1] "y_1:NA|y_2:NA|y_3:NA|n_1:10|n_2:20|n_3:30|go_flag:1"
+[2] "y_1:NA|y_2:NA|y_3:NA|n_1:10|n_2:20|n_3:30|go_flag:1"
+> for (j in 1:ncol(y_mid)) {
++   b <- breaks_all[[paste0("y_", j)]]
++   mids <- (b[-length(b)] + b[-1]) / 2
++   y_mid[, j] <- mids[cut(y_raw_all[, j], breaks = b, include.lowest = TRUE, labels = FALSE)]
++ }
+> mat_all <- cbind(y_mid, n_all, go_flag = scene1$scenario_1$previous_analyses$go_decisions[,1])
+> # Compare two rows
+> i1 <- 1
+> i2 <- 2
+> getHashKeys(mat_all[c(i1, i2), ])
+[1] "y_1:1.68640406166593|y_2:3.42345666730849|y_3:3.84970406064604|n_1:10|n_2:20|n_3:30|go_flag:1"
+[2] "y_1:1.87362403444568|y_2:2.27360441374904|y_3:3.84970406064604|n_1:10|n_2:20|n_3:30|go_flag:1"
+> 
