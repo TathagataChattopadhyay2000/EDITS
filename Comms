@@ -1,39 +1,30 @@
-Error in { : task 1 failed - "task 1 failed - "RUNTIME ERROR:
-Compilation error on line 11.
-Unknown variable J
-Either supply values for this variable with the data
-or define it  on the left hand side of a relation.
+breaks <- attr(tu, "bin_breaks")[["theta_1"]]
+mids   <- (breaks[-length(breaks)] + breaks[-1]) / 2
 
-""
-9.
-stop(simpleError(msg, call = expr))
-8.
-e$fun(obj, substitute(ex), parent.frame(), e$data)
-7.
-(function (obj, ex)
-{
-e <- getDoPar()
-e$fun(obj, substitute(ex), parent.frame(), e$data) ...
-6.
-do.call(`%dopar%`, list(obj, ex), envir = parent.frame())
-5.
-foreach::foreach(k = chunks_outer, .combine = c, .verbose = FALSE,
-.packages = c("rjags"), .export = exported_stuff) %dorng%
-{
-chunks_inner <- chunkVector(k, foreach::getDoParWorkers()) ...
-4.
-withCallingHandlers(expr, message = function(c) if (inherits(c,
-classes)) tryInvokeRestart("muffleMessage"))
-3.
-posterior_quantiles_list <- suppressMessages(
-foreach::foreach(
-k = chunks_outer,
-.combine = c, ... at AnalysisFunctions.R#232
-2.
-method_quantiles_list[[method_names[n]]] <- getPostQuantiles(
-method_name = "normal",
-quantiles = quantiles,
-scenario_data = list(n_subjects = n_subjects, ... at AnalysisFunctions.R#1223
-1.
-performAnalyses(scenario_list = scene1, method_names = "normal",
-n_mcmc_iterations = 100, nbins = 5)
+y_raw <- scene1$scenario_1$y[, 1]
+bin_id <- cut(y_raw, breaks = breaks, include.lowest = TRUE, labels = FALSE)
+y_mid_manual <- mids[bin_id]
+
+cbind(y_raw = y_raw, y_mid_manual = y_mid_manual)[1:20, ]
+
+tu_keys <- getHashKeys(tu)
+
+# Take two raw trials that land in same bin for cohort 1 but have different n_subjects
+y_raw_all <- scene1$scenario_1$y
+n_all     <- scene1$scenario_1$n_subjects
+
+# Build the same binned-mid matrix used in unique trials
+breaks_all <- attr(tu, "bin_breaks")
+y_mid <- y_raw_all
+for (j in 1:ncol(y_mid)) {
+  b <- breaks_all[[paste0("theta_", j)]]
+  mids <- (b[-length(b)] + b[-1]) / 2
+  y_mid[, j] <- mids[cut(y_raw_all[, j], breaks = b, include.lowest = TRUE, labels = FALSE)]
+}
+
+mat_all <- cbind(y_mid, n_all, go_flag = scene1$scenario_1$previous_analyses$go_decisions[,1])
+
+# Compare two rows
+i1 <- 1
+i2 <- 2
+getHashKeys(mat_all[c(i1, i2), ])
