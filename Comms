@@ -1,33 +1,1053 @@
-Error in is.numeric(x) && x > 0 : 
-  'length = 3' in coercion to 'logical(1)'
-9.
-FUN(X[[i]], ...)
-8.
-checkmate::assert_true(
-all(vapply(sd_list, function(x) all(is.numeric(x) && x > 0), logical(1))),
-.var.name = error_sd_list
-)
-7.
-isTRUE(x)
-6.
-checkTRUE(x, na.ok)
-5.
-checkmate::assert_true(
-all(vapply(sd_list, function(x) all(is.numeric(x) && x > 0), logical(1))),
-.var.name = error_sd_list
-)
-4.
-trial <- simulateScenarios(
-n_subjects_list = list(as.integer(n_subjects)),
-means_list = list(as.numeric(means)),
-sd_list = list(as.numeric(sds)), ...
-3.
-withVisible(...elt(i))
-2.
-utils::capture.output({
-if (endpoint == "binary") {
-trial <- simulateScenarios(
-n_subjects_list = list(as.integer(n_subjects)), ...
-1.
-createTrial(n_subjects = c(10, 20, 30), means = c(5, 7, 9), sds = c(1,
-1.5, 2), endpoint = "normal")
+continueRecruitment <- function (
+    
+  n_subjects_add_list,
+  decisions_list,
+  
+  method_name = NULL
+  
+) {
+  
+  error_n_subjects_add_list <- 
+    "Providing a list of vectors of positive integers for the argument 'n_subjects_add_list'"
+  error_decisions_list <- 
+    "Providing an object of class decision_list for the argument 'decisions_list'"
+  error_method_name <- simpleError(paste(
+    "Please provide a string naming an analysis method for the argument 'method_name'",
+    "Must be one of 'berry', 'exnex', 'exnex_adj', 'pooled', 'stratified'"))
+  
+  checkmate::assert_true(!missing(n_subjects_add_list), .var.name = error_n_subjects_add_list)
+  
+  checkmate::assert_true(!missing(decisions_list),      .var.name = error_decisions_list)
+  
+  checkmate::assert_class(decisions_list, "decision_list", .var.name = error_decisions_list)
+  
+  if (is.null(method_name)) {
+    
+    n_methods <- length(decisions_list$scenario_1$decisions_list)
+    
+    if (n_methods > 1) {
+      
+      stop(error_method_name)
+      
+    } else {
+      
+      method_name <- names(decisions_list$scenario_1$decisions_list)
+      
+    }
+    
+  } else {
+    
+    method_name <- tryCatch({
+      
+      match.arg(
+        method_name,
+        choices    = c('berry', 'exnex', 'exnex_adj', 'pooled', 'stratified'),
+        several.ok = FALSE)
+      
+    }, error = function (e) e)
+    
+    if (inherits(method_name, "error")) stop(error_method_name)
+    
+  }
+  
+  if (!is.list(n_subjects_add_list)) {
+    
+    n_subjects_add_list <- rep(list(n_subjects_add_list), length(decisions_list))
+    
+  }
+  
+  checkmate::assert_list(
+    
+    n_subjects_add_list, types = c("integer", "numeric"),
+    any.missing = FALSE, 
+    .var.name = error_n_subjects_add_list
+  )
+  
+  checkmate::assert_list(
+    
+    n_subjects_add_list, len = length(decisions_list), any.missing = FALSE, 
+    .var.name = "The lengths of 'n_subjects_add_list' and 'decisions_list' must be equal"
+  )
+  
+  checkmate::assert_true(
+    
+    all(vapply(n_subjects_add_list,
+               checkmate::test_integerish,
+               logical(1),
+               lower = 0, any.missing = FALSE)
+    ),
+    .var.name = error_n_subjects_add_list
+  )
+  
+  ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
+  
+  scenario_numbers <- as.numeric(sub("scenario_", "", names(decisions_list)))
+  
+  scenario_list <- vector(mode = "list", length = length(decisions_list))
+  names(scenario_list) <- paste0("scenario_", scenario_numbers)
+  
+  for (s in seq_along(scenario_list)) {
+    
+    if (!(method_name %in%
+          decisions_list[[s]]$analysis_data$analysis_parameters$method_names)) {
+      stop(simpleError("Selected method_name not analyzed"))
+    }
+    
+    scenario_data <- decisions_list[[s]]$scenario_data
+    endpoint <- if (!is.null(scenario_data$endpoint)) scenario_data$endpoint else "binary"
+    
+    n_subjects_add <- n_subjects_add_list[[s]]
+    
+    if (endpoint == "binary") {
+      
+      response_rates <- scenario_data$response_rates
+      cohort_names   <- sub("rr_", "", colnames(response_rates))
+      
+      if (any(response_rates > 0 & response_rates < 1)) {
+        index_new <- which(response_rates > 0 & response_rates < 1)
+      } else {
+        stop(simpleError(paste0(
+          "Only historical cohorts in scenario ",
+          scenario_data$scenario_number)))
+      }
+      
+      response_rates_new <- response_rates[, index_new]
+      cohort_names_new   <- cohort_names[index_new]
+      
+      checkmate::assert_true(
+        length(n_subjects_add) == length(response_rates_new),
+        .var.name = "The length of n_subjects_add must be equal to the length of the response rates that are in (0, 1)"
+      )
+      
+      n_trials <- scenario_data$n_trials
+      
+      add_scenario <- getScenario(
+        n_subjects     = n_subjects_add,
+        response_rates = response_rates_new,
+        cohort_names   = cohort_names_new,
+        n_trials       = n_trials,
+        endpoint       = endpoint
+      )
+      
+    } else { ## normal
+      
+      means <- scenario_data$means
+      sds   <- scenario_data$sds
+      cohort_names <- sub("mean_", "", colnames(means))
+      
+      if (any(sds > 0)) {
+        index_new <- which(sds > 0)
+      } else {
+        stop(simpleError(paste0(
+          "Only historical cohorts in scenario ",
+          scenario_data$scenario_number)))
+      }
+      
+      means_new       <- means[, index_new]
+      sds_new         <- sds[, index_new]
+      cohort_names_new <- cohort_names[index_new]
+      
+      checkmate::assert_true(
+        length(n_subjects_add) == length(means_new),
+        .var.name = "The length of n_subjects_add must be equal to the length of the recruiting cohorts"
+      )
+      
+      n_trials <- scenario_data$n_trials
+      
+      add_scenario <- getScenario(
+        n_subjects   = n_subjects_add,
+        means        = means_new,
+        sds          = sds_new,
+        cohort_names = cohort_names_new,
+        n_trials     = n_trials,
+        endpoint     = endpoint
+      )
+    }
+    
+    go_decisions <- decisions_list[[s]]$decisions_list[[method_name]]
+    previous_gos <- go_decisions
+    
+    if ("overall" %in% colnames(go_decisions)) {
+      overall_gos  <- go_decisions[, which(colnames(go_decisions) == "overall")]
+      go_decisions <- go_decisions[, -which(colnames(go_decisions) == "overall"), drop = FALSE]
+    } else {
+      overall_gos <- rep(TRUE, nrow(go_decisions))
+    }
+    
+    if (!all(index_new %in% as.numeric(sub("decision_", "", colnames(go_decisions))))) {
+      stop(simpleError(
+        "There must be a decision for each recruiting cohort in the 'decisions_list'"))
+    }
+    
+    go_decisions <- go_decisions[overall_gos, index_new, drop = FALSE]
+    
+    if (endpoint == "binary") {
+      
+      n_responders_add <- add_scenario$n_responders[overall_gos, , drop = FALSE] * go_decisions
+      n_subjects_add   <- add_scenario$n_subjects[overall_gos, , drop = FALSE] * go_decisions
+      
+      n_responders <- scenario_data$n_responders
+      n_subjects   <- scenario_data$n_subjects
+      
+      n_responders[overall_gos, index_new] <- n_responders[overall_gos, index_new] + n_responders_add
+      n_subjects[overall_gos, index_new]   <- n_subjects[overall_gos, index_new] + n_subjects_add
+      
+      scenario_list[[s]] <- list(
+        n_subjects        = n_subjects,
+        n_responders      = n_responders,
+        response_rates    = response_rates,
+        previous_analyses = list(
+          go_decisions   = previous_gos,
+          post_quantiles = decisions_list[[s]]$analysis_data$quantiles_list
+        ),
+        n_trials          = n_trials,
+        endpoint          = endpoint
+      )
+      
+    } else { ## normal
+      
+      y_add          <- add_scenario$y[overall_gos, , drop = FALSE] * go_decisions
+      n_subjects_add <- add_scenario$n_subjects[overall_gos, , drop = FALSE] * go_decisions
+      
+      y_old         <- scenario_data$y
+      n_subjects_old <- scenario_data$n_subjects
+      
+      ## pooled mean update by counts
+      y_old_n <- y_old[overall_gos, index_new, drop = FALSE] * n_subjects_old[overall_gos, index_new, drop = FALSE]
+      y_add_n <- y_add * n_subjects_add
+      n_new   <- n_subjects_old[overall_gos, index_new, drop = FALSE] + n_subjects_add
+      
+      ## avoid division by zero for stopped cohorts
+      y_updated <- y_old[overall_gos, index_new, drop = FALSE]
+      idx_nonzero <- n_new > 0
+      y_updated[idx_nonzero] <- (y_old_n[idx_nonzero] + y_add_n[idx_nonzero]) / n_new[idx_nonzero]
+      
+      y_old[overall_gos, index_new]          <- y_updated
+      n_subjects_old[overall_gos, index_new] <- n_new
+      
+      scenario_list[[s]] <- list(
+        n_subjects        = n_subjects_old,
+        y                 = y_old,
+        means             = scenario_data$means,
+        sds               = scenario_data$sds,
+        sds_observed      = scenario_data$sds_observed,
+        previous_analyses = list(
+          go_decisions   = previous_gos,
+          post_quantiles = decisions_list[[s]]$analysis_data$quantiles_list
+        ),
+        n_trials          = n_trials,
+        endpoint          = endpoint
+      )
+    }
+    
+    scenario_list[[s]]$scenario_number <- scenario_data$scenario_number
+  }
+  
+  class(scenario_list) <- "scenario_list"
+  
+  return(scenario_list)
+}
+
+createTrial <- function (
+    
+  n_subjects,
+  n_responders = NULL,
+  y = NULL,
+  sds = NULL,
+  endpoint = c("binary", "normal")
+  
+) {
+  
+  endpoint <- match.arg(endpoint)
+  
+  error_n_subjects <- 
+    "Providing a vector of integers for the argument 'error_n_subjects'"
+  error_n_responders <-
+    "Providing a vector of integers for the argument 'n_responders'"
+  error_y <-
+    "Providing a numeric vector for the argument 'y'"
+  error_sds <-
+    "Providing a non-negative numeric vector for the argument 'sds'"
+  
+  checkmate::assert_integerish(
+    n_subjects, any.missing = FALSE, min.len = 1, 
+    .var.name = error_n_subjects
+  )
+  
+  if (endpoint == "binary") {
+    
+    checkmate::assert_integerish(
+      n_responders, any.missing = FALSE, min.len = 1,
+      .var.name = error_n_responders
+    )
+    
+    ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
+    
+    utils::capture.output({
+      trial <- simulateScenarios(
+        n_subjects_list     = list(as.integer(n_subjects)),
+        response_rates_list = list(as.integer(n_responders)),
+        n_trials            = 1,
+        endpoint            = endpoint
+      )
+    })
+    
+  } else {
+    
+    checkmate::assert_numeric(
+      y, any.missing = FALSE, min.len = 1,
+      .var.name = error_y
+    )
+    checkmate::assert_numeric(
+      sds, any.missing = FALSE, min.len = 1,
+      .var.name = error_sds
+    )
+    
+    ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
+    
+    utils::capture.output({
+      trial <- simulateScenarios(
+        n_subjects_list = list(as.integer(n_subjects)),
+        means_list      = list(as.numeric(y)),
+        sds_list        = list(as.numeric(sds)),
+        n_trials        = 1,
+        endpoint        = endpoint
+      )
+    })
+  }
+  
+  return(trial)
+}
+
+getNSubjects <- function (
+
+  recruitment_per_month,
+  start_date,
+  analysis_dates,
+
+  date_format = "%m/%d/%Y"
+
+) {
+
+  recruitment_per_day <- recruitment_per_month * (12 / 365)
+
+  start_date     <- as.Date(start_date, format = date_format)
+  analysis_dates <- as.Date(analysis_dates, format = date_format)
+
+  n_subjects_matrix <- floor((analysis_dates - start_date) %o% recruitment_per_day)
+
+  rownames(n_subjects_matrix) <- format(analysis_dates, format = date_format)
+  colnames(n_subjects_matrix) <- paste0("cohort_", seq_len(ncol(n_subjects_matrix)))
+
+  return (n_subjects_matrix)
+
+}
+
+getRecruitment <- function (
+
+  n_subjects_required,
+  recruitment_per_month,
+  start_date,
+
+  date_format = "%m/%d/%Y"
+
+) {
+
+
+  checkmate::assert_numeric(
+    
+    n_subjects_required, lower = 0, any.missing = FALSE,
+  .var.name = "Providing a matrix of non-negative integers for the argument 'n_subjects_required'"
+  )
+
+  checkmate::assert_true(
+    
+    checkmate::test_integerish(n_subjects_required, lower = 0),
+    .var.name = "Providing a matrix of non-negative integers for the argument 'n_subjects_required'"
+    )
+
+  checkmate::assert_numeric(
+    
+    recruitment_per_month, lower = 0, any.missing = FALSE,
+    .var.name = "Providing a vector of non-negative numerics for the argument 'recruitment_per_month'")
+
+  checkmate::assert_string(
+    
+    start_date, pattern = ".+",
+    .var.name = "Please provide a string in the format 'date_format' of for the argument 'start_date'")
+
+  ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
+  
+  hist_index <- recruitment_per_month == 0
+
+  recruitment_per_day <- recruitment_per_month[!hist_index] * (12 / 365)
+
+  start_date <- as.Date(start_date, format = date_format)
+
+  n_subjects_required <- convertVector2Matrix(n_subjects_required)
+
+  checkmate::assert_true(
+    length(recruitment_per_month) == ncol(n_subjects_required))
+
+  days_required <- apply(convertVector2Matrix(n_subjects_required[, !hist_index]),
+                         1, function (n_subj) {
+                           max(ceiling(n_subj * recruitment_per_day^-1))
+                         })
+
+  n_subjects_matrix_0 <- getNSubjects(
+    recruitment_per_month = recruitment_per_month[!hist_index],
+    start_date            = start_date,
+    analysis_dates        = start_date + days_required,
+    date_format           = date_format)
+
+  n_subjects_matrix <- matrix(NA,
+                              ncol = ncol(n_subjects_required),
+                              nrow = nrow(n_subjects_required))
+
+  n_subjects_matrix[, !hist_index] <- n_subjects_matrix_0
+  n_subjects_matrix[, hist_index]  <- n_subjects_required[, hist_index]
+
+  rownames(n_subjects_matrix) <- rownames(n_subjects_matrix_0)
+  colnames(n_subjects_matrix) <- paste0("cohort_", seq_len(ncol(n_subjects_required)))
+
+  return (n_subjects_matrix)
+
+}
+
+getResponders <- function (
+    
+  response_rates = NULL,
+  n_subjects,
+  n_trials,
+  endpoint = c("binary", "normal"),
+  means = NULL,
+  sds = NULL
+  
+) {
+  
+  endpoint <- match.arg(endpoint)
+  
+  if (endpoint == "binary") {
+    
+    n_responders <- t(replicate(n = n_trials, {
+      
+      stats::rbinom(
+        n    = length(n_subjects),
+        size = n_subjects,
+        prob = response_rates
+      )
+      
+    }))
+    
+    return(n_responders)
+    
+  } else {
+    
+    y <- t(replicate(n = n_trials, {
+      
+      stats::rnorm(
+        n    = length(n_subjects),
+        mean = means,
+        sd   = sds / sqrt(n_subjects)
+      )
+      
+    }))
+    
+    return(y)
+  }
+}
+
+getScenario <- function(
+    n_subjects,
+    response_rates = NULL,
+    means = NULL,
+    sds = NULL,
+    cohort_names = seq_along(n_subjects),
+    n_trials = 1e4,
+    endpoint = c("binary", "normal")
+) {
+  
+  endpoint <- match.arg(endpoint)
+  
+  checkmate::assert_integerish(n_subjects, lower = 0, any.missing = FALSE)
+  checkmate::assert_integerish(n_trials, lower = 1, any.missing = FALSE, len = 1)
+  checkmate::assert_true(length(cohort_names) == length(n_subjects),
+                         .var.name = "cohort_names must match length of n_subjects")
+  
+  if (endpoint == "binary") {
+    checkmate::assert_numeric(response_rates, any.missing = FALSE)
+  } else {
+    checkmate::assert_numeric(means, any.missing = FALSE)
+    checkmate::assert_numeric(sds, any.missing = FALSE)
+    checkmate::assert_true(length(means) == length(n_subjects),
+                           .var.name = "means must match length of n_subjects")
+    checkmate::assert_true(length(sds) == length(n_subjects),
+                           .var.name = "sds must match length of n_subjects")
+    checkmate::assert_true(all(is.finite(means)),
+                           .var.name = "means must be finite")
+    checkmate::assert_true(all(is.finite(sds) & sds >= 0),
+                           .var.name = "sds must be non-negative and finite")
+  }
+  
+  ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
+  
+  cohort_names_chr <- as.character(cohort_names)
+  
+  if (endpoint == "binary") {
+    
+    response_rates           <- convertVector2Matrix(response_rates)
+    colnames(response_rates) <- paste0("rr_", cohort_names_chr)
+    
+    new_cohorts  <- FALSE
+    hist_cohorts <- FALSE
+    
+    # New cohorts: 0 < rr < 1
+    if (any(response_rates < 1 & response_rates > 0)) {
+      new_cohorts <- TRUE
+      index_new   <- which(response_rates < 1 & response_rates > 0)
+      
+      checkmate::assert_true(
+        length(n_subjects[index_new]) == length(response_rates[, index_new]),
+        .var.name = "n_subjects and response_rates must have same length"
+      )
+      
+      n_responders <- getResponders(
+        response_rates = response_rates[, index_new, drop = FALSE],
+        n_subjects     = n_subjects[index_new],
+        n_trials       = n_trials
+      )
+    }
+    
+    # Historical cohorts: rr >= 1 OR rr == 0
+    if (any(response_rates >= 1 | response_rates == 0)) {
+      hist_cohorts <- TRUE
+      index_hist   <- which(response_rates >= 1 | response_rates == 0)
+      
+      checkmate::assert_true(
+        length(n_subjects[index_hist]) == length(response_rates[, index_hist]),
+        .var.name = "n_subjects and response_rates must have same length"
+      )
+      
+      if (new_cohorts) {
+        n_responders_hist <- matrix(
+          rep(response_rates[index_hist], each = nrow(n_responders)),
+          nrow = nrow(n_responders)
+        )
+      } else {
+        n_responders_hist <- matrix(response_rates[index_hist], nrow = 1)
+      }
+    }
+    
+    if (isTRUE(new_cohorts) && isTRUE(hist_cohorts)) {
+      n_responders <- cbind(n_responders, n_responders_hist)
+    } else if (isTRUE(hist_cohorts) && !isTRUE(new_cohorts)) {
+      n_responders <- n_responders_hist
+    }
+    
+    previous_gos <- matrix(
+      TRUE, byrow = TRUE,
+      ncol = length(n_subjects) + 1L,
+      nrow = nrow(n_responders)
+    )
+    colnames(previous_gos) <- c("overall", paste0("decision_", cohort_names_chr))
+    
+    n_subjects_mat <- matrix(
+      n_subjects, byrow = TRUE,
+      ncol = length(n_subjects),
+      nrow = nrow(n_responders)
+    )
+    
+    colnames(n_subjects_mat) <- paste0("n_", cohort_names_chr)
+    colnames(n_responders)   <- paste0("r_", cohort_names_chr)
+    
+    scenario_data <- list(
+      n_subjects        = n_subjects_mat,
+      n_responders      = n_responders,
+      response_rates    = response_rates,
+      previous_analyses = list(
+        go_decisions   = previous_gos,
+        post_quantiles = NULL
+      ),
+      n_trials          = n_trials,
+      endpoint          = endpoint
+    )
+    
+  } else { ## endpoint == "normal"
+    
+    means_mat <- convertVector2Matrix(means)
+    sds_mat   <- convertVector2Matrix(sds)
+    
+    colnames(means_mat) <- paste0("mean_", cohort_names_chr)
+    colnames(sds_mat)   <- paste0("sd_", cohort_names_chr)
+    
+    ## For normal endpoint:
+    ## - "historical" cohorts are represented by sd == 0 (fixed observed mean)
+    ## - "new" cohorts are represented by sd > 0 (simulate trial-level sample means)
+    new_cohorts  <- FALSE
+    hist_cohorts <- FALSE
+    
+    if (any(sds_mat > 0)) {
+      new_cohorts <- TRUE
+      index_new   <- which(sds_mat > 0)
+      
+      checkmate::assert_true(
+        length(n_subjects[index_new]) == length(means_mat[, index_new]),
+        .var.name = "n_subjects and means must have same length"
+      )
+      checkmate::assert_true(
+        length(n_subjects[index_new]) == length(sds_mat[, index_new]),
+        .var.name = "n_subjects and sds must have same length"
+      )
+      
+      ## sample means: ybar ~ N(mean, sd / sqrt(n))
+      y_means <- getResponders(
+        means      = means_mat[, index_new, drop = FALSE],
+        sds        = sds_mat[, index_new, drop = FALSE],
+        n_subjects = n_subjects[index_new],
+        n_trials   = n_trials
+      )
+    }
+    
+    if (any(sds_mat == 0)) {
+      hist_cohorts <- TRUE
+      index_hist   <- which(sds_mat == 0)
+      
+      checkmate::assert_true(
+        length(n_subjects[index_hist]) == length(means_mat[, index_hist]),
+        .var.name = "n_subjects and means must have same length"
+      )
+      
+      if (new_cohorts) {
+        y_means_hist <- matrix(
+          rep(means_mat[index_hist], each = nrow(y_means)),
+          nrow = nrow(y_means)
+        )
+      } else {
+        y_means_hist <- matrix(means_mat[index_hist], nrow = 1)
+      }
+    }
+    
+    if (isTRUE(new_cohorts) && isTRUE(hist_cohorts)) {
+      y_means <- cbind(y_means, y_means_hist)
+    } else if (isTRUE(hist_cohorts) && !isTRUE(new_cohorts)) {
+      y_means <- y_means_hist
+    }
+    
+    previous_gos <- matrix(
+      TRUE, byrow = TRUE,
+      ncol = length(n_subjects) + 1L,
+      nrow = nrow(y_means)
+    )
+    colnames(previous_gos) <- c("overall", paste0("decision_", cohort_names_chr))
+    
+    n_subjects_mat <- matrix(
+      n_subjects, byrow = TRUE,
+      ncol = length(n_subjects),
+      nrow = nrow(y_means)
+    )
+    
+    sds_rep <- matrix(
+      sds, byrow = TRUE,
+      ncol = length(sds),
+      nrow = nrow(y_means)
+    )
+    
+    colnames(n_subjects_mat) <- paste0("n_", cohort_names_chr)
+    colnames(y_means)        <- paste0("y_", cohort_names_chr)
+    colnames(sds_rep)        <- paste0("sd_", cohort_names_chr)
+    
+    scenario_data <- list(
+      n_subjects        = n_subjects_mat,
+      y                = y_means,
+      means             = means_mat,
+      sds               = sds_mat,
+      sds_observed      = sds_rep,
+      previous_analyses = list(
+        go_decisions   = previous_gos,
+        post_quantiles = NULL
+      ),
+      n_trials          = n_trials,
+      endpoint          = endpoint
+    )
+  }
+  
+  return(scenario_data)
+}
+
+is.scenario_list <- function (x) {
+  if (missing(x)) stop ("Please provide an object for the argument 'x'")
+  inherits(x, "scenario_list")
+}
+
+loadScenarios <- function (
+    
+  scenario_numbers,
+  load_path = tempdir()
+  
+) {
+  
+  checkmate::assert_integerish(
+    scenario_numbers,
+    lower = 1, any.missing = FALSE,
+    .var.name = "Providing a vector of positive integers for the argument 'scenario_numbers'"
+  )
+  
+  checkmate::assert_string(load_path, .var.name = "Providing a string for the argument 'load_path'")
+  
+  ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
+  
+  files <- file.path(load_path, paste0("scenario_data_", scenario_numbers, ".rds"))
+  scenario_list <- lapply(files, readRDS)
+  
+  names(scenario_list) <- paste0("scenario_", scenario_numbers)
+  class(scenario_list) <- "scenario_list"
+  
+  return (scenario_list)
+  
+}
+
+#' @export
+print.scenario_list <- function(x, ...) {
+  
+  n_scenarios    <- length(x)
+  scenario_names <- names(x)
+  
+  endpoint <- if (!is.null(x[[1]]$endpoint)) x[[1]]$endpoint else "binary"
+  
+  n_subjects <- getAverageNSubjects(x)
+  
+  n_trial_realizations  <- x[[1]]$n_trials
+  n_unique_realizations <- nrow(getUniqueTrials(x))
+  
+  if (endpoint == "binary") {
+    
+    n_cohorts      <- length(x[[1]]$response_rates)
+    cohort_names   <- paste0("c_", seq_len(n_cohorts))
+    response_rates <- lapply(x, function(xx) xx$response_rates)
+    
+    cat("scenario_list of ", n_scenarios, " scenario", ifelse(n_scenarios == 1, "", "s"),
+        " with ", n_cohorts, " cohort", ifelse(n_cohorts == 1, "", "s"), "\n\n", sep = "")
+    
+    for (n in seq_along(scenario_names)) {
+      
+      df_out <- t(data.frame(
+        c(response_rates[[n]]),
+        n_subjects[[n]]
+      ))
+      rownames(df_out) <- c(
+        "    - true response rates:",
+        "    - average number of subjects:"
+      )
+      colnames(df_out) <- cohort_names
+      
+      cat("  -", scenario_names[n], "\n")
+      print(df_out)
+      cat("\n")
+    }
+    
+  } else {
+    
+    n_cohorts    <- length(x[[1]]$means)
+    cohort_names <- paste0("c_", seq_len(n_cohorts))
+    means_list   <- lapply(x, function(xx) xx$means)
+    sds_list     <- lapply(x, function(xx) xx$sds)
+    
+    cat("scenario_list of ", n_scenarios, " scenario", ifelse(n_scenarios == 1, "", "s"),
+        " with ", n_cohorts, " cohort", ifelse(n_cohorts == 1, "", "s"), "\n\n", sep = "")
+    
+    for (n in seq_along(scenario_names)) {
+      
+      df_out <- t(data.frame(
+        c(means_list[[n]]),
+        c(sds_list[[n]]),
+        n_subjects[[n]]
+      ))
+      rownames(df_out) <- c(
+        "    - true means:",
+        "    - true sds:",
+        "    - average number of subjects:"
+      )
+      colnames(df_out) <- cohort_names
+      
+      cat("  -", scenario_names[n], "\n")
+      print(df_out)
+      cat("\n")
+    }
+  }
+  
+  cat("  -", n_trial_realizations, "trial realizations per scenario\n")
+  cat("  -", n_unique_realizations, "unique trial realizations overall\n")
+}
+
+saveScenarios <- function (
+    
+  scenario_list,
+  save_path = tempdir()
+  
+) {
+  
+  checkmate::assert(
+    checkmate::check_class(scenario_list, "scenario_list"),
+    checkmate::check_character(save_path, len = 1),
+    combine = "and",
+    .var.name = "Please provide an object of class scenario_list for the argument 'scenario_list'"
+  )
+  
+  ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
+  
+  if (!dir.exists(save_path)) {
+    dir.create(save_path)
+  }
+  
+  scenario_numbers <- sapply(scenario_list, function (x) x$scenario_number)
+  
+  for (s in seq_along(scenario_list)) {
+    saveRDS(
+      scenario_list[[s]],
+      file = paste0(save_path, "/scenario_data_", scenario_numbers[s], ".rds")
+    )
+  }
+  
+  return (list(scenario_numbers = scenario_numbers, path = save_path))
+}
+
+simulateScenarios <- function (
+    n_subjects_list,
+    response_rates_list = NULL,
+    means_list          = NULL,
+    sds_list            = NULL,
+    endpoint            = c("binary", "normal"),
+    scenario_numbers    = NULL,
+    n_trials            = 1e4
+) {
+  
+  endpoint <- match.arg(endpoint)
+  
+  error_n_subjects_list     <- 
+    "Providing a list of vectors of positive integers for the argument 'n_subjects_list'"
+  error_response_rates_list <- 
+    paste("Providing a list of vectors of non-negative numerics for the argument",
+          "'response_rates_list'\n", "Values outside of (0, 1) must be integers")
+  error_means_list          <- 
+    "Providing a list of numeric vectors for the argument 'means_list'"
+  error_sds_list            <- 
+    "Providing a list of vectors of non-negative numerics for the argument 'sds_list'"
+  error_n_trials            <- 
+    "Providing a positive integer for the argument 'n_trials'"
+  error_scenario_numbers    <- 
+    "Providing a vector of positive integers for the argument 'scenario_numbers'"
+  error_endpoint            <- 
+    "Providing 'binary' or 'normal' for the argument 'endpoint'"
+  
+  checkmate::assert_choice(
+    endpoint,
+    choices = c("binary", "normal"),
+    .var.name = error_endpoint
+  )
+  
+  ## endpoint-specific primary input checks
+  if (endpoint == "binary") {
+    
+    checkmate::assert_list(
+      response_rates_list,
+      types       = "numeric",
+      any.missing = FALSE,
+      .var.name   = error_response_rates_list
+    )
+    
+    n_scenarios_input <- length(response_rates_list)
+    
+  } else {
+    
+    checkmate::assert_list(
+      means_list,
+      types       = "numeric",
+      any.missing = FALSE,
+      .var.name   = error_means_list
+    )
+    
+    checkmate::assert_list(
+      sds_list,
+      types       = "numeric",
+      any.missing = FALSE,
+      .var.name   = error_sds_list
+    )
+    
+    n_scenarios_input <- length(means_list)
+  }
+  
+  ## keep same convenience behavior for n_subjects_list (list or single vector)
+  if (!is.list(n_subjects_list)) {
+    n_subjects_list <- rep(list(n_subjects_list), n_scenarios_input)
+  }
+  
+  checkmate::assert_list(
+    n_subjects_list,
+    types       = "numeric",
+    any.missing = FALSE,
+    .var.name   = error_n_subjects_list
+  )
+  
+  checkmate::assert_true(
+    all(vapply(
+      n_subjects_list,
+      checkmate::test_integerish,
+      logical(1),
+      lower       = 1,
+      any.missing = FALSE
+    )),
+    .var.name = error_n_subjects_list
+  )
+  
+  ## default scenario_numbers depends on active endpoint input
+  if (is.null(scenario_numbers)) {
+    scenario_numbers <- seq_len(n_scenarios_input)
+  }
+  
+  checkmate::assert_integerish(
+    scenario_numbers,
+    lower       = 1,
+    any.missing = FALSE,
+    .var.name   = error_scenario_numbers
+  )
+  
+  checkmate::assert_true(
+    length(scenario_numbers) == length(n_subjects_list),
+    .var.name = "'scenario_numbers' and 'n_subjects_list' must have same length"
+  )
+  
+  if (endpoint == "binary") {
+    
+    checkmate::assert_true(
+      length(n_subjects_list) == length(response_rates_list),
+      .var.name = "'n_subjects_list' and 'response_rates_list' must have same length"
+    )
+    
+    n_cohorts <- length(response_rates_list[[1L]])
+    
+    checkmate::assert_true(
+      n_cohorts >= 2L,
+      .var.name = "Each scenario having at least 2 cohorts"
+    )
+    
+    cohort_lengths_rr <- vapply(response_rates_list, length, integer(1))
+    checkmate::assert_true(
+      all(cohort_lengths_rr == n_cohorts),
+      .var.name = "All scenarios having same number of cohorts in 'response_rates_list'"
+    )
+    
+    cohort_lengths_ns <- vapply(n_subjects_list, length, integer(1))
+    checkmate::assert_true(
+      all(cohort_lengths_ns == n_cohorts),
+      .var.name = "All scenarios having same number of cohorts in 'n_subjects_list'"
+    )
+    
+    for (rates in response_rates_list) {
+      
+      is_whole <- abs(rates - round(rates)) < .Machine$double.eps^0.5
+      
+      ok <- (rates > 0 & rates < 1) |
+        (is_whole & (rates == 0 | rates >= 1))
+      
+      checkmate::assert_true(
+        all(ok),
+        .var.name = error_response_rates_list
+      )
+    }
+    
+    for (i in seq_along(n_subjects_list)) {
+      checkmate::assert_true(
+        all(n_subjects_list[[i]] >= response_rates_list[[i]]),
+        .var.name = "Values in 'response_rates_list' must not exceed 'n_subjects_list'"
+      )
+    }
+    
+  } else { ## endpoint == "normal"
+    
+    checkmate::assert_true(
+      length(n_subjects_list) == length(means_list),
+      .var.name = "'n_subjects_list' and 'means_list' must have same length"
+    )
+    
+    checkmate::assert_true(
+      length(means_list) == length(sds_list),
+      .var.name = "'means_list' and 'sds_list' must have same length"
+    )
+    
+    n_cohorts <- length(means_list[[1L]])
+    
+    checkmate::assert_true(
+      n_cohorts >= 2L,
+      .var.name = "Each scenario having at least 2 cohorts"
+    )
+    
+    cohort_lengths_means <- vapply(means_list, length, integer(1))
+    checkmate::assert_true(
+      all(cohort_lengths_means == n_cohorts),
+      .var.name = "All scenarios having same number of cohorts in 'means_list'"
+    )
+    
+    cohort_lengths_sds <- vapply(sds_list, length, integer(1))
+    checkmate::assert_true(
+      all(cohort_lengths_sds == n_cohorts),
+      .var.name = "All scenarios having same number of cohorts in 'sds_list'"
+    )
+    
+    cohort_lengths_ns <- vapply(n_subjects_list, length, integer(1))
+    checkmate::assert_true(
+      all(cohort_lengths_ns == n_cohorts),
+      .var.name = "All scenarios having same number of cohorts in 'n_subjects_list'"
+    )
+    
+    checkmate::assert_true(
+      all(vapply(means_list, function(x) all(is.finite(x)), logical(1))),
+      .var.name = error_means_list
+    )
+    
+    checkmate::assert_true(
+      all(vapply(sds_list, function(x) all(is.finite(x) & x >= 0), logical(1))),
+      .var.name = error_sds_list
+    )
+  }
+  
+  if ("n_trials" %in% ls(envir = .GlobalEnv) && missing(n_trials)) {
+    n_trials <- get("n_trials", envir = .GlobalEnv)
+  }
+  
+  checkmate::assert_count(
+    n_trials,
+    positive  = TRUE,
+    .var.name = error_n_trials
+  )
+  
+  ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
+  
+  scenario_list <- vector(mode = "list", length = length(scenario_numbers))
+  
+  for (s in seq_along(scenario_numbers)) {
+    
+    if (endpoint == "binary") {
+      scenario_list[[s]] <- getScenario(
+        n_subjects     = n_subjects_list[[s]],
+        response_rates = response_rates_list[[s]],
+        n_trials       = n_trials,
+        endpoint       = endpoint
+      )
+    } else {
+      scenario_list[[s]] <- getScenario(
+        n_subjects = n_subjects_list[[s]],
+        means      = means_list[[s]],
+        sds        = sds_list[[s]],
+        n_trials   = n_trials,
+        endpoint   = endpoint
+      )
+    }
+    
+    scenario_list[[s]]$scenario_number <- scenario_numbers[s]
+  }
+  
+  names(scenario_list) <- paste0("scenario_", scenario_numbers)
+  class(scenario_list) <- "scenario_list"
+  
+  return(scenario_list)
+}
