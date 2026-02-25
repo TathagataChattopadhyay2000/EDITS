@@ -6,3 +6,16 @@ bin_id <- cut(y_raw, breaks = breaks, include.lowest = TRUE, labels = FALSE)
 y_rep_manual <- reps[bin_id]
 
 cbind(y_raw=y_raw, y_rep_manual=y_rep_manual)[1:20, ]
+
+Error in mapUniqueTrials(scenario_list = scenario_list, method_quantiles_list = method_quantiles_list,  : 
+  For endpoint = 'normal', provide 'bin_breaks' and 'bin_means' or pass trials_unique_calc with these attributes
+3.
+stop("For endpoint = 'normal', provide 'bin_breaks' and 'bin_means' or pass trials_unique_calc with these attributes") at AnalysisFunctions.R#791
+2.
+scenario_method_quantiles_list <- mapUniqueTrials(
+scenario_list = scenario_list,
+method_quantiles_list = method_quantiles_list,
+trials_unique_calc = trials_unique_calc, ... at AnalysisFunctions.R#1268
+1.
+performAnalyses(scenario_list = scene1, method_names = "normal",
+n_mcmc_iterations = 100, nbins = 5)
