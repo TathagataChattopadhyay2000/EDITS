@@ -1,30 +1,46 @@
-breaks <- attr(tu, "bin_breaks")[["theta_1"]]
-mids   <- (breaks[-length(breaks)] + breaks[-1]) / 2
-
-y_raw <- scene1$scenario_1$y[, 1]
-bin_id <- cut(y_raw, breaks = breaks, include.lowest = TRUE, labels = FALSE)
-y_mid_manual <- mids[bin_id]
-
-cbind(y_raw = y_raw, y_mid_manual = y_mid_manual)[1:20, ]
-
-tu_keys <- getHashKeys(tu)
-
-# Take two raw trials that land in same bin for cohort 1 but have different n_subjects
-y_raw_all <- scene1$scenario_1$y
-n_all     <- scene1$scenario_1$n_subjects
-
-# Build the same binned-mid matrix used in unique trials
-breaks_all <- attr(tu, "bin_breaks")
-y_mid <- y_raw_all
-for (j in 1:ncol(y_mid)) {
-  b <- breaks_all[[paste0("theta_", j)]]
-  mids <- (b[-length(b)] + b[-1]) / 2
-  y_mid[, j] <- mids[cut(y_raw_all[, j], breaks = b, include.lowest = TRUE, labels = FALSE)]
-}
-
-mat_all <- cbind(y_mid, n_all, go_flag = scene1$scenario_1$previous_analyses$go_decisions[,1])
-
-# Compare two rows
-i1 <- 1
-i2 <- 2
-getHashKeys(mat_all[c(i1, i2), ])
+> breaks <- attr(tu, "bin_breaks")[["theta_1"]]
+> mids   <- (breaks[-length(breaks)] + breaks[-1]) / 2
+> y_raw <- scene1$scenario_1$y[, 1]
+> bin_id <- cut(y_raw, breaks = breaks, include.lowest = TRUE, labels = FALSE)
+> y_mid_manual <- mids[bin_id]
+> cbind(y_raw = y_raw, y_mid_manual = y_mid_manual)[1:20, ]
+         y_raw y_mid_manual
+ [1,] 1.631625           NA
+ [2,] 1.868771           NA
+ [3,] 1.778263           NA
+ [4,] 1.798538           NA
+ [5,] 1.984482           NA
+ [6,] 2.170789           NA
+ [7,] 1.405574           NA
+ [8,] 1.740564           NA
+ [9,] 1.749651           NA
+[10,] 2.047797           NA
+[11,] 2.341674           NA
+[12,] 2.021617           NA
+[13,] 1.806686           NA
+[14,] 1.889012           NA
+[15,] 2.204515           NA
+[16,] 1.758678           NA
+[17,] 2.059653           NA
+[18,] 2.244818           NA
+[19,] 2.104391           NA
+[20,] 1.886637           NA
+> tu_keys <- getHashKeys(tu)
+> # Take two raw trials that land in same bin for cohort 1 but have different n_subjects
+> y_raw_all <- scene1$scenario_1$y
+> n_all     <- scene1$scenario_1$n_subjects
+> # Build the same binned-mid matrix used in unique trials
+> breaks_all <- attr(tu, "bin_breaks")
+> y_mid <- y_raw_all
+> for (j in 1:ncol(y_mid)) {
++   b <- breaks_all[[paste0("theta_", j)]]
++   mids <- (b[-length(b)] + b[-1]) / 2
++   y_mid[, j] <- mids[cut(y_raw_all[, j], breaks = b, include.lowest = TRUE, labels = FALSE)]
++ }
+> mat_all <- cbind(y_mid, n_all, go_flag = scene1$scenario_1$previous_analyses$go_decisions[,1])
+> # Compare two rows
+> i1 <- 1
+> i2 <- 2
+> getHashKeys(mat_all[c(i1, i2), ])
+[1] "y_1:NA|y_2:NA|y_3:NA|n_1:10|n_2:20|n_3:30|go_flag:1"
+[2] "y_1:NA|y_2:NA|y_3:NA|n_1:10|n_2:20|n_3:30|go_flag:1"
