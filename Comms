@@ -1,2 +1,49 @@
 Error in stats::rbinom(n = length(n_subjects), size = n_subjects, prob = response_rates) : 
   invalid arguments
+12.
+stats::rbinom(
+n = length(n_subjects),
+size = n_subjects,
+prob = response_rates ...
+11.
+FUN(X[[i]], ...)
+10.
+lapply(X = X, FUN = FUN, ...)
+9.
+sapply(integer(n), eval.parent(substitute(function(...) expr)),
+simplify = simplify)
+8.
+n_responders <- t(replicate(n = n_trials, {
+
+stats::rbinom(
+n = length(n_subjects), ...
+7.
+n_responders <- t(replicate(n = n_trials, {
+
+stats::rbinom(
+n = length(n_subjects), ...
+6.
+y_means <- getResponders(
+means = means_mat[, index_new, drop = FALSE],
+sds = sds_mat[, index_new, drop = FALSE],
+n_subjects = n_subjects[index_new], ...
+5.
+scenario_list[[s]] <- getScenario(
+n_subjects = n_subjects_list[[s]],
+means = means_list[[s]],
+sds = sds_list[[s]], ...
+4.
+trial <- simulateScenarios(
+n_subjects_list = list(as.integer(n_subjects)),
+means_list = list(as.numeric(y)),
+sds_list = list(as.numeric(sds)), ...
+3.
+withVisible(...elt(i))
+2.
+utils::capture.output({
+trial <- simulateScenarios(
+n_subjects_list = list(as.integer(n_subjects)),
+means_list = list(as.numeric(y)), ...
+1.
+createTrial(n_subjects = c(10, 20, 30), y = c(2, 3, 4), sds = c(2,
+3, 4), endpoint = "normal")
