@@ -1,49 +1,42 @@
-Error in stats::rbinom(n = length(n_subjects), size = n_subjects, prob = response_rates) : 
-  invalid arguments
-12.
-stats::rbinom(
-n = length(n_subjects),
-size = n_subjects,
-prob = response_rates ...
-11.
-FUN(X[[i]], ...)
-10.
-lapply(X = X, FUN = FUN, ...)
-9.
-sapply(integer(n), eval.parent(substitute(function(...) expr)),
-simplify = simplify)
-8.
-n_responders <- t(replicate(n = n_trials, {
+> scene1$scenario_1
+$n_subjects
+     n_1 n_2 n_3
+[1,]  10  20  30
+[2,]  10  20  30
 
-stats::rbinom(
-n = length(n_subjects), ...
-7.
-n_responders <- t(replicate(n = n_trials, {
+$y
+          y_1      y_2      y_3
+[1,] 2.635551 3.360671 4.039079
+[2,] 2.290138 3.068522 3.752103
 
-stats::rbinom(
-n = length(n_subjects), ...
-6.
-y_means <- getResponders(
-means = means_mat[, index_new, drop = FALSE],
-sds = sds_mat[, index_new, drop = FALSE],
-n_subjects = n_subjects[index_new], ...
-5.
-scenario_list[[s]] <- getScenario(
-n_subjects = n_subjects_list[[s]],
-means = means_list[[s]],
-sds = sds_list[[s]], ...
-4.
-trial <- simulateScenarios(
-n_subjects_list = list(as.integer(n_subjects)),
-means_list = list(as.numeric(y)),
-sds_list = list(as.numeric(sds)), ...
-3.
-withVisible(...elt(i))
-2.
-utils::capture.output({
-trial <- simulateScenarios(
-n_subjects_list = list(as.integer(n_subjects)),
-means_list = list(as.numeric(y)), ...
-1.
-createTrial(n_subjects = c(10, 20, 30), y = c(2, 3, 4), sds = c(2,
-3, 4), endpoint = "normal")
+$means
+     mean_1 mean_2 mean_3
+[1,]      2      3      4
+
+$sds
+     sd_1 sd_2 sd_3
+[1,]    1    2    3
+
+$sds_observed
+     sd_1 sd_2 sd_3
+[1,]    1    2    3
+[2,]    1    2    3
+
+$previous_analyses
+$previous_analyses$go_decisions
+     overall decision_1 decision_2 decision_3
+[1,]    TRUE       TRUE       TRUE       TRUE
+[2,]    TRUE       TRUE       TRUE       TRUE
+
+$previous_analyses$post_quantiles
+NULL
+
+
+$n_trials
+[1] 2
+
+$endpoint
+[1] "normal"
+
+$scenario_number
+[1] 1
