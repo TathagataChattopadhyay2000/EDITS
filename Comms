@@ -1,4 +1,14 @@
-names(attr(tu, "bin_breaks"))
-range(scene1$scenario_1$y[, 1])
-range(attr(tu, "bin_breaks")[["theta_1"]])
-range(attr(tu, "bin_breaks")[["y_1"]])
+> names(attr(tu, "bin_breaks"))
+[1] "y_1" "y_2" "y_3"
+> range(scene1$scenario_1$y[, 1])
+[1] 1.405574 2.341674
+> range(attr(tu, "bin_breaks")[["theta_1"]])
+[1]  Inf -Inf
+Warning messages:
+1: In min(x, na.rm = na.rm) :
+  no non-missing arguments to min; returning Inf
+2: In max(x, na.rm = na.rm) :
+  no non-missing arguments to max; returning -Inf
+
+> range(attr(tu, "bin_breaks")[["y_1"]])
+[1] 1.405574 2.341674
