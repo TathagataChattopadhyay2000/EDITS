@@ -1,54 +1,56 @@
-bin_codes <- matrix(NA_integer_, nrow(all_scenarios_y), n_cohorts)
-colnames(bin_codes) <- cohort_names
-for (j in seq_len(n_cohorts)) {
-  bin_codes[, j] <- cut(
-    all_scenarios_y[, j],
-    breaks         = breaks[[j]],
-    include.lowest = TRUE,
-    labels         = FALSE
-  )
-}
+## --- mapUniqueTrials(): NORMAL endpoint part to replace (inside the endpoint == "normal" branch) ---
+## Add these args to mapUniqueTrials() signature (or pass them in):
+##   bin_breaks = NULL, group_levels = NULL, group_sizes = NULL, rep_matrix = NULL
 
-## 3) group signature = (bin pattern across all cohorts) + n_subjects + go_flag
-sig_matrix <- cbind(
-  bin_codes,
-  all_scenarios_n_subjects,
-  go_flag = all_scenarios_overall_gos
-)
-signature <- getHashKeys(sig_matrix)
-
-sig_levels  <- unique(signature)
-group_id    <- match(signature, sig_levels)
-group_sizes <- as.integer(tabulate(group_id, nbins = length(sig_levels)))
-
-## 4) representative per group ONLY if group size > 1, else keep original y
-y_rep <- all_scenarios_y
-colnames(y_rep) <- cohort_names
-
-rep_matrix <- matrix(NA_real_, nrow = length(sig_levels), ncol = n_cohorts)
-colnames(rep_matrix) <- cohort_names
-
-for (g in seq_along(sig_levels)) {
-  idx <- which(group_id == g)
-  if (length(idx) > 1) {
-    for (j in seq_len(n_cohorts)) {
-      vals <- all_scenarios_y[idx, j]
-      rep_matrix[g, j] <- (min(vals) + max(vals)) / 2   # midpoint of values in the group
-      ## if you want mean instead: rep_matrix[g, j] <- mean(vals)
-    }
-    y_rep[idx, ] <- matrix(rep_matrix[g, ], nrow = length(idx), byrow = TRUE)
+## inside mapUniqueTrials(), before foreach loop for endpoint == "normal":
+if (endpoint == "normal") {
+  if (is.null(bin_breaks))   bin_breaks   <- attr(trials_unique_calc, "bin_breaks")
+  if (is.null(group_levels)) group_levels <- attr(trials_unique_calc, "group_levels")
+  if (is.null(group_sizes))  group_sizes  <- attr(trials_unique_calc, "group_sizes")
+  if (is.null(rep_matrix))   rep_matrix   <- attr(trials_unique_calc, "rep_matrix")
+  
+  if (is.null(bin_breaks) || is.null(group_levels) || is.null(group_sizes) || is.null(rep_matrix)) {
+    stop("For endpoint = 'normal', provide binning/group attributes or pass them explicitly.")
   }
 }
 
-out <- getUniqueRows(cbind(
-  y_rep,
-  all_scenarios_n_subjects,
-  go_flag = all_scenarios_overall_gos
-))
+## inside the foreach body, replace the normal scenario_data_matrix construction with:
 
-attr(out, "bin_breaks")   <- breaks
-attr(out, "group_levels") <- sig_levels
-attr(out, "group_sizes")  <- group_sizes
-attr(out, "rep_matrix")   <- rep_matrix
+y <- scenario_list[[k]]$y
+n_subjects <- scenario_list[[k]]$n_subjects
+go_flag <- scenario_list[[k]]$previous_analyses$go_decisions[, 1]
 
-return(out)
+n_cohorts <- ncol(y)
+cohort_names <- colnames(y)
+if (is.null(cohort_names)) cohort_names <- paste0("y_", seq_len(n_cohorts))
+
+## bin codes for this scenario using the SAME breaks
+bin_codes_s <- matrix(NA_integer_, nrow(y), n_cohorts)
+colnames(bin_codes_s) <- cohort_names
+
+for (j in seq_len(n_cohorts)) {
+  bks <- bin_breaks[[cohort_names[j]]]
+  bin_codes_s[, j] <- cut(y[, j], breaks = bks, include.lowest = TRUE, labels = FALSE)
+}
+
+## signature per trial in this scenario
+sig_matrix_s <- cbind(
+  bin_codes_s,
+  n_subjects,
+  go_flag = go_flag
+)
+signature_s <- getHashKeys(sig_matrix_s)
+
+## map to global group id
+group_id_s <- match(signature_s, group_levels)
+
+## build y_rep: replace ONLY if group size > 1
+y_rep <- y
+for (i in seq_len(nrow(y_rep))) {
+  g <- group_id_s[i]
+  if (!is.na(g) && group_sizes[g] > 1) {
+    y_rep[i, ] <- rep_matrix[g, ]
+  }
+}
+
+scenario_data_matrix <- cbind(y_rep, n_subjects)
