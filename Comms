@@ -1,30 +1,10 @@
-getGoDecisionsByCohort <- function (
-    
-  gamma_quantiles,
-  
-  boundary_rates = NULL,
-  decision_rule  = quote(x > boundary_rates)
-  
-) {
-  
-  go_decisions_list <- lapply(gamma_quantiles, function (x) {
-    as.logical(eval(decision_rule))
-  })
-  
-  lens <- lengths(go_decisions_list)
-  if (length(lens) == 0L) {
-    return(matrix(logical(0), nrow = 0, ncol = 0))
-  }
-  if (!all(lens == lens[1])) {
-    stop("decision_rule must return the same number of decisions for every trial.")
-  }
-  if (lens[1] == 0L) {
-    stop("decision_rule returned length 0 decisions (likely boundary_rates is NULL or rule is invalid).")
-  }
-  
-  go_decisions <- matrix(unlist(go_decisions_list), nrow = length(go_decisions_list), byrow = TRUE)
-  colnames(go_decisions) <- paste0("decision_", seq_len(ncol(go_decisions)))
-  
-  return(go_decisions)
-  
-}
+> dec
+decision_list of 1 scenario with 1 method
+
+  - scenario_1 
+              overall decision_1 decision_2 decision_3
+    - Normal      0.6          0          0        0.6
+
+Warning message:
+In out_rules_n[grepl("P\\(", out_rules_n)] <- paste0(out_rules_n[grepl("P\\(",  :
+  number of items to replace is not a multiple of replacement length
