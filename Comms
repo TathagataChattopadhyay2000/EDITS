@@ -1,6 +1,45 @@
-idxP <- which(grepl("P\\(", out_rules_n))
-out_rules_n[idxP] <- paste0(
-  out_rules_n[idxP],
-  ") > ",
-  decision_rules$gamma_levels[[n]][seq_along(idxP)]
+## Visual binning debug (normal endpoint)
+
+tu <- getUniqueTrials(scene1, endpoint = "normal", nbins = 5)
+
+breaks_all <- attr(tu, "bin_breaks")
+reps_all   <- attr(tu, "bin_means")   # these are your bin representatives (midpoint-of-values or mean, depending on your code)
+
+y_raw_all <- scene1$scenario_1$y
+n_all     <- scene1$scenario_1$n_subjects
+
+## choose cohort to inspect
+j <- 1
+cohort_col <- colnames(y_raw_all)[j]  # likely "y_1"
+
+breaks <- breaks_all[[cohort_col]]
+reps   <- reps_all[[cohort_col]]
+
+bin_id <- cut(y_raw_all[, j], breaks = breaks, include.lowest = TRUE, labels = FALSE)
+bin_lbl <- cut(y_raw_all[, j], breaks = breaks, include.lowest = TRUE)
+
+y_rep <- reps[bin_id]
+
+debug_df <- data.frame(
+  trial      = seq_len(nrow(y_raw_all)),
+  y_raw      = y_raw_all[, j],
+  bin        = as.character(bin_lbl),
+  bin_id     = bin_id,
+  y_rep      = y_rep,
+  n_subjects = n_all[, j]
 )
+
+## 1) raw -> bin -> representative (first 30 trials)
+print(head(debug_df, 30))
+
+## 2) bin summary: how many trials per bin + representative value
+bin_summary <- data.frame(
+  bin_id = seq_len(length(reps)),
+  bin    = levels(bin_lbl),
+  n_in_bin = as.integer(tabulate(bin_id, nbins = length(reps))),
+  rep_value = reps
+)
+print(bin_summary)
+
+## 3) show the unique trials table (first rows)
+print(head(tu, 20))
