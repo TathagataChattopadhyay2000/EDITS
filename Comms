@@ -1,11 +1,5 @@
-scenario_method_quantiles_list <- mapUniqueTrials(
-  scenario_list              = scenario_list,
-  method_quantiles_list      = method_quantiles_list,
-  trials_unique_calc         = trials_unique_calc,
-  applicable_previous_trials = applicable_previous_trials,
-  endpoint                   = endpoint,
-  bin_breaks   = attr(trials_unique, "bin_breaks"),
-  group_levels = attr(trials_unique, "group_levels"),
-  group_sizes  = attr(trials_unique, "group_sizes"),
-  rep_matrix   = attr(trials_unique, "rep_matrix")
-)
+Error in y_rep[idx, ] <- matrix(rep_matrix[g, ], nrow = length(idx), byrow = TRUE) : 
+  number of items to replace is not a multiple of replacement length
+In addition: Warning message:
+In matrix(rep_matrix[g, ], nrow = length(idx), byrow = TRUE) :
+  data length [3] is not a sub-multiple or multiple of the number of rows [2]
