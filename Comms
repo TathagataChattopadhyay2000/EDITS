@@ -1,14 +1,8 @@
-Error in dimnames(x) <- dn : 
-  length of 'dimnames' [2] not equal to array extent
-3.
-colnames(go_decisions) <- paste0("decision_", seq_len(ncol(go_decisions))) at OCFunctions.R#590
-2.
-go_decisions <- getGoDecisionsByCohort(
-gamma_quantiles = getPosteriorGammaQuantiles(
-method_name = method_names[n],
-gamma_levels = gamma_levels[[n]], ... at OCFunctions.R#521
-1.
-getGoDecisions(analyses_list = an, cohort_names = cohort_names,
-evidence_levels = evidence_levels, boundary_rules = quote(c(x[1] >
-boundary_rates[1], x[2] > boundary_rates[2], x[3] > boundary_rates[3])),
-overall_min_gos = 1)
+tmp <- getPosteriorGammaQuantiles(
+  method_name              = "normal",
+  gamma_levels             = evidence_levels,
+  quantiles                = an[[1]]$analysis_parameters$quantiles,
+  posterior_quantiles_list = an[[1]]$quantiles_list,
+  cohort_names             = cohort_names
+)
+str(tmp[[1]])
