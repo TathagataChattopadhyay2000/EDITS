@@ -1,14 +1,26 @@
-Error in dimnames(x) <- dn : 
-  length of 'dimnames' [2] not equal to array extent
-3.
-colnames(go_decisions) <- paste0("decision_", seq_len(ncol(go_decisions))) at OCFunctions.R#591
-2.
-go_decisions <- getGoDecisionsByCohort(
-gamma_quantiles = getPosteriorGammaQuantiles(
-method_name = method_names[n],
-gamma_levels = gamma_levels[[n]], ... at OCFunctions.R#521
-1.
-getGoDecisions(analyses_list = an, cohort_names = cohort_names,
-evidence_levels = evidence_levels, boundary_rules = quote(c(x[1] >
-boundary_rates[1], x[2] > boundary_rates[2], x[3] > boundary_rates[3])),
-overall_min_gos = 1)
+getGoDecisionsByCohort <- function (
+    
+  gamma_quantiles,
+  
+  boundary_rates = NULL,
+  decision_rule  = quote(x > boundary_rates)
+  
+) {
+  
+  go_decisions_list <- lapply(
+    gamma_quantiles,
+    function (x) {
+      as.logical(eval(decision_rule))
+    }
+  )
+  
+  ## ensure each trial yields a row vector
+  go_decisions <- do.call(rbind, lapply(go_decisions_list, function(z) {
+    matrix(z, nrow = 1)
+  }))
+  
+  colnames(go_decisions) <- paste0("decision_", seq_len(ncol(go_decisions)))
+  
+  return(go_decisions)
+  
+}
