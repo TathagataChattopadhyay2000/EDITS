@@ -1,5 +1,2 @@
-Error in y_rep[idx, ] <- matrix(rep_matrix[g, ], nrow = length(idx), byrow = TRUE) : 
-  number of items to replace is not a multiple of replacement length
-In addition: Warning message:
-In matrix(rep_matrix[g, ], nrow = length(idx), byrow = TRUE) :
-  data length [3] is not a sub-multiple or multiple of the number of rows [2]
+Error in mapUniqueTrials(scenario_list = scenario_list, method_quantiles_list = method_quantiles_list,  : 
+  unused arguments (group_levels = if (endpoint == "normal") attr(trials_unique, "group_levels"), group_sizes = if (endpoint == "normal") attr(trials_unique, "group_sizes"), rep_matrix = if (endpoint == "normal") attr(trials_unique, "rep_matrix"))
