@@ -1,56 +1,11 @@
-## --- mapUniqueTrials(): NORMAL endpoint part to replace (inside the endpoint == "normal" branch) ---
-## Add these args to mapUniqueTrials() signature (or pass them in):
-##   bin_breaks = NULL, group_levels = NULL, group_sizes = NULL, rep_matrix = NULL
-
-## inside mapUniqueTrials(), before foreach loop for endpoint == "normal":
-if (endpoint == "normal") {
-  if (is.null(bin_breaks))   bin_breaks   <- attr(trials_unique_calc, "bin_breaks")
-  if (is.null(group_levels)) group_levels <- attr(trials_unique_calc, "group_levels")
-  if (is.null(group_sizes))  group_sizes  <- attr(trials_unique_calc, "group_sizes")
-  if (is.null(rep_matrix))   rep_matrix   <- attr(trials_unique_calc, "rep_matrix")
-  
-  if (is.null(bin_breaks) || is.null(group_levels) || is.null(group_sizes) || is.null(rep_matrix)) {
-    stop("For endpoint = 'normal', provide binning/group attributes or pass them explicitly.")
-  }
-}
-
-## inside the foreach body, replace the normal scenario_data_matrix construction with:
-
-y <- scenario_list[[k]]$y
-n_subjects <- scenario_list[[k]]$n_subjects
-go_flag <- scenario_list[[k]]$previous_analyses$go_decisions[, 1]
-
-n_cohorts <- ncol(y)
-cohort_names <- colnames(y)
-if (is.null(cohort_names)) cohort_names <- paste0("y_", seq_len(n_cohorts))
-
-## bin codes for this scenario using the SAME breaks
-bin_codes_s <- matrix(NA_integer_, nrow(y), n_cohorts)
-colnames(bin_codes_s) <- cohort_names
-
-for (j in seq_len(n_cohorts)) {
-  bks <- bin_breaks[[cohort_names[j]]]
-  bin_codes_s[, j] <- cut(y[, j], breaks = bks, include.lowest = TRUE, labels = FALSE)
-}
-
-## signature per trial in this scenario
-sig_matrix_s <- cbind(
-  bin_codes_s,
-  n_subjects,
-  go_flag = go_flag
+scenario_method_quantiles_list <- mapUniqueTrials(
+  scenario_list              = scenario_list,
+  method_quantiles_list      = method_quantiles_list,
+  trials_unique_calc         = trials_unique_calc,
+  applicable_previous_trials = applicable_previous_trials,
+  endpoint                   = endpoint,
+  bin_breaks   = attr(trials_unique, "bin_breaks"),
+  group_levels = attr(trials_unique, "group_levels"),
+  group_sizes  = attr(trials_unique, "group_sizes"),
+  rep_matrix   = attr(trials_unique, "rep_matrix")
 )
-signature_s <- getHashKeys(sig_matrix_s)
-
-## map to global group id
-group_id_s <- match(signature_s, group_levels)
-
-## build y_rep: replace ONLY if group size > 1
-y_rep <- y
-for (i in seq_len(nrow(y_rep))) {
-  g <- group_id_s[i]
-  if (!is.na(g) && group_sizes[g] > 1) {
-    y_rep[i, ] <- rep_matrix[g, ]
-  }
-}
-
-scenario_data_matrix <- cbind(y_rep, n_subjects)
