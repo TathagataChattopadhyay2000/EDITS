@@ -1,15 +1,17 @@
-## Original values (unbinned) for scenario_1
-orig <- cbind(
-  scene1$scenario_1$y,
-  scene1$scenario_1$n_subjects,
-  go_flag = scene1$scenario_1$previous_analyses$go_decisions[, 1]
+bin_breaks <- list(
+  y_1 = c(1.0, 2.0, 3.0, 4.0),
+  y_2 = c(1.0, 2.5, 3.5, 5.0),
+  y_3 = c(2.0, 3.5, 4.5, 6.0)
 )
 
-print(round(orig[1:20, ], 3))
+an <- performAnalyses(
+  scenario_list     = scene1,
+  method_names      = "normal",
+  n_mcmc_iterations = 200,
+  bin_breaks        = bin_breaks
+)
 
-
-## Fed-in values (after your group-based binning; what defines uniqueness/JAGS input)
-tu <- getUniqueTrials(scene1, endpoint = "normal", nbins = 5)
+tu <- getUniqueTrials(scene1, endpoint = "normal", nbins = nbins)
 
 bin_breaks   <- attr(tu, "bin_breaks")
 group_levels <- attr(tu, "group_levels")
@@ -21,21 +23,26 @@ n_sub <- scene1$scenario_1$n_subjects
 go    <- scene1$scenario_1$previous_analyses$go_decisions[, 1]
 
 n_coh <- ncol(y_raw)
-cohort_names <- colnames(y_raw)
+coh_names <- colnames(y_raw)
 
-## compute bin codes per trial (for signature)
+## bin labels + bin codes
+bin_lbls <- matrix(NA_character_, nrow(y_raw), n_coh)
 bin_codes <- matrix(NA_integer_, nrow(y_raw), n_coh)
-colnames(bin_codes) <- cohort_names
+colnames(bin_lbls) <- coh_names
+colnames(bin_codes) <- coh_names
+
 for (j in seq_len(n_coh)) {
-  bks <- bin_breaks[[cohort_names[j]]]
+  bks <- bin_breaks[[coh_names[j]]]
+  bin_lbls[, j]  <- as.character(cut(y_raw[, j], breaks = bks, include.lowest = TRUE))
   bin_codes[, j] <- cut(y_raw[, j], breaks = bks, include.lowest = TRUE, labels = FALSE)
 }
 
+## group id (full-trial signature includes all cohorts + n + go)
 sig_mat <- cbind(bin_codes, n_sub, go_flag = go)
 sig     <- getHashKeys(sig_mat)
 gid     <- match(sig, group_levels)
 
-## build fed-in y: replace only if group_size > 1
+## fed means (replace only if group size > 1)
 y_fed <- y_raw
 for (i in seq_len(nrow(y_fed))) {
   g <- gid[i]
@@ -44,14 +51,15 @@ for (i in seq_len(nrow(y_fed))) {
   }
 }
 
-fed_in <- cbind(y_fed, n_sub, go_flag = go)
-print(round(fed_in[1:20, ], 3))
+## build a readable comparison table for first 20 trials
+out <- data.frame(
+  trial    = 1:nrow(y_raw),
+  group_id = gid,
+  group_n  = ifelse(is.na(gid), NA_integer_, group_sizes[gid]),
+  n_1 = n_sub[, 1], n_2 = n_sub[, 2], n_3 = n_sub[, 3],
+  y1_raw = y_raw[, 1], y1_bin = bin_lbls[, 1], y1_fed = y_fed[, 1],
+  y2_raw = y_raw[, 2], y2_bin = bin_lbls[, 2], y2_fed = y_fed[, 2],
+  y3_raw = y_raw[, 3], y3_bin = bin_lbls[, 3], y3_fed = y_fed[, 3]
+)
 
-
-## Side-by-side comparison (means only)
-print(round(cbind(orig_means = y_raw, fed_means = y_fed)[1:20, ], 3))
-
-
-## Show which trials were actually modified (group size > 1)
-modified <- !is.na(gid) & group_sizes[gid] > 1
-which(modified)[1:20]
+print(round(out[1:20, ], 3))
