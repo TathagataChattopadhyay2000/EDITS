@@ -1,21 +1,27 @@
-breaks <- attr(tu, "bin_breaks")[["y_1"]]
-reps   <- attr(tu, "bin_means")[["y_1"]]   # mean-of-samples per bin
-
-y_raw <- scene1$scenario_1$y[, 1]
-bin_id <- cut(y_raw, breaks = breaks, include.lowest = TRUE, labels = FALSE)
-y_rep_manual <- reps[bin_id]
-
-cbind(y_raw=y_raw, y_rep_manual=y_rep_manual)[1:20, ]
-
-Error in mapUniqueTrials(scenario_list = scenario_list, method_quantiles_list = method_quantiles_list,  : 
-  For endpoint = 'normal', provide 'bin_breaks' and 'bin_means' or pass trials_unique_calc with these attributes
-3.
-stop("For endpoint = 'normal', provide 'bin_breaks' and 'bin_means' or pass trials_unique_calc with these attributes") at AnalysisFunctions.R#791
-2.
-scenario_method_quantiles_list <- mapUniqueTrials(
-scenario_list = scenario_list,
-method_quantiles_list = method_quantiles_list,
-trials_unique_calc = trials_unique_calc, ... at AnalysisFunctions.R#1268
-1.
-performAnalyses(scenario_list = scene1, method_names = "normal",
-n_mcmc_iterations = 100, nbins = 5)
+> cbind(y_raw=y_raw, y_rep_manual=y_rep_manual)[1:20, ]
+         y_raw y_rep_manual
+ [1,] 2.449315     2.422172
+ [2,] 1.992424     1.936579
+ [3,] 2.197122     2.174786
+ [4,] 1.887097     1.936579
+ [5,] 1.961809     1.936579
+ [6,] 1.712264     1.580672
+ [7,] 1.485536     1.580672
+ [8,] 2.190110     2.174786
+ [9,] 2.173661     2.174786
+[10,] 1.554432     1.580672
+[11,] 2.468818     2.422172
+[12,] 2.838145     2.838145
+[13,] 2.299274     2.422172
+[14,] 2.004403     1.936579
+[15,] 1.837163     1.936579
+[16,] 2.406059     2.422172
+[17,] 2.138252     2.174786
+[18,] 1.481433     1.580672
+[19,] 1.669692     1.580672
+[20,] 2.487392     2.422172
+> reps
+[1] 1.580672 1.936579 2.174786 2.422172 2.838145
+> breaks
+[1] 1.481433 1.752776 2.024118 2.295461 2.566803 2.838145
+> 
