@@ -1,24 +1,7 @@
-tu <- getUniqueTrials(scene1, endpoint = "normal", nbins = 5)
+orig <- cbind(
+  scene1$scenario_1$y,
+  scene1$scenario_1$n_subjects,
+  go_flag = scene1$scenario_1$previous_analyses$go_decisions[, 1]
+)
 
-breaks_all <- attr(tu, "bin_breaks")
-reps_all   <- attr(tu, "bin_means")
-
-y_raw_all <- scene1$scenario_1$y
-n_all     <- scene1$scenario_1$n_subjects
-go_flag   <- scene1$scenario_1$previous_analyses$go_decisions[, 1]
-
-# build y_rep_all exactly like getUniqueTrials/mapUniqueTrials do
-y_rep_all <- y_raw_all
-for (j in seq_len(ncol(y_raw_all))) {
-  coln <- colnames(y_raw_all)[j]              # e.g. "y_1"
-  bks  <- breaks_all[[coln]]
-  ids  <- cut(y_raw_all[, j], breaks = bks, include.lowest = TRUE, labels = FALSE)
-  repj <- reps_all[[coln]][ids]
-  use  <- !is.na(repj)
-  y_rep_all[use, j] <- repj[use]
-}
-
-fed_in <- cbind(y_rep_all, n_all, go_flag = go_flag)
-
-# show what is fed in (first 20 trials)
-print(round(fed_in[1:20, ], 3))
+print(round(orig[1:20, ], 3))
