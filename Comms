@@ -1,92 +1,30 @@
-> tmp <- getPosteriorGammaQuantiles(
-+   method_name              = "normal",
-+   gamma_levels             = evidence_levels,
-+   quantiles                = an[[1]]$analysis_parameters$quantiles,
-+   posterior_quantiles_list = an[[1]]$quantiles_list,
-+   cohort_names             = cohort_names
-+ )
-> str(tmp[[1]])
- Named num [1:3] 2.08 3.26 3.38
- - attr(*, "names")= chr [1:3] "theta_1" "theta_2" "theta_3"
-> tmp
-[[1]]
- theta_1  theta_2  theta_3 
-2.080865 3.258362 3.377109 
-
-[[2]]
- theta_1  theta_2  theta_3 
-1.687488 2.766308 3.664019 
-
-[[3]]
- theta_1  theta_2  theta_3 
-1.824026 2.496674 4.070696 
-
-[[4]]
- theta_1  theta_2  theta_3 
-1.644317 2.685024 3.093685 
-
-[[5]]
- theta_1  theta_2  theta_3 
-1.605432 2.723982 4.310591 
-
-[[6]]
- theta_1  theta_2  theta_3 
-1.348629 2.706432 3.794503 
-
-[[7]]
- theta_1  theta_2  theta_3 
-1.348629 2.706432 3.794503 
-
-[[8]]
- theta_1  theta_2  theta_3 
-1.751365 2.144536 3.252988 
-
-[[9]]
-theta_1 theta_2 theta_3 
-1.84488 2.47620 3.31672 
-
-[[10]]
- theta_1  theta_2  theta_3 
-1.200800 3.336882 2.767781 
-
-[[11]]
- theta_1  theta_2  theta_3 
-2.077727 2.960484 3.766508 
-
-[[12]]
- theta_1  theta_2  theta_3 
-2.227690 2.806196 3.471043 
-
-[[13]]
- theta_1  theta_2  theta_3 
-2.035949 3.231097 4.099300 
-
-[[14]]
- theta_1  theta_2  theta_3 
-1.550871 2.154647 3.207894 
-
-[[15]]
- theta_1  theta_2  theta_3 
-1.519995 2.130124 3.794468 
-
-[[16]]
- theta_1  theta_2  theta_3 
-2.134381 2.508209 4.134316 
-
-[[17]]
- theta_1  theta_2  theta_3 
-1.760342 2.766295 3.286169 
-
-[[18]]
- theta_1  theta_2  theta_3 
-1.377298 2.731188 4.169095 
-
-[[19]]
- theta_1  theta_2  theta_3 
-1.244450 2.356601 3.866745 
-
-[[20]]
- theta_1  theta_2  theta_3 
-2.134381 2.508209 4.134316 
-
-> 
+getGoDecisionsByCohort <- function (
+    
+  gamma_quantiles,
+  
+  boundary_rates = NULL,
+  decision_rule  = quote(x > boundary_rates)
+  
+) {
+  
+  go_decisions_list <- lapply(gamma_quantiles, function (x) {
+    as.logical(eval(decision_rule))
+  })
+  
+  lens <- lengths(go_decisions_list)
+  if (length(lens) == 0L) {
+    return(matrix(logical(0), nrow = 0, ncol = 0))
+  }
+  if (!all(lens == lens[1])) {
+    stop("decision_rule must return the same number of decisions for every trial.")
+  }
+  if (lens[1] == 0L) {
+    stop("decision_rule returned length 0 decisions (likely boundary_rates is NULL or rule is invalid).")
+  }
+  
+  go_decisions <- matrix(unlist(go_decisions_list), nrow = length(go_decisions_list), byrow = TRUE)
+  colnames(go_decisions) <- paste0("decision_", seq_len(ncol(go_decisions)))
+  
+  return(go_decisions)
+  
+}
