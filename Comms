@@ -1,58 +1,55 @@
-## 1) Create bins manually
-bin_breaks <- list(
-  y_1 = c(1.0, 2.0, 3.0, 4.0),
-  y_2 = c(1.0, 2.5, 3.5, 5.0),
-  y_3 = c(2.0, 3.5, 4.5, 6.0)
+## Example: normal endpoint + decisions + continueRecruitment to change n
+
+## 1) initial scenario (normal)
+sc0 <- simulateScenarios(
+  n_subjects_list = list(c(10, 20, 30)),
+  means_list      = list(c(2, 3, 4)),
+  sds_list        = list(c(1, 1, 1)),
+  endpoint        = "normal",
+  n_trials        = 50
 )
 
-## 2) Build unique trials using those breaks (this attaches attrs)
-tu <- getUniqueTrials(scene1, endpoint = "normal", bin_breaks = bin_breaks)
-
-## 3) Extract binning/group attrs
-bin_breaks   <- attr(tu, "bin_breaks")
-group_levels <- attr(tu, "group_levels")
-group_sizes  <- attr(tu, "group_sizes")
-rep_matrix   <- attr(tu, "rep_matrix")
-
-## 4) Build the debug table (scenario_1)
-y_raw <- scene1$scenario_1$y
-n_sub <- scene1$scenario_1$n_subjects
-go    <- scene1$scenario_1$previous_analyses$go_decisions[, 1]
-
-n_coh <- ncol(y_raw)
-coh_names <- colnames(y_raw)
-
-bin_lbls  <- matrix(NA_character_, nrow(y_raw), n_coh)
-bin_codes <- matrix(NA_integer_,   nrow(y_raw), n_coh)
-colnames(bin_lbls)  <- coh_names
-colnames(bin_codes) <- coh_names
-
-for (j in seq_len(n_coh)) {
-  bks <- bin_breaks[[coh_names[j]]]
-  bin_lbls[, j]  <- as.character(cut(y_raw[, j], breaks = bks, include.lowest = TRUE))
-  bin_codes[, j] <- cut(y_raw[, j], breaks = bks, include.lowest = TRUE, labels = FALSE)
-}
-
-sig_mat <- cbind(bin_codes, n_sub, go_flag = go)
-sig     <- getHashKeys(sig_mat)
-gid     <- match(sig, group_levels)
-
-y_fed <- y_raw
-for (i in seq_len(nrow(y_fed))) {
-  g <- gid[i]
-  if (!is.na(g) && group_sizes[g] > 1) {
-    y_fed[i, ] <- rep_matrix[g, ]
-  }
-}
-
-out <- data.frame(
-  trial    = seq_len(nrow(y_raw)),
-  group_id = gid,
-  group_n  = ifelse(is.na(gid), NA_integer_, group_sizes[gid]),
-  n_1 = n_sub[, 1], n_2 = n_sub[, 2], n_3 = n_sub[, 3],
-  y1_raw = y_raw[, 1], y1_bin = bin_lbls[, 1], y1_fed = y_fed[, 1],
-  y2_raw = y_raw[, 2], y2_bin = bin_lbls[, 2], y2_fed = y_fed[, 2],
-  y3_raw = y_raw[, 3], y3_bin = bin_lbls[, 3], y3_fed = y_fed[, 3]
+## 2) analyse
+an0 <- performAnalyses(
+  scenario_list     = sc0,
+  method_names      = "normal",
+  n_mcmc_iterations = 200,
+  nbins             = 5
 )
 
-print(round(out[1:20, ], 3))
+## 3) make a go/no-go rule (example: require 97.5% quantile of theta_j > 2.5)
+cohort_names <- paste0("theta_", 1:ncol(sc0$scenario_1$n_subjects))
+evidence_levels <- rep(0.975, length(cohort_names))
+
+dec0 <- getGoDecisions(
+  analyses_list   = an0,
+  cohort_names    = cohort_names,
+  evidence_levels = evidence_levels,
+  boundary_rules  = quote(c(
+    x[1] > 2.5,
+    x[2] > 2.5,
+    x[3] > 2.5
+  )),
+  overall_min_gos = 1
+)
+
+## 4) continue recruitment: add subjects to recruiting cohorts (this changes n)
+## NOTE: for this to work, your scenario must have recruiting cohorts in the sense of your code.
+## With your current normal setup, "recruiting" is defined via sds > 0.
+sc1 <- continueRecruitment(
+  n_subjects_add_list = list(c(5, 5, 5)),
+  decisions_list      = dec0,
+  method_name         = "normal"
+)
+
+## 5) analyse again; uniqueness now includes updated n, so grouping/signatures can change
+an1 <- performAnalyses(
+  scenario_list     = sc1,
+  method_names      = "normal",
+  n_mcmc_iterations = 200,
+  nbins             = 5
+)
+
+## 6) quick check that n changed
+head(sc0$scenario_1$n_subjects)
+head(sc1$scenario_1$n_subjects)
