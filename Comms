@@ -1,21 +1,12 @@
-Error in check.evidence.levels(evidence_levels, cohort_names, analyses_list,  : 
-  Assertion on 'The 'evidence_levels' and the 'cohort_names' must have the same length' failed: Must be TRUE.
-6.
-stop(simpleError(sprintf(msg, ...), call.))
-5.
-mstop("Assertion on '%s' failed: %s.", var.name, res, call. = sys.call(-2L))
-4.
-makeAssertion(x, res, .var.name, add)
+Error in dimnames(x) <- dn : 
+  length of 'dimnames' [2] not equal to array extent
 3.
-checkmate::assert_true(
-length(evidence_levels) == length(cohort_names),
-.var.name = "The 'evidence_levels' and the 'cohort_names' must have the same length"
-) at CheckingFunctions.R#90
+colnames(go_decisions) <- paste0("decision_", seq_len(ncol(go_decisions))) at OCFunctions.R#591
 2.
-check.evidence.levels(
-evidence_levels,
-cohort_names,
-analyses_list, ... at OCFunctions.R#424
+go_decisions <- getGoDecisionsByCohort(
+gamma_quantiles = getPosteriorGammaQuantiles(
+method_name = method_names[n],
+gamma_levels = gamma_levels[[n]], ... at OCFunctions.R#521
 1.
 getGoDecisions(analyses_list = an, cohort_names = cohort_names,
 evidence_levels = evidence_levels, boundary_rules = quote(c(x[1] >
