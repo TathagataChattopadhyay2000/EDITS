@@ -1,2 +1,57 @@
-Error in mapUniqueTrials(scenario_list = scenario_list, method_quantiles_list = method_quantiles_list,  : 
-  unused arguments (group_levels = if (endpoint == "normal") attr(trials_unique, "group_levels"), group_sizes = if (endpoint == "normal") attr(trials_unique, "group_sizes"), rep_matrix = if (endpoint == "normal") attr(trials_unique, "rep_matrix"))
+## Original values (unbinned) for scenario_1
+orig <- cbind(
+  scene1$scenario_1$y,
+  scene1$scenario_1$n_subjects,
+  go_flag = scene1$scenario_1$previous_analyses$go_decisions[, 1]
+)
+
+print(round(orig[1:20, ], 3))
+
+
+## Fed-in values (after your group-based binning; what defines uniqueness/JAGS input)
+tu <- getUniqueTrials(scene1, endpoint = "normal", nbins = 5)
+
+bin_breaks   <- attr(tu, "bin_breaks")
+group_levels <- attr(tu, "group_levels")
+group_sizes  <- attr(tu, "group_sizes")
+rep_matrix   <- attr(tu, "rep_matrix")
+
+y_raw <- scene1$scenario_1$y
+n_sub <- scene1$scenario_1$n_subjects
+go    <- scene1$scenario_1$previous_analyses$go_decisions[, 1]
+
+n_coh <- ncol(y_raw)
+cohort_names <- colnames(y_raw)
+
+## compute bin codes per trial (for signature)
+bin_codes <- matrix(NA_integer_, nrow(y_raw), n_coh)
+colnames(bin_codes) <- cohort_names
+for (j in seq_len(n_coh)) {
+  bks <- bin_breaks[[cohort_names[j]]]
+  bin_codes[, j] <- cut(y_raw[, j], breaks = bks, include.lowest = TRUE, labels = FALSE)
+}
+
+sig_mat <- cbind(bin_codes, n_sub, go_flag = go)
+sig     <- getHashKeys(sig_mat)
+gid     <- match(sig, group_levels)
+
+## build fed-in y: replace only if group_size > 1
+y_fed <- y_raw
+for (i in seq_len(nrow(y_fed))) {
+  g <- gid[i]
+  if (!is.na(g) && group_sizes[g] > 1) {
+    y_fed[i, ] <- rep_matrix[g, ]
+  }
+}
+
+fed_in <- cbind(y_fed, n_sub, go_flag = go)
+print(round(fed_in[1:20, ], 3))
+
+
+## Side-by-side comparison (means only)
+print(round(cbind(orig_means = y_raw, fed_means = y_fed)[1:20, ], 3))
+
+
+## Show which trials were actually modified (group size > 1)
+modified <- !is.na(gid) & group_sizes[gid] > 1
+which(modified)[1:20]
