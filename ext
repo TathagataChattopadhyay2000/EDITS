@@ -1,23 +1,44 @@
-.make_boundary_rules_const <- function(J, delta) {
-  ## returns quote(c(x[1] > delta, ..., x[J] > delta)) with delta embedded as a constant
-  exprs <- lapply(seq_len(J), function(j) bquote(x[.(j)] > .(delta)))
-  as.call(c(quote(c), exprs))
-}
+> print(cal)
+$gamma_grid
+[1] 0.800 0.900 0.950 0.975 0.990
 
-.get_go_matrix_generalJ <- function(an, delta, gamma, overall_min_gos = 1) {
-  J <- ncol(an$scenario_1$scenario_data$n_subjects)
-  cohort_names <- paste0("theta_", seq_len(J))
-  evidence_levels <- rep(gamma, J)
+$fwer
+[1] 0.62666667 0.39000000 0.19000000 0.08000000
+[5] 0.02666667
 
-  br <- .make_boundary_rules_const(J, delta)
+$gamma_star
+[1] 0.99
 
-  dec <- getGoDecisions(
-    analyses_list   = an,
-    cohort_names    = cohort_names,
-    evidence_levels = evidence_levels,
-    boundary_rules  = br,
-    overall_min_gos = overall_min_gos
-  )
+> print(oc_alt$estimation)
+$bias
+[1]  0.12516087  0.01754847 -0.07044487
 
-  dec$scenario_1$decisions_list$normal
-}
+$var
+[1] 0.3093801 0.1827587 0.1034728
+
+$mse
+[1] 0.3240141 0.1824575 0.1080904
+
+$rmse
+[1] 0.5692223 0.4271504 0.3287711
+
+$coverage
+[1] 0.9400000 0.9200000 0.9266667
+
+> print(oc_alt$decisions)
+$per_cohort_go_rate
+decision_1 decision_2 decision_3 
+      0.00       0.00       0.11 
+
+$overall_go_rate
+[1] 0.11
+
+> print(fdr_res)
+$FDR
+[1] 0
+
+$per_cohort_go_rate
+decision_1 decision_2 decision_3 
+ 0.0000000  0.0000000  0.1466667 
+
+> 
