@@ -1,2 +1,23 @@
-Error in getGoDecisions(analyses_list = an, cohort_names = cohort_names,  : 
-  Providing a quote(c(...)) for the argument 'boundary_rules'. The vector c(...) inside the quote() must have the same length as the number of cohorts. See ?getGoDecisions for details
+.make_boundary_rules_const <- function(J, delta) {
+  ## returns quote(c(x[1] > delta, ..., x[J] > delta)) with delta embedded as a constant
+  exprs <- lapply(seq_len(J), function(j) bquote(x[.(j)] > .(delta)))
+  as.call(c(quote(c), exprs))
+}
+
+.get_go_matrix_generalJ <- function(an, delta, gamma, overall_min_gos = 1) {
+  J <- ncol(an$scenario_1$scenario_data$n_subjects)
+  cohort_names <- paste0("theta_", seq_len(J))
+  evidence_levels <- rep(gamma, J)
+
+  br <- .make_boundary_rules_const(J, delta)
+
+  dec <- getGoDecisions(
+    analyses_list   = an,
+    cohort_names    = cohort_names,
+    evidence_levels = evidence_levels,
+    boundary_rules  = br,
+    overall_min_gos = overall_min_gos
+  )
+
+  dec$scenario_1$decisions_list$normal
+}
