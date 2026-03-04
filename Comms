@@ -1,9 +1,171 @@
-tu0 <- getUniqueTrials(sc0, endpoint="normal", nbins=5)
-tu1 <- getUniqueTrials(sc1, endpoint="normal", nbins=5)
+## ExNex for Normal Data - "Stand Alone"
+## Author:        Stephan Wojciekowski
+## Creation Date: 06 Dec 2019
+## Last Change:   09 Dec 2019
 
-nrow(tu0)  # unique trial keys before
-nrow(tu1)  # unique trial keys after (often changes when n changes)
+rm(list = ls())
 
-## Compare a few unique keys
-head(tu0, 10)
-head(tu1, 10)
+### Interactive part -------------------------------------------------------------------------------
+
+### Credible (& Confidence) Interval
+alpha.level <- 0.05
+
+### Observed Data
+# TODO Adapted to actual values
+observed.effects   <- c(141.68, 68.53, 72.87, 118.16, 35.36, 122.8, 252.82, -20.5, 142.22)
+observed.se        <- c(48.81, 50.95, 41.72, 59.79, 128.14, 91.85, 88.59, 182.46, 74.5)
+n.subjects         <- c(61, 50, 89, 47, 12, 16, 18, 8, 30)
+
+names(observed.effects) <- c("INSIP", "UIIP", "HP", "RA-ILD", "MCTD", "SSc-ILD", "ER-ILD",
+                             "Sarcoidosis", "Other")
+
+### Define Prior Values
+##   Analysis Model:
+##   y_j|theta_j ~ N(theta_j, sigma_j^2), j = 1, ..., J
+##   theta_j|mu, tau ~ w_j N(mu, tau^2) + (1 - w_j) N(m_j, v_j)
+##   mu ~ N(m, v)
+##   tau ~ HN(s)
+
+# TODO Adapt to desired values
+ex.component.weight <- 0.5                    # Mixture weight for Ex component
+mu.mean             <- mean(observed.effects) # Mean of the Ex component
+mu.var              <- mean(observed.se^2)    # Variance of the Ex component
+tau.scale           <- mean(observed.se / sqrt(n.subjects)) / 2 # Scale parameter of tau
+nex.means           <- observed.effects       # Means of Nex components
+nex.vars            <- observed.se^2          # Variances of Nex components
+
+### MCMC Parameters
+n.iterations <- 1e4
+seed         <- 123
+
+### Non-interactive part ---------------------------------------------------------------------------
+
+set.seed(seed)
+
+### Prepare Analysis
+j.data <- list(Nexch        = 1, # 1 component for the Ex distribution
+               Nmix         = 2, # 2 components overall for the ExNex distribution
+               Nstrata      = length(observed.effects), # Number of cohorts
+               pMix         = c(ex.component.weight, 1 - ex.component.weight),
+               mu.mean      = mu.mean,
+               mu.prec      = mu.var^-1,
+               tau.HN.scale = tau.scale,
+               nex.mean     = nex.means,
+               nex.prec     = nex.vars^-1,
+               y            = observed.effects,
+               prec_y       = observed.se^-2)
+
+j.parameters <- c("theta", "tau", "exch", "mu")
+
+j.model.file <- tempfile()
+write.connection <- file(description = j.model.file, open = "w")
+cat("
+      ## Bayesian Hierarchical Model: ExNex for Normal Data
+
+    model {
+
+      # prior distributions for EX-parameters
+      for (jj in 1:Nexch) {
+        mu[jj]             ~ dnorm(mu.mean[jj], mu.prec[jj])
+        prior.tau.prec[jj] <- pow(tau.HN.scale[jj], -2)
+        tau[jj]            ~ dnorm(0, prior.tau.prec[jj])I(0.001, )
+        prec.tau[jj]       <- pow(tau[jj], -2)
+      }
+
+      # log-odds parameters under EX
+      for (jj in 1:Nexch) {
+        for (j in 1:Nstrata) {
+          re[jj,j] ~ dnorm(0, prec.tau[jj])
+          LogOdds[jj, j] <- mu[jj] + re[jj, j]
+        }
+      }
+
+      # log-odds parameters under NEX
+      for (j in 1:Nstrata) {
+        LogOdds[Nmix, j] ~ dnorm(nex.mean[j], nex.prec[j])
+      }
+
+      # latent mixture indicators:
+      # exch.index: categorial 1, ..., Nmix = Nexch + 1
+      # exch: Nstrata x Nmix matrix of 0/1 elements
+      for (j in 1:Nstrata) {
+        exch.index[j] ~ dcat(pMix[1:Nmix])
+        for (jj in 1:Nmix) {
+          exch[j, jj] <- equals(exch.index[j], jj)
+        }
+      }
+
+      # pick theta
+      for (j in 1:Nstrata) {
+        theta[j] <- LogOdds[exch.index[j], j]
+      }
+
+      # likelihood part
+      for (i in 1:Nstrata) {
+        y[i] ~ dnorm(theta[i], prec_y[i])
+      }
+
+    }", file = write.connection)
+close(write.connection)
+
+jags.fit <- R2jags::jags(data               = j.data,
+                         parameters.to.save = j.parameters,
+                         model.file         = j.model.file,
+                         n.chains           = 2,
+                         n.iter             = n.iterations,
+                         n.burnin           = floor(n.iterations / 3),
+                         n.thin             = 1,
+                         DIC                = FALSE,
+                         progress.bar       = "text")
+
+posterior.distributions <- rbind(jags.fit$BUGSoutput$sims.array[, 1, ],
+                                 jags.fit$BUGSoutput$sims.array[, 2, ])
+
+### Prepare output
+
+post.thetas <- posterior.distributions[, grep("theta", colnames(posterior.distributions))]
+colnames(post.thetas) <- names(observed.effects)
+post.mu     <- posterior.distributions[, grep("mu", colnames(posterior.distributions))]
+
+post.weights <- posterior.distributions[, grep(",1\\]", colnames(posterior.distributions))]
+
+post.medians <- apply(cbind(post.mu, post.thetas), 2, median)
+post.cis     <- apply(cbind(post.mu, post.thetas), 2, function (x) {
+  quantile(x, probs = c(alpha.level / 2, 1 - alpha.level / 2))
+})
+
+freq.cis <- rbind(observed.effects - qnorm(1 - alpha.level / 2) * observed.se,
+                  observed.effects + qnorm(1 - alpha.level / 2) * observed.se)
+
+
+
+### Output -----------------------------------------------------------------------------------------
+
+x11()
+mar.org <- par()$mar
+par(mar = c(4.5, 6, 1, 1))
+plot(0, type = "n", yaxt = "n", bty = "n",
+     main = "", xlab = "Effect", ylab = "",
+     xlim = range(c(post.cis, freq.cis)), ylim = c(1, length(observed.effects) + 1))
+
+for (i in seq_along(observed.effects) + 1) {
+  j <- length(observed.effects) - i + 2
+  points(post.medians[-1][j], i - 0.1)
+  lines(post.cis[, -1][, j], rep(i, 2) - 0.1)
+  lines(freq.cis[, j], rep(i, 2) + 0.1, lty = 2)
+  points(observed.effects[j], i + 0.1, pch = 4)
+}
+points(post.medians[1], 1)
+lines(post.cis[, 1], rep(1, 2))
+lines(rep(post.medians[1], 2), c(-1, length(post.medians) + 1), lty = 3)
+legend("topright", legend = c("ExNex", "Freq"),
+       pch = c(1, 4), col = c(1, 1), bty = "n")
+legend("bottomleft", legend = paste0("Prior Ex weight = ", round(ex.component.weight, 2)),
+       pch = 1, col = 0, bty = "n")
+axis(2, at = c(1, seq_along(observed.effects) + 1),
+     labels = c("Mu", rev(names(observed.effects))), las = 2)
+# axis(4, at = seq_along(observed.effects) + 1,
+#      labels = paste0("Post Ex Weight = ", rev(colMeans(post.weights))), las = 2)
+par(mar = mar.org)
+
+print(jags.fit)
