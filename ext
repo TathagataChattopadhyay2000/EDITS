@@ -1,218 +1,35 @@
-## Validation script for NORMAL endpoint with UNKNOWN common sigma model
-## Assumes your package functions are available in the environment:
-##   simulateScenarios(), performAnalyses(), getEstimates(), getGoDecisions()
-## and that method_name = "normal" uses normal.txt (unknown common sigma via prec_sigma)
-##
-## This script validates:
-##   (A) binning/uniquing approximation vs "almost no binning"
-##   (B) parameter recovery (bias/RMSE) for theta_j
-##   (C) credible interval coverage for theta_j
-##   (D) a simple decision calibration example (quantile-based rule)
+> cat("\nBinning check:\n")
 
-set.seed(1)
+Binning check:
+> print(bin_check[c("max_abs_diff", "mean_abs_diff")])
+$max_abs_diff
+[1] 0.02958406
 
-## -----------------------------
-## Helper: extract estimates matrix for scenario_1, method "normal"
-## -----------------------------
-extract_est_matrix <- function(analyses_list, add_parameters = NULL, alpha = 0.05) {
-  est <- getEstimates(
-    analyses_list   = analyses_list,
-    add_parameters  = add_parameters,
-    point_estimator = "mean",
-    alpha_level     = alpha
-  )
-  ## est is listPerMethod: est$normal$scenario_1 is a matrix
-  est$normal$scenario_1
-}
+$mean_abs_diff
+[1] 0.004262764
 
-## -----------------------------
-## Helper: compare two analyses (theta quantiles + mean)
-## -----------------------------
-compare_analyses <- function(an_ref, an_test, alpha = 0.05) {
-  E1 <- extract_est_matrix(an_ref, add_parameters = NULL, alpha = alpha)
-  E2 <- extract_est_matrix(an_test, add_parameters = NULL, alpha = alpha)
+> cat("\nRecovery / coverage:\n")
 
-  common_rows <- intersect(rownames(E1), rownames(E2))
-  common_cols <- intersect(colnames(E1), colnames(E2))
+Recovery / coverage:
+> print(data.frame(
++   cohort = paste0("theta_", seq_along(theta_true)),
++   truth  = theta_true,
++   bias   = rec_check$bias,
++   rmse   = rec_check$rmse,
++   cover  = rec_check$coverage,
++   rmse_noborrow = rec_check$rmse_noborrow
++ ))
+   cohort truth        bias      rmse cover
+1 theta_1     2  0.23450828 0.5851804 0.880
+2 theta_2     3  0.02544685 0.4014936 0.945
+3 theta_3     4 -0.08490533 0.3644599 0.920
+  rmse_noborrow
+1     0.6145575
+2     0.4298065
+3     0.3676580
+> cat("\nDecision example (overall go rate):\n")
 
-  D <- abs(E1[common_rows, common_cols, drop = FALSE] - E2[common_rows, common_cols, drop = FALSE])
-
-  list(
-    max_abs_diff = max(D, na.rm = TRUE),
-    mean_abs_diff = mean(D, na.rm = TRUE),
-    diff_matrix = D
-  )
-}
-
-## -----------------------------
-## (A) Binning/uniquing check: coarse vs (almost) no binning
-## -----------------------------
-validate_binning <- function(
-  theta_true,
-  sigma_true,
-  n_vec,
-  n_trials = 200,
-  mcmc_iter = 300,
-  nbins_ref = 200,   # "almost no binning" (fine)
-  nbins_test = 10    # coarse binning
-) {
-  scen <- simulateScenarios(
-    n_subjects_list = list(n_vec),
-    means_list      = list(theta_true),
-    sds_list        = list(rep(sigma_true, length(theta_true))),
-    endpoint        = "normal",
-    n_trials        = n_trials
-  )
-
-  an_ref <- performAnalyses(
-    scenario_list     = scen,
-    method_names      = "normal",
-    n_mcmc_iterations = mcmc_iter,
-    nbins             = nbins_ref,
-    verbose           = FALSE
-  )
-
-  an_test <- performAnalyses(
-    scenario_list     = scen,
-    method_names      = "normal",
-    n_mcmc_iterations = mcmc_iter,
-    nbins             = nbins_test,
-    verbose           = FALSE
-  )
-
-  compare_analyses(an_ref, an_test, alpha = 0.05)
-}
-
-## -----------------------------
-## (B) Recovery + (C) Coverage over many simulated datasets
-## -----------------------------
-validate_recovery <- function(
-  theta_true,
-  sigma_true,
-  n_vec,
-  R = 200,
-  mcmc_iter = 300,
-  nbins = 20,
-  alpha = 0.05
-) {
-  J <- length(theta_true)
-  stopifnot(length(n_vec) == J)
-
-  ## store results
-  post_mean  <- matrix(NA_real_, nrow = R, ncol = J)
-  post_low   <- matrix(NA_real_, nrow = R, ncol = J)
-  post_high  <- matrix(NA_real_, nrow = R, ncol = J)
-
-  ## baselines (point estimators)
-  noborrow_mean <- matrix(NA_real_, nrow = R, ncol = J)  # = y
-  pooled_mean   <- numeric(R)                            # one pooled mean across cohorts
-
-  ## decision calibration example: "Go if lower(1-alpha) quantile > threshold"
-  thr <- theta_true[1]  # example threshold; change as needed
-  go_overall <- logical(R)
-
-  for (r in seq_len(R)) {
-    ## generate one dataset (one trial realization)
-    scen_r <- simulateScenarios(
-      n_subjects_list = list(n_vec),
-      means_list      = list(theta_true),
-      sds_list        = list(rep(sigma_true, J)),
-      endpoint        = "normal",
-      n_trials        = 1
-    )
-
-    ## extract the realized y for this replicate (1 row)
-    y_r <- as.numeric(scen_r$scenario_1$y[1, ])
-    noborrow_mean[r, ] <- y_r
-    pooled_mean[r] <- sum(n_vec * y_r) / sum(n_vec)
-
-    ## fit your model
-    an_r <- performAnalyses(
-      scenario_list     = scen_r,
-      method_names      = "normal",
-      n_mcmc_iterations = mcmc_iter,
-      nbins             = nbins,
-      verbose           = FALSE
-    )
-
-    ## posterior summaries
-    Emat <- extract_est_matrix(an_r, add_parameters = NULL, alpha = alpha)
-
-    ## cohort parameter rows are theta_1..theta_J
-    theta_rows <- paste0("theta_", seq_len(J))
-
-    post_mean[r, ] <- Emat[theta_rows, "Mean"]
-    post_low[r, ]  <- Emat[theta_rows, paste0(alpha/2 * 100, "%")]
-    post_high[r, ] <- Emat[theta_rows, paste0((1 - alpha/2) * 100, "%")]
-
-    ## decision example: overall go if any cohort’s lower CI bound > thr
-    go_overall[r] <- any(post_low[r, ] > thr)
-  }
-
-  ## metrics
-  bias  <- colMeans(post_mean - matrix(theta_true, nrow = R, ncol = J, byrow = TRUE))
-  rmse  <- sqrt(colMeans((post_mean - matrix(theta_true, nrow = R, ncol = J, byrow = TRUE))^2))
-  cover <- colMeans((post_low <= matrix(theta_true, nrow = R, ncol = J, byrow = TRUE)) &
-                      (post_high >= matrix(theta_true, nrow = R, ncol = J, byrow = TRUE)))
-
-  ## baseline RMSEs
-  rmse_noborrow <- sqrt(colMeans((noborrow_mean - matrix(theta_true, nrow = R, ncol = J, byrow = TRUE))^2))
-  rmse_pooled   <- sqrt(mean((pooled_mean - mean(theta_true))^2))  # pooled compares to average truth only
-
-  list(
-    theta_true = theta_true,
-    sigma_true = sigma_true,
-    n_vec      = n_vec,
-    bias       = bias,
-    rmse       = rmse,
-    coverage   = cover,
-    rmse_noborrow = rmse_noborrow,
-    rmse_pooled   = rmse_pooled,
-    decision_overall_rate = mean(go_overall)
-  )
-}
-
-## -----------------------------
-## Run validation: choose a truth scenario
-## -----------------------------
-theta_true <- c(2.0, 3.0, 4.0)
-sigma_true <- 2.0
-n_vec      <- c(10, 20, 30)
-
-## (A) Binning validation
-bin_check <- validate_binning(
-  theta_true = theta_true,
-  sigma_true = sigma_true,
-  n_vec      = n_vec,
-  n_trials   = 200,
-  mcmc_iter  = 300,
-  nbins_ref  = 200,
-  nbins_test = 10
-)
-
-cat("\nBinning check:\n")
-print(bin_check[c("max_abs_diff", "mean_abs_diff")])
-
-## (B) Recovery + (C) Coverage + (D) Decision example
-rec_check <- validate_recovery(
-  theta_true = theta_true,
-  sigma_true = sigma_true,
-  n_vec      = n_vec,
-  R          = 200,
-  mcmc_iter  = 300,
-  nbins      = 20,
-  alpha      = 0.05
-)
-
-cat("\nRecovery / coverage:\n")
-print(data.frame(
-  cohort = paste0("theta_", seq_along(theta_true)),
-  truth  = theta_true,
-  bias   = rec_check$bias,
-  rmse   = rec_check$rmse,
-  cover  = rec_check$coverage,
-  rmse_noborrow = rec_check$rmse_noborrow
-))
-
-cat("\nDecision example (overall go rate):\n")
-print(rec_check$decision_overall_rate)
+Decision example (overall go rate):
+> print(rec_check$decision_overall_rate)
+[1] 0.995
+> 
