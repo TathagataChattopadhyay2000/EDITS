@@ -1,44 +1,77 @@
-> print(cal)
-$gamma_grid
-[1] 0.800 0.900 0.950 0.975 0.990
+## Simple end-to-end script: simulate -> fit normal HM (unknown common sigma) -> bias/MSE -> go rates
+## Uses your package functions only.
 
-$fwer
-[1] 0.62666667 0.39000000 0.19000000 0.08000000
-[5] 0.02666667
+set.seed(1)
 
-$gamma_star
-[1] 0.99
+R <- 200                 # number of simulated trials (replicates)
+J <- 3                   # cohorts
+n_vec <- c(50, 50, 50)   # sample sizes per cohort (use your effective n if needed)
+sigma_true <- 2          # true common patient-level SD used in simulation
 
-> print(oc_alt$estimation)
-$bias
-[1]  0.12516087  0.01754847 -0.07044487
+## Decision rule like the paper: Go if P(theta_j > delta) > zeta
+## Equivalent (for zeta=0.975): lower 2.5% credible bound > delta
+delta <- 0.25
+zeta  <- 0.975
+alpha <- 1 - zeta        # 0.025
+evidence_levels <- rep(zeta, J)
+cohort_names <- paste0("theta_", 1:J)
 
-$var
-[1] 0.3093801 0.1827587 0.1034728
+## Scenario: set true effects (change these to match null / mixed / alt settings)
+theta_true <- c(0.0, 0.0, 0.3)   # example mixed: two null, one positive
 
-$mse
-[1] 0.3240141 0.1824575 0.1080904
+## Store results
+post_mean <- matrix(NA_real_, R, J)
+post_low  <- matrix(NA_real_, R, J)
+go_mat    <- matrix(FALSE, R, J)
 
-$rmse
-[1] 0.5692223 0.4271504 0.3287711
+for (r in 1:R) {
 
-$coverage
-[1] 0.9400000 0.9200000 0.9266667
+  ## 1) simulate one trial realization
+  scen <- simulateScenarios(
+    n_subjects_list = list(n_vec),
+    means_list      = list(theta_true),
+    sds_list        = list(rep(sigma_true, J)),
+    endpoint        = "normal",
+    n_trials        = 1
+  )
 
-> print(oc_alt$decisions)
-$per_cohort_go_rate
-decision_1 decision_2 decision_3 
-      0.00       0.00       0.11 
+  ## 2) fit your HM normal model
+  an <- performAnalyses(
+    scenario_list     = scen,
+    method_names      = "normal",
+    n_mcmc_iterations = 400,   # increase if you want smoother coverage
+    nbins             = 200,   # very fine binning ~ no approximation
+    verbose           = FALSE
+  )
 
-$overall_go_rate
-[1] 0.11
+  ## 3) extract posterior summaries for theta_j
+  est <- getEstimates(an, point_estimator = "mean", alpha_level = alpha)$normal$scenario_1
 
-> print(fdr_res)
-$FDR
-[1] 0
+  post_mean[r, ] <- est[cohort_names, "Mean"]
+  post_low[r, ]  <- est[cohort_names, paste0(alpha * 100, "%")]
 
-$per_cohort_go_rate
-decision_1 decision_2 decision_3 
- 0.0000000  0.0000000  0.1466667 
+  ## 4) apply decision rule: lower bound > delta  <=>  P(theta>delta) > 0.975
+  go_mat[r, ] <- post_low[r, ] > delta
+}
 
-> 
+## ----- Results like the paper’s summaries -----
+
+## Bias and MSE (posterior mean vs truth)
+bias <- colMeans(post_mean - matrix(theta_true, R, J, byrow = TRUE))
+mse  <- colMeans((post_mean - matrix(theta_true, R, J, byrow = TRUE))^2)
+
+cat("\nBias per cohort:\n")
+print(setNames(bias, cohort_names))
+
+cat("\nMSE per cohort:\n")
+print(setNames(mse, cohort_names))
+
+## Go rates (type I error / power analog)
+go_rate <- colMeans(go_mat)
+overall_go_rate <- mean(rowSums(go_mat) >= 1)  # overall_min_gos = 1
+
+cat("\nGo rate per cohort:\n")
+print(setNames(go_rate, cohort_names))
+
+cat("\nOverall go rate (>=1 cohort Go):\n")
+print(overall_go_rate)
