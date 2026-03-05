@@ -1,22 +1,27 @@
 Bias per cohort:
 > print(setNames(bias, paste0("theta_", 1:J)))
-     theta_1      theta_2      theta_3 
- 0.014037269 -0.002289069 -0.001463255 
+      theta_1       theta_2       theta_3       theta_4 
+ 0.0030838614  0.0258168573  0.0353450435  0.0002080936 
+      theta_5       theta_6 
+-0.0397065683 -0.0329960167 
 > cat("\nMSE per cohort:\n")
 
 MSE per cohort:
 > print(setNames(mse, paste0("theta_", 1:J)))
-   theta_1    theta_2    theta_3 
-0.06792581 0.06922238 0.07739049 
+   theta_1    theta_2    theta_3    theta_4    theta_5 
+0.04674794 0.04366371 0.03573700 0.03207755 0.03065701 
+   theta_6 
+0.02976718 
 > cat("\nGo rate per cohort:\n")
 
 Go rate per cohort:
 > print(setNames(go_rate, paste0("theta_", 1:J)))
-theta_1 theta_2 theta_3 
-  0.005   0.005   0.030 
+theta_1 theta_2 theta_3 theta_4 theta_5 theta_6 
+      0       0       0       0       0       0 
 > cat("\nOverall go rate (>=1 cohort Go):\n")
 
 Overall go rate (>=1 cohort Go):
 > print(overall_go_rate)
-[1] 0.04
+[1] 0
+> Connected to your session in progress, last started 2026-Mar-05 08:55:44 UTC (17 minutes ago)
 > 
