@@ -1,32 +1,105 @@
-Bias per cohort:
-> print(setNames(bias, paste0("theta_", 1:J)))
-    theta_1     theta_2     theta_3     theta_4 
- 0.04560614  0.11268974 -0.02781819 -0.07723737 
-    theta_5     theta_6 
- 0.06477406 -0.03079918 
-> cat("\nMSE per cohort:\n")
+## Normal ####
 
-MSE per cohort:
-> print(setNames(mse, paste0("theta_", 1:J)))
-   theta_1    theta_2    theta_3    theta_4    theta_5 
-0.04429178 0.05187998 0.03313778 0.04000791 0.03131367 
-   theta_6 
-0.02872011 
-> cat("\nGo rate per cohort:\n")
+getPriorParametersNormal <- function (
+    
+  mu_pop_mean = 0,
+  mu_pop_sd   = 10,
+  tau_shape   = 1,
+  tau_rate    = 1,
+  sigma_shape = 1,
+  sigma_rate  = 1
+  
+) {
+  
+  error_mu_pop_mean <- "Providing a numeric for the argument 'mu_pop_mean'"
+  error_mu_pop_sd   <- "Providing a positive numeric for the argument 'mu_pop_sd'"
+  error_tau_shape   <- "Providing a positive numeric for the argument 'tau_shape'"
+  error_tau_rate    <- "Providing a positive numeric for the argument 'tau_rate'"
+  error_sigma_shape <- "Providing a positive numeric for the argument 'sigma_shape'"
+  error_sigma_rate  <- "Providing a positive numeric for the argument 'sigma_rate'"
+  
+  checkmate::assertNumber(mu_pop_mean, .var.name = error_mu_pop_mean)
+  
+  checkmate::assertNumber(mu_pop_sd, .var.name = error_mu_pop_sd)
+  checkmate::assertTRUE(mu_pop_sd > 0, .var.name = error_mu_pop_sd)
+  
+  checkmate::assertNumber(tau_shape, .var.name = error_tau_shape)
+  checkmate::assertTRUE(tau_shape > 0, .var.name = error_tau_shape)
+  
+  checkmate::assertNumber(tau_rate, .var.name = error_tau_rate)
+  checkmate::assertTRUE(tau_rate > 0, .var.name = error_tau_rate)
+  
+  checkmate::assertNumber(sigma_shape, .var.name = error_sigma_shape)
+  checkmate::assertTRUE(sigma_shape > 0, .var.name = error_sigma_shape)
+  
+  checkmate::assertNumber(sigma_rate, .var.name = error_sigma_rate)
+  checkmate::assertTRUE(sigma_rate > 0, .var.name = error_sigma_rate)
+  
+  ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
+  
+  prior_parameters <- list(
+    mu_pop_mean = mu_pop_mean,
+    prec_mu_pop = 1 / (mu_pop_sd^2),
+    tau_shape   = tau_shape,
+    tau_rate    = tau_rate,
+    sigma_shape = sigma_shape,
+    sigma_rate  = sigma_rate
+  )
+  
+  prior_parameters_list <- list(normal = prior_parameters)
+  class(prior_parameters_list) <- "prior_parameters_list"
+  
+  return(prior_parameters_list)
+}
 
-Go rate per cohort:
-> print(setNames(go_rate, paste0("theta_", 1:J)))
-theta_1 theta_2 theta_3 theta_4 theta_5 theta_6 
-  0.005   0.000   0.255   0.370   0.000   0.480 
-> cat("\nOverall go rate (>=1 cohort Go):\n")
-
-Overall go rate (>=1 cohort Go):
-> print(overall_go_rate)
-[1] 0
-> cat("\nGo rate in NULL cohorts only:\n")
-
-Go rate in NULL cohorts only:
-> print(setNames(go_rate[null_idx], paste0("theta_", null_idx)))
-theta_2 theta_5 
-      0       0 
-> 
+setPriorParametersNormal <- function (
+    
+  mu_pop_mean,
+  prec_mu_pop,
+  tau_shape,
+  tau_rate,
+  sigma_shape,
+  sigma_rate
+  
+) {
+  
+  error_mu_pop_mean <- "Providing a numeric for the argument 'mu_pop_mean'"
+  error_prec_mu_pop <- "Providing a positive numeric for the argument 'prec_mu_pop'"
+  error_tau_shape   <- "Providing a positive numeric for the argument 'tau_shape'"
+  error_tau_rate    <- "Providing a positive numeric for the argument 'tau_rate'"
+  error_sigma_shape <- "Providing a positive numeric for the argument 'sigma_shape'"
+  error_sigma_rate  <- "Providing a positive numeric for the argument 'sigma_rate'"
+  
+  checkmate::assertNumber(mu_pop_mean, .var.name = error_mu_pop_mean)
+  
+  checkmate::assertNumber(prec_mu_pop, .var.name = error_prec_mu_pop)
+  checkmate::assertTRUE(prec_mu_pop > 0, .var.name = error_prec_mu_pop)
+  
+  checkmate::assertNumber(tau_shape, .var.name = error_tau_shape)
+  checkmate::assertTRUE(tau_shape > 0, .var.name = error_tau_shape)
+  
+  checkmate::assertNumber(tau_rate, .var.name = error_tau_rate)
+  checkmate::assertTRUE(tau_rate > 0, .var.name = error_tau_rate)
+  
+  checkmate::assertNumber(sigma_shape, .var.name = error_sigma_shape)
+  checkmate::assertTRUE(sigma_shape > 0, .var.name = error_sigma_shape)
+  
+  checkmate::assertNumber(sigma_rate, .var.name = error_sigma_rate)
+  checkmate::assertTRUE(sigma_rate > 0, .var.name = error_sigma_rate)
+  
+  ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
+  
+  prior_parameters <- list(
+    mu_pop_mean = mu_pop_mean,
+    prec_mu_pop = prec_mu_pop,
+    tau_shape   = tau_shape,
+    tau_rate    = tau_rate,
+    sigma_shape = sigma_shape,
+    sigma_rate  = sigma_rate
+  )
+  
+  prior_parameters_list <- list(normal = prior_parameters)
+  class(prior_parameters_list) <- "prior_parameters_list"
+  
+  return(prior_parameters_list)
+}
