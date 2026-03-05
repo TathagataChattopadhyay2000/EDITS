@@ -1,97 +1,54 @@
-################################################################################
-## Layer 6) Decision sanity using getGoDecisions()
-## Global null: false-go rate
-## Clear alternative: go rate
-################################################################################
+Layer 1: Data generation
+> cat("Empirical mean(y):\n"); print(round(colMeans(y_mat), 3))
+Empirical mean(y):
+  y_1   y_2   y_3 
+1.944 3.000 3.996 
+> cat("Target theta_true:\n"); print(theta_true)
+Target theta_true:
+[1] 2 3 4
+> cat("Empirical var(y):\n"); print(round(apply(y_mat, 2, var), 4))
+Empirical var(y):
+   y_1    y_2    y_3 
+0.4467 0.2092 0.1532 
+> cat("Target sigma^2/n:\n"); print(round(sigma_true^2 / n_vec, 4))
+Target sigma^2/n:
+[1] 0.4000 0.2000 0.1333
 
-set.seed(1)
+Layer 2: Posterior width shrinks when n increases
+> cat("95% width (small n):\n"); print(round(w_small, 4))
+95% width (small n):
+theta_1 theta_2 theta_3 
+ 1.5901  1.6039  1.6754 
+> cat("95% width (big n):\n");   print(round(w_big, 4))
+95% width (big n):
+theta_1 theta_2 theta_3 
+ 0.2610  0.2669  0.2072 
 
-R <- 200
-J <- 3
-n_vec <- c(10, 20, 30)
-sigma_true <- 2
-delta <- 0.25
+Layer 3: Recovery + coverage
+> print(data.frame(
++   cohort = paste0("theta_", 1:J),
++   truth  = theta_true,
++   bias   = round(bias, 4),
++   rmse   = round(rmse, 4),
++   cover  = round(cover, 3)
++ ))
+   cohort truth    bias   rmse cover
+1 theta_1     2  0.2180 0.6341  0.85
+2 theta_2     3  0.0201 0.4115  0.94
+3 theta_3     4 -0.0391 0.3658  0.92
 
-cohort_names    <- paste0("theta_", 1:J)
-evidence_levels <- rep(0.975, J)   # corresponds to using the 2.5% posterior quantile row
+Layer 4: Posterior predictive quick check (standardized residuals)
+> cat("Mean(z):", round(mean(z_all), 3), " SD(z):", round(sd(z_all), 3), "\n")
+Mean(z): -0.082  SD(z): 0.485 
 
-boundary_rates <- rep(delta, J)
+Layer 5: Binning effect (fine vs coarse), first trial only
+> cat("Max abs diff Mean:", round(d_mean, 4), "\n")
+Max abs diff Mean: 0.0441 
+> cat("Max abs diff 2.5%:", round(d_low, 4), "\n")
+Max abs diff 2.5%: 0.1742 
+> cat("Max abs diff 97.5%:", round(d_hi, 4), "\n")
+Max abs diff 97.5%: 0.2148 
 
-## IMPORTANT: boundary_rules length must match J
-boundary_rules <- quote(c(
-  x[1] > boundary_rates[1],
-  x[2] > boundary_rates[2],
-  x[3] > boundary_rates[3]
-))
-
-## ---- Global null ----
-theta_null <- rep(0, J)
-false_go <- logical(R)
-
-for (r in 1:R) {
-
-  scen <- simulateScenarios(
-    n_subjects_list = list(n_vec),
-    means_list      = list(theta_null),
-    sds_list        = list(rep(sigma_true, J)),
-    endpoint        = "normal",
-    n_trials        = 1
-  )
-
-  an <- performAnalyses(
-    scenario_list     = scen,
-    method_names      = "normal",
-    n_mcmc_iterations = 500,
-    nbins             = 200,
-    verbose           = FALSE
-  )
-
-  dec <- getGoDecisions(
-    analyses_list   = an,
-    cohort_names    = cohort_names,
-    evidence_levels = evidence_levels,
-    boundary_rules  = boundary_rules,
-    overall_min_gos = 1
-  )
-
-  false_go[r] <- dec$scenario_1$decisions_list$normal[1, "overall"]
-}
-
-cat("\nLayer 6 (getGoDecisions):\n")
-cat("Overall false-go rate under global null:", round(mean(false_go), 3), "\n")
-
-
-## ---- Clear alternative ----
-theta_alt <- rep(0.6, J)
-go <- logical(R)
-
-for (r in 1:R) {
-
-  scen <- simulateScenarios(
-    n_subjects_list = list(n_vec),
-    means_list      = list(theta_alt),
-    sds_list        = list(rep(sigma_true, J)),
-    endpoint        = "normal",
-    n_trials        = 1
-  )
-
-  an <- performAnalyses(
-    scenario_list     = scen,
-    method_names      = "normal",
-    n_mcmc_iterations = 500,
-    nbins             = 200,
-    verbose           = FALSE
-  )
-
-  dec <- getGoDecisions(
-    analyses_list   = an,
-    cohort_names    = cohort_names,
-    evidence_levels = evidence_levels,
-    boundary_rules  = boundary_rules,
-    overall_min_gos = 1
-  )
-
-  go[r] <- dec$scenario_1$decisions_list$normal[1, "overall"]
-}
-
-cat("Overall go rate under clear alternative:", round(mean(go), 3), "\n")
+Layer 6 (getGoDecisions):
+> cat("Overall false-go rate under global null:", round(mean(false_go), 3), "\n")
+Overall false-go rate under global null: 0.015 
