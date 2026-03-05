@@ -1,20 +1,80 @@
-getAllCohortNames <- function(analyses_list) {
-  
-  endpoint <- if (!is.null(analyses_list[[1]]$scenario_data$endpoint)) {
-    analyses_list[[1]]$scenario_data$endpoint
-  } else {
-    "binary"
-  }
-  
-  prefix <- if (endpoint == "binary") "p_" else "theta_"
-  
-  Reduce(
-    intersect,
-    sapply(analyses_list, function (x) {
-      lapply(x$quantiles_list, function (y) {
-        post_names <- Reduce(intersect, lapply(y, colnames))
-        post_names[grep(paste0("^", prefix), post_names)]
-      })
-    })
+## Simple results script (NORMAL endpoint, unknown common sigma)
+## Outputs: bias, MSE, Go rates (paper-style)
+## Uses your package objects directly (no getEstimates), so no name mismatch issues.
+
+set.seed(1)
+
+R <- 200
+J <- 3
+n_vec <- c(50, 50, 50)
+sigma_true <- 2
+
+## Decision rule: Go if P(theta_j > delta) > 0.975
+## We implement this as: 2.5% posterior quantile of theta_j > delta
+delta <- 0.25
+
+## True effects (edit for null / mixed / alt scenarios)
+theta_true <- c(0.0, 0.0, 0.3)
+
+## Storage
+post_mean <- matrix(NA_real_, R, J)
+post_low  <- matrix(NA_real_, R, J)
+go_mat    <- matrix(FALSE,   R, J)
+
+for (r in 1:R) {
+
+  ## 1) simulate one trial
+  scen <- simulateScenarios(
+    n_subjects_list = list(n_vec),
+    means_list      = list(theta_true),
+    sds_list        = list(rep(sigma_true, J)),
+    endpoint        = "normal",
+    n_trials        = 1
   )
+
+  ## 2) fit model (use fine binning to approximate "no binning")
+  an <- performAnalyses(
+    scenario_list     = scen,
+    method_names      = "normal",
+    n_mcmc_iterations = 400,
+    nbins             = 200,
+    verbose           = FALSE
+  )
+
+  ## 3) extract posterior quantile matrix directly
+  pq <- an$scenario_1$quantiles_list$normal[[1]]
+
+  theta_cols <- grep("^theta_", colnames(pq), value = TRUE)
+
+  ## Ensure ordering theta_1..theta_J
+  theta_cols <- theta_cols[order(as.integer(sub("theta_", "", theta_cols)))]
+  theta_cols <- theta_cols[1:J]
+
+  post_mean[r, ] <- as.numeric(pq["Mean", theta_cols])
+  post_low[r, ]  <- as.numeric(pq["2.5%", theta_cols])
+
+  ## 4) decision: lower bound > delta
+  go_mat[r, ] <- post_low[r, ] > delta
 }
+
+## ---- Results ----
+
+truth_mat <- matrix(theta_true, nrow = R, ncol = J, byrow = TRUE)
+
+bias <- colMeans(post_mean - truth_mat)
+mse  <- colMeans((post_mean - truth_mat)^2)
+
+go_rate <- colMeans(go_mat)
+overall_go_rate <- mean(rowSums(go_mat) >= 1)
+
+cat("\nBias per cohort:\n")
+print(setNames(bias, paste0("theta_", 1:J)))
+
+cat("\nMSE per cohort:\n")
+print(setNames(mse, paste0("theta_", 1:J)))
+
+cat("\nGo rate per cohort:\n")
+print(setNames(go_rate, paste0("theta_", 1:J)))
+
+cat("\nOverall go rate (>=1 cohort Go):\n")
+print(overall_go_rate)
