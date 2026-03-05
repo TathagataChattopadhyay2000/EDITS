@@ -1,256 +1,10 @@
-## Continuous endpoint validation: 6 layers, minimal code, no helpers.
-## Assumes your package functions are loaded:
-## simulateScenarios(), performAnalyses(), getUniqueTrials()
+################################################################################
+## Layer 6) Decision sanity using getGoDecisions()
+## Global null: false-go rate
+## Clear alternative: go rate
+################################################################################
 
 set.seed(1)
-
-################################################################################
-## Layer 1) Data generation sanity: mean(y) ~ theta, var(y) ~ sigma^2 / n
-################################################################################
-
-R <- 2000
-J <- 3
-theta_true <- c(2, 3, 4)
-sigma_true <- 2
-n_vec <- c(10, 20, 30)
-
-sc <- simulateScenarios(
-  n_subjects_list = list(n_vec),
-  means_list      = list(theta_true),
-  sds_list        = list(rep(sigma_true, J)),
-  endpoint        = "normal",
-  n_trials        = R
-)
-
-y_mat <- sc$scenario_1$y   # R x J
-cat("\nLayer 1: Data generation\n")
-cat("Empirical mean(y):\n"); print(round(colMeans(y_mat), 3))
-cat("Target theta_true:\n"); print(theta_true)
-cat("Empirical var(y):\n"); print(round(apply(y_mat, 2, var), 4))
-cat("Target sigma^2/n:\n"); print(round(sigma_true^2 / n_vec, 4))
-
-
-################################################################################
-## Layer 2) Posterior internal sanity: bigger n => tighter posteriors
-################################################################################
-
-Rfit <- 50
-theta0 <- c(0, 0, 0)
-sigma0 <- 2
-n_small <- c(10, 10, 10)
-n_big   <- c(100, 100, 100)
-
-sc_small <- simulateScenarios(
-  n_subjects_list = list(n_small),
-  means_list      = list(theta0),
-  sds_list        = list(rep(sigma0, J)),
-  endpoint        = "normal",
-  n_trials        = Rfit
-)
-
-sc_big <- simulateScenarios(
-  n_subjects_list = list(n_big),
-  means_list      = list(theta0),
-  sds_list        = list(rep(sigma0, J)),
-  endpoint        = "normal",
-  n_trials        = Rfit
-)
-
-an_small <- performAnalyses(
-  scenario_list     = sc_small,
-  method_names      = "normal",
-  n_mcmc_iterations = 500,
-  nbins             = 200,
-  verbose           = FALSE
-)
-
-an_big <- performAnalyses(
-  scenario_list     = sc_big,
-  method_names      = "normal",
-  n_mcmc_iterations = 500,
-  nbins             = 200,
-  verbose           = FALSE
-)
-
-## Take first trial's posterior quantiles matrix (works because n_trials>1 gives a list)
-pq_small <- an_small$scenario_1$quantiles_list$normal[[1]]
-pq_big   <- an_big$scenario_1$quantiles_list$normal[[1]]
-
-theta_cols <- grep("^theta_", colnames(pq_small), value = TRUE)
-theta_cols <- theta_cols[order(as.integer(sub("theta_", "", theta_cols)))]
-
-w_small <- pq_small["97.5%", theta_cols] - pq_small["2.5%", theta_cols]
-w_big   <- pq_big["97.5%",   theta_cols] - pq_big["2.5%",   theta_cols]
-
-cat("\nLayer 2: Posterior width shrinks when n increases\n")
-cat("95% width (small n):\n"); print(round(w_small, 4))
-cat("95% width (big n):\n");   print(round(w_big, 4))
-
-
-################################################################################
-## Layer 3) Recovery + coverage: repeated simulate(1) -> fit -> check 95% CI contains truth
-################################################################################
-
-R <- 200
-J <- 3
-theta_true <- c(2, 3, 4)
-sigma_true <- 2
-n_vec <- c(10, 20, 30)
-
-post_mean <- matrix(NA_real_, R, J)
-low95     <- matrix(NA_real_, R, J)
-high95    <- matrix(NA_real_, R, J)
-
-for (r in 1:R) {
-  scen <- simulateScenarios(
-    n_subjects_list = list(n_vec),
-    means_list      = list(theta_true),
-    sds_list        = list(rep(sigma_true, J)),
-    endpoint        = "normal",
-    n_trials        = 1
-  )
-  an <- performAnalyses(
-    scenario_list     = scen,
-    method_names      = "normal",
-    n_mcmc_iterations = 500,
-    nbins             = 200,
-    verbose           = FALSE
-  )
-  pq <- an$scenario_1$quantiles_list$normal[[1]]
-  theta_cols <- grep("^theta_", colnames(pq), value = TRUE)
-  theta_cols <- theta_cols[order(as.integer(sub("theta_", "", theta_cols)))]
-  theta_cols <- theta_cols[1:J]
-
-  post_mean[r, ] <- as.numeric(pq["Mean", theta_cols])
-  low95[r, ]     <- as.numeric(pq["2.5%", theta_cols])
-  high95[r, ]    <- as.numeric(pq["97.5%", theta_cols])
-}
-
-bias <- colMeans(post_mean - matrix(theta_true, R, J, byrow = TRUE))
-rmse <- sqrt(colMeans((post_mean - matrix(theta_true, R, J, byrow = TRUE))^2))
-cover <- colMeans(low95 <= matrix(theta_true, R, J, byrow = TRUE) &
-                    high95 >= matrix(theta_true, R, J, byrow = TRUE))
-
-cat("\nLayer 3: Recovery + coverage\n")
-print(data.frame(
-  cohort = paste0("theta_", 1:J),
-  truth  = theta_true,
-  bias   = round(bias, 4),
-  rmse   = round(rmse, 4),
-  cover  = round(cover, 3)
-))
-
-
-################################################################################
-## Layer 4) Posterior predictive check (simple): standardized residuals ~ N(0,1)
-## Here we approximate using posterior mean of sigma:
-##   Var(y|theta) = sigma^2 / n  => z = (y - post_mean_theta) / (post_mean_sigma / sqrt(n))
-################################################################################
-
-R <- 200
-J <- 3
-theta_true <- c(2, 3, 4)
-sigma_true <- 2
-n_vec <- c(10, 20, 30)
-
-z_all <- c()
-
-for (r in 1:R) {
-  scen <- simulateScenarios(
-    n_subjects_list = list(n_vec),
-    means_list      = list(theta_true),
-    sds_list        = list(rep(sigma_true, J)),
-    endpoint        = "normal",
-    n_trials        = 1
-  )
-  y_obs <- as.numeric(scen$scenario_1$y[1, ])
-
-  an <- performAnalyses(
-    scenario_list     = scen,
-    method_names      = "normal",
-    n_mcmc_iterations = 500,
-    nbins             = 200,
-    verbose           = FALSE
-  )
-
-  pq <- an$scenario_1$quantiles_list$normal[[1]]
-  theta_cols <- grep("^theta_", colnames(pq), value = TRUE)
-  theta_cols <- theta_cols[order(as.integer(sub("theta_", "", theta_cols)))]
-  theta_hat <- as.numeric(pq["Mean", theta_cols])
-
-  ## sigma from prec_sigma (approx using mean on precision scale)
-  ## NOTE: this is approximate; it's enough as a quick sanity check.
-  if ("prec_sigma" %in% colnames(pq)) {
-    prec_hat <- as.numeric(pq["Mean", "prec_sigma"])
-    sigma_hat <- 1 / sqrt(prec_hat)
-  } else {
-    ## if your pq doesn't include prec_sigma, skip this layer
-    sigma_hat <- NA_real_
-  }
-
-  if (is.finite(sigma_hat)) {
-    z <- (y_obs - theta_hat) / (sigma_hat / sqrt(n_vec))
-    z_all <- c(z_all, z)
-  }
-}
-
-cat("\nLayer 4: Posterior predictive quick check (standardized residuals)\n")
-cat("Mean(z):", round(mean(z_all), 3), " SD(z):", round(sd(z_all), 3), "\n")
-
-
-################################################################################
-## Layer 5) Binning/uniquing correctness: compare fine vs coarse binning outputs
-################################################################################
-
-R <- 200
-J <- 3
-theta_true <- c(2, 3, 4)
-sigma_true <- 2
-n_vec <- c(10, 20, 30)
-
-sc <- simulateScenarios(
-  n_subjects_list = list(n_vec),
-  means_list      = list(theta_true),
-  sds_list        = list(rep(sigma_true, J)),
-  endpoint        = "normal",
-  n_trials        = R
-)
-
-an_fine <- performAnalyses(
-  scenario_list     = sc,
-  method_names      = "normal",
-  n_mcmc_iterations = 500,
-  nbins             = 200,   # fine ~ no approximation
-  verbose           = FALSE
-)
-
-an_coarse <- performAnalyses(
-  scenario_list     = sc,
-  method_names      = "normal",
-  n_mcmc_iterations = 500,
-  nbins             = 10,    # coarse
-  verbose           = FALSE
-)
-
-## Compare one trial's posterior summaries (first trial)
-pq_f <- an_fine$scenario_1$quantiles_list$normal[[1]]
-pq_c <- an_coarse$scenario_1$quantiles_list$normal[[1]]
-theta_cols <- grep("^theta_", colnames(pq_f), value = TRUE)
-theta_cols <- theta_cols[order(as.integer(sub("theta_", "", theta_cols)))]
-
-d_mean <- max(abs(pq_f["Mean", theta_cols] - pq_c["Mean", theta_cols]))
-d_low  <- max(abs(pq_f["2.5%", theta_cols] - pq_c["2.5%", theta_cols]))
-d_hi   <- max(abs(pq_f["97.5%", theta_cols] - pq_c["97.5%", theta_cols]))
-
-cat("\nLayer 5: Binning effect (fine vs coarse), first trial only\n")
-cat("Max abs diff Mean:", round(d_mean, 4), "\n")
-cat("Max abs diff 2.5%:", round(d_low, 4), "\n")
-cat("Max abs diff 97.5%:", round(d_hi, 4), "\n")
-
-
-################################################################################
-## Layer 6) Decision sanity: global null vs clear alternative
-################################################################################
 
 R <- 200
 J <- 3
@@ -258,11 +12,24 @@ n_vec <- c(10, 20, 30)
 sigma_true <- 2
 delta <- 0.25
 
-## Global null
-theta_null <- c(0, 0, 0)
+cohort_names    <- paste0("theta_", 1:J)
+evidence_levels <- rep(0.975, J)   # corresponds to using the 2.5% posterior quantile row
 
-go_overall_null <- logical(R)
+boundary_rates <- rep(delta, J)
+
+## IMPORTANT: boundary_rules length must match J
+boundary_rules <- quote(c(
+  x[1] > boundary_rates[1],
+  x[2] > boundary_rates[2],
+  x[3] > boundary_rates[3]
+))
+
+## ---- Global null ----
+theta_null <- rep(0, J)
+false_go <- logical(R)
+
 for (r in 1:R) {
+
   scen <- simulateScenarios(
     n_subjects_list = list(n_vec),
     means_list      = list(theta_null),
@@ -270,6 +37,7 @@ for (r in 1:R) {
     endpoint        = "normal",
     n_trials        = 1
   )
+
   an <- performAnalyses(
     scenario_list     = scen,
     method_names      = "normal",
@@ -277,18 +45,28 @@ for (r in 1:R) {
     nbins             = 200,
     verbose           = FALSE
   )
-  pq <- an$scenario_1$quantiles_list$normal[[1]]
-  theta_cols <- grep("^theta_", colnames(pq), value = TRUE)
-  theta_cols <- theta_cols[order(as.integer(sub("theta_", "", theta_cols)))]
-  go <- as.numeric(pq["2.5%", theta_cols]) > delta
-  go_overall_null[r] <- any(go)
+
+  dec <- getGoDecisions(
+    analyses_list   = an,
+    cohort_names    = cohort_names,
+    evidence_levels = evidence_levels,
+    boundary_rules  = boundary_rules,
+    overall_min_gos = 1
+  )
+
+  false_go[r] <- dec$scenario_1$decisions_list$normal[1, "overall"]
 }
 
-## Clear alternative
-theta_alt <- c(0.6, 0.6, 0.6)
+cat("\nLayer 6 (getGoDecisions):\n")
+cat("Overall false-go rate under global null:", round(mean(false_go), 3), "\n")
 
-go_overall_alt <- logical(R)
+
+## ---- Clear alternative ----
+theta_alt <- rep(0.6, J)
+go <- logical(R)
+
 for (r in 1:R) {
+
   scen <- simulateScenarios(
     n_subjects_list = list(n_vec),
     means_list      = list(theta_alt),
@@ -296,6 +74,7 @@ for (r in 1:R) {
     endpoint        = "normal",
     n_trials        = 1
   )
+
   an <- performAnalyses(
     scenario_list     = scen,
     method_names      = "normal",
@@ -303,13 +82,16 @@ for (r in 1:R) {
     nbins             = 200,
     verbose           = FALSE
   )
-  pq <- an$scenario_1$quantiles_list$normal[[1]]
-  theta_cols <- grep("^theta_", colnames(pq), value = TRUE)
-  theta_cols <- theta_cols[order(as.integer(sub("theta_", "", theta_cols)))]
-  go <- as.numeric(pq["2.5%", theta_cols]) > delta
-  go_overall_alt[r] <- any(go)
+
+  dec <- getGoDecisions(
+    analyses_list   = an,
+    cohort_names    = cohort_names,
+    evidence_levels = evidence_levels,
+    boundary_rules  = boundary_rules,
+    overall_min_gos = 1
+  )
+
+  go[r] <- dec$scenario_1$decisions_list$normal[1, "overall"]
 }
 
-cat("\nLayer 6: Decision sanity\n")
-cat("Overall false-go rate under global null:", round(mean(go_overall_null), 3), "\n")
-cat("Overall go rate under clear alternative:", round(mean(go_overall_alt), 3), "\n")
+cat("Overall go rate under clear alternative:", round(mean(go), 3), "\n")
