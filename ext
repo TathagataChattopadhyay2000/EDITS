@@ -1,54 +1,30 @@
-Layer 1: Data generation
-> cat("Empirical mean(y):\n"); print(round(colMeans(y_mat), 3))
-Empirical mean(y):
-  y_1   y_2   y_3 
-1.944 3.000 3.996 
-> cat("Target theta_true:\n"); print(theta_true)
-Target theta_true:
-[1] 2 3 4
-> cat("Empirical var(y):\n"); print(round(apply(y_mat, 2, var), 4))
-Empirical var(y):
-   y_1    y_2    y_3 
-0.4467 0.2092 0.1532 
-> cat("Target sigma^2/n:\n"); print(round(sigma_true^2 / n_vec, 4))
-Target sigma^2/n:
-[1] 0.4000 0.2000 0.1333
+results_tbl <- data.frame(
+  Layer = c(
+    rep("Layer 1: Data generation", 3),
+    rep("Layer 2: Posterior width", 3),
+    rep("Layer 3: Recovery/Coverage", 3),
+    rep("Layer 4: PPC residuals", 2),
+    rep("Layer 5: Binning diff", 3),
+    rep("Layer 6: Decisions", 2)
+  ),
+  Metric = c(
+    paste0("Empirical mean(y_", 1:3, ")"),
+    paste0("95% CI width small-n (theta_", 1:3, ")"),
+    paste0("Bias (theta_", 1:3, ")"),
+    "Mean(z)", "SD(z)",
+    "Max abs diff Mean", "Max abs diff 2.5%", "Max abs diff 97.5%",
+    "False-go rate (global null)", "Go rate (clear alternative)"
+  ),
+  Value = c(
+    1.944, 3.000, 3.996,
+    1.5901, 1.6039, 1.6754,
+    0.2180, 0.0201, -0.0391,
+    -0.082, 0.485,
+    0.0441, 0.1742, 0.2148,
+    0.015, 0.455
+  )
+)
 
-Layer 2: Posterior width shrinks when n increases
-> cat("95% width (small n):\n"); print(round(w_small, 4))
-95% width (small n):
-theta_1 theta_2 theta_3 
- 1.5901  1.6039  1.6754 
-> cat("95% width (big n):\n");   print(round(w_big, 4))
-95% width (big n):
-theta_1 theta_2 theta_3 
- 0.2610  0.2669  0.2072 
+results_tbl$Value <- round(results_tbl$Value, 4)
 
-Layer 3: Recovery + coverage
-> print(data.frame(
-+   cohort = paste0("theta_", 1:J),
-+   truth  = theta_true,
-+   bias   = round(bias, 4),
-+   rmse   = round(rmse, 4),
-+   cover  = round(cover, 3)
-+ ))
-   cohort truth    bias   rmse cover
-1 theta_1     2  0.2180 0.6341  0.85
-2 theta_2     3  0.0201 0.4115  0.94
-3 theta_3     4 -0.0391 0.3658  0.92
-
-Layer 4: Posterior predictive quick check (standardized residuals)
-> cat("Mean(z):", round(mean(z_all), 3), " SD(z):", round(sd(z_all), 3), "\n")
-Mean(z): -0.082  SD(z): 0.485 
-
-Layer 5: Binning effect (fine vs coarse), first trial only
-> cat("Max abs diff Mean:", round(d_mean, 4), "\n")
-Max abs diff Mean: 0.0441 
-> cat("Max abs diff 2.5%:", round(d_low, 4), "\n")
-Max abs diff 2.5%: 0.1742 
-> cat("Max abs diff 97.5%:", round(d_hi, 4), "\n")
-Max abs diff 97.5%: 0.2148 
-
-Layer 6 (getGoDecisions):
-> cat("Overall false-go rate under global null:", round(mean(false_go), 3), "\n")
-Overall false-go rate under global null: 0.015 
+print(results_tbl, row.names = FALSE)
