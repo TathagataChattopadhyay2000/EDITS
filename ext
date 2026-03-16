@@ -1,21 +1,6 @@
-getPostQuantilesOfTrial <- function (
-    
-  n_responders = NULL,
-  n_subjects,
-  y = NULL,
-  sds = NULL,
-  
-  j_data,
-  j_parameters,
-  j_model_file,
-  method_name,
-  quantiles,
-  calc_differences,
-  n_mcmc_iterations,
-  
-  save_path,
-  save_trial,
-  trial_index,
-  endpoint = c("binary", "normal")
-  
-)
+> args(getPostQuantilesOfTrial)
+function (n_responders = NULL, n_subjects, y = NULL, sds = NULL, 
+    j_data, j_parameters, j_model_file, method_name, quantiles, 
+    calc_differences, n_mcmc_iterations, save_path, save_trial, 
+    trial_index, endpoint = c("binary", "normal")) 
+NULL
