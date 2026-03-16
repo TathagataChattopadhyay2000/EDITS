@@ -1,46 +1,21 @@
-  posterior_quantiles_list <- future.apply::future_lapply(
-    X = seq_len(n_analyses),
-    FUN = function(j) {
-      getPostQuantilesOfTrial(
-        n_responders      = as.numeric(scenario_data$n_responders[j, ]),
-        n_subjects        = as.numeric(scenario_data$n_subjects[j, ]),
-        j_data            = j_data,
-        j_parameters      = j_parameters,
-        j_model_file      = j_model_file,
-        method_name       = method_name,
-        quantiles         = quantiles,
-        calc_differences  = calc_differences,
-        n_mcmc_iterations = n_mcmc_iterations,
-        save_path         = save_path,
-        save_trial        = save_trial,
-        trial_index       = j
-      )
-    },
-    future.seed = TRUE,
-    future.scheduling = 1
-  )
-
-
-    if (!is.null(save_path) && identical(trial_index, save_trial)) {
-      saveRDS(
-        posterior_samples,
-        file = file.path(
-          save_path,
-          paste0("posterior_samples_", trial_index, "_", method_name, ".rds")
-        )
-      )
-    }
-
-
-  inits <- vector("list", n_chains)
-  for (i in seq_len(n_chains)) {
-    inits[[i]]$.RNG.name <- "base::Wichmann-Hill"
-    inits[[i]]$.RNG.seed <- sample.int(.Machine$integer.max, size = 1)
-  }
-
-#' The models can be applied in parallel using the `future` framework, e.g. with
-#' `future::plan(future::multisession)` or `future::plan(future::multicore)` on supported systems.
-#' Parallel random number generation is handled reproducibly via `future.seed = TRUE`.
-#' The tasks are scheduled with `future.scheduling = 1`.
-
-
+getPostQuantilesOfTrial <- function (
+    
+  n_responders = NULL,
+  n_subjects,
+  y = NULL,
+  sds = NULL,
+  
+  j_data,
+  j_parameters,
+  j_model_file,
+  method_name,
+  quantiles,
+  calc_differences,
+  n_mcmc_iterations,
+  
+  save_path,
+  save_trial,
+  trial_index,
+  endpoint = c("binary", "normal")
+  
+)
