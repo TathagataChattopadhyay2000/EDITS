@@ -1,9 +1,0 @@
-Caution: No parallel backend detected for the 'foreach' framework. For execution in parallel, register a parallel backend, e.g. with:
-   doFuture::registerDoFuture()
-   future::plan(future::multisession)
-
-16-Mar-2026 Performing Analyses
-         Analyzing 1 scenario (1 unique trial realization)
-   16:47 - with Berry ...........
-Error in getPostQuantilesOfTrial(n_responders = as.numeric(scenario_data$n_responders[j,  : 
-  unused argument (trial_index = j)
