@@ -1,9 +1,59 @@
-Caution: No parallel backend detected for the 'foreach' framework. For execution in parallel, register a parallel backend, e.g. with:
-   doFuture::registerDoFuture()
-   future::plan(future::multisession)
-
-16-Mar-2026 Performing Analyses
-         Analyzing 1 scenario (1 unique trial realization)
-   16:47 - with Berry ...........
-Error in getPostQuantilesOfTrial(n_responders = as.numeric(scenario_data$n_responders[j,  : 
-  unused argument (trial_index = j)
+#' @title loadAnalyses
+#' @md
+#' @description This function loads one or more analyses previously saved with
+#' \code{\link[bhmbasket]{saveAnalyses}}. The loaded object can contain analyses for
+#' binary endpoints (response rates) or normal endpoints (continuous means) that were
+#' created with \code{\link[bhmbasket]{performAnalyses}}.
+#' @param load_path A string providing a path where the analyses are stored,
+#' Default: \code{\link[base]{tempdir}}.
+#' @param scenario_numbers A (vector of) positive integer(s) for the scenario number(s).
+#' @param analysis_numbers A (vector of) positive integer(s) for the analysis number(s),
+#' Default: `rep(1, length(scenario_numbers))`.
+#' @return Returns an object of class `analysis_list`.
+#' @seealso
+#'  \code{\link[bhmbasket]{performAnalyses}}
+#'  \code{\link[bhmbasket]{saveAnalyses}}
+#'  \code{\link[base]{tempdir}}
+#' @rdname loadAnalyses
+#' @examples
+#' ## Binary endpoint
+#' trial_data <- createTrial(
+#'   n_subjects   = c(10, 20, 30),
+#'   n_responders = c(1, 2, 3)
+#' )
+#'
+#' analysis_list <- performAnalyses(
+#'   scenario_list     = trial_data,
+#'   target_rates      = rep(0.5, 3),
+#'   n_mcmc_iterations = 100
+#' )
+#'
+#' save_info <- saveAnalyses(analysis_list)
+#' analysis_list_loaded <- loadAnalyses(
+#'   scenario_numbers = save_info$scenario_numbers,
+#'   analysis_numbers = save_info$analysis_numbers,
+#'   load_path        = save_info$path
+#' )
+#'
+#' ## Normal endpoint
+#' trial_data_n <- createTrial(
+#'   n_subjects = c(10, 20, 30),
+#'   y          = c(2, 3, 4),
+#'   sds        = c(1, 1, 1),
+#'   endpoint   = "normal"
+#' )
+#'
+#' analysis_list_n <- performAnalyses(
+#'   scenario_list     = trial_data_n,
+#'   method_names      = "normal",
+#'   n_mcmc_iterations = 100
+#' )
+#'
+#' save_info_n <- saveAnalyses(analysis_list_n)
+#' analysis_list_n_loaded <- loadAnalyses(
+#'   scenario_numbers = save_info_n$scenario_numbers,
+#'   analysis_numbers = save_info_n$analysis_numbers,
+#'   load_path        = save_info_n$path
+#' )
+#' @author Stephan Wojciekowski
+#' @export
