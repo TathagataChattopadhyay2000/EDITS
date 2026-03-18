@@ -1,26 +1,29 @@
-## Berry-compatible robust MAP baseline model (single-arm basket, binary endpoint)
-model {
+} else if (method_name == "berry_map") {
 
-  ## Hyperpriors for cohort shifts
-  mu       ~ dnorm(mean_mu, precision_mu)
+  # prior_parameters must contain: w_psi, a_psi, b_psi, mean_mu, mu_sd or precision_mu, tau_scale
+  # Here we keep the same mu/tau parameterization style you already use.
 
-  tau      ~ dnorm(0, precision_tau) I(0.001, )
-  tau_prec <- pow(tau, -2)
+  # K_psi inferred from number of rows
+  K_psi <- nrow(prior_parameters$a_psi)
 
-  for (j in 1:J) {
+  j_data <- list(
+    # baseline mixture inputs
+    K_psi = K_psi,
+    w_psi = prior_parameters$w_psi,  # matrix K_psi x J
+    a_psi = prior_parameters$a_psi,  # matrix K_psi x J
+    b_psi = prior_parameters$b_psi,  # matrix K_psi x J
 
-    ## cohort-specific mixture weights
-    z_psi[j] ~ dcat(w_psi[1:K_psi, j])
+    # Berry shift hyperpriors
+    mean_mu      = prior_parameters$mu_mean,
+    precision_mu = prior_parameters$mu_sd^-2,
+    precision_tau = prior_parameters$tau_scale^-2,
 
-    ## cohort-specific baseline prior
-    psi[j] ~ dbeta(a_psi[z_psi[j], j], b_psi[z_psi[j], j])
+    # will be filled per trial in getPostQuantilesOfTrial()
+    J = length(target_rates)  # equals number of cohorts
+  )
 
-    ## Berry borrowing on shift
-    theta[j] ~ dnorm(mu, tau_prec)
+  j_model_file <- getModelFile("berry_map")
 
-    ## Likelihood
-    logit(p[j]) <- theta[j] + logit(psi[j])
-    r[j] ~ dbin(p[j], n[j])
-  }
-
+  # save p for your existing quantile workflow; add others if you want
+  j_parameters <- c("p", "psi", "theta", "mu", "tau")
 }
