@@ -1,24 +1,50 @@
-## Bayesian Hierarchical Model: Berry with Mixture Prior on mu
+getPriorParametersBerryMix <- function(
+  target_rates,
+  tau_scale = 1,
+  n_worth   = 1,
+  w_mu      = c(0.8, 0.2),
+  vague_mult = 5
+) {
 
-model {
+  # reuse existing berry default variance calculation
+  target_rate_max_var <- target_rates[abs(target_rates - 0.5) == max(abs(target_rates - 0.5))][1]
+  mu_var <- getMuVar(target_rate_max_var, tau_scale, n_worth)
+  if (mu_var <= 0) stop(simpleError(paste(
+    "The provided input parameters lead to a variance of mu <= 0.",
+    "Consider to decrease 'tau_scale' or 'n_worth'"
+  )))
 
-  ## Mixture prior for mu
-  z_mu ~ dcat(w_mu[1:K_mu])                     # component indicator
-  mu   ~ dnorm(mu_mean[z_mu], mu_prec[z_mu])    # component-specific normal
+  mu_sd_1 <- sqrt(mu_var)
+  mu_sd_2 <- mu_sd_1 * vague_mult
 
-  ## Prior for tau (same as berry.txt)
-  tau      ~ dnorm(0, precision_tau) I(0.001, )
-  tau_prec <- pow(tau, -2)
+  prior_parameters <- list(
+    mu_mean   = c(0, 0),
+    mu_sd     = c(mu_sd_1, mu_sd_2),
+    w_mu      = w_mu,
+    tau_scale = tau_scale
+  )
 
-  for (j in 1:J) {
+  prior_parameters_list <- list(berry_mix = prior_parameters)
+  class(prior_parameters_list) <- "prior_parameters_list"
+  prior_parameters_list
+}
 
-    ## Prior
-    theta[j] ~ dnorm(mu, tau_prec)
 
-    ## Likelihood
-    logit(p[j]) <- theta[j] + logit(p_t[j])
-    r[j] ~ dbin(p[j], n[j])
+setPriorParametersBerryMix <- function(mu_mean, mu_sd, w_mu, tau_scale) {
+  # checkmate validations similar to your ExNex style:
+  # - lengths equal
+  # - mu_sd > 0
+  # - weights in [0,1], sum=1
+  # - tau_scale > 0
 
-  }
+  prior_parameters <- list(
+    mu_mean   = mu_mean,
+    mu_sd     = mu_sd,
+    w_mu      = w_mu,
+    tau_scale = tau_scale
+  )
 
+  out <- list(berry_mix = prior_parameters)
+  class(out) <- "prior_parameters_list"
+  out
 }
