@@ -1,50 +1,19 @@
-getPriorParametersBerryMix <- function(
-  target_rates,
-  tau_scale = 1,
-  n_worth   = 1,
-  w_mu      = c(0.8, 0.2),
-  vague_mult = 5
-) {
+} else if (method_name == "berry_mix") {
 
-  # reuse existing berry default variance calculation
-  target_rate_max_var <- target_rates[abs(target_rates - 0.5) == max(abs(target_rates - 0.5))][1]
-  mu_var <- getMuVar(target_rate_max_var, tau_scale, n_worth)
-  if (mu_var <= 0) stop(simpleError(paste(
-    "The provided input parameters lead to a variance of mu <= 0.",
-    "Consider to decrease 'tau_scale' or 'n_worth'"
-  )))
-
-  mu_sd_1 <- sqrt(mu_var)
-  mu_sd_2 <- mu_sd_1 * vague_mult
-
-  prior_parameters <- list(
-    mu_mean   = c(0, 0),
-    mu_sd     = c(mu_sd_1, mu_sd_2),
-    w_mu      = w_mu,
-    tau_scale = tau_scale
+  j_data <- list(
+    K_mu          = length(prior_parameters$w_mu),
+    w_mu          = prior_parameters$w_mu,
+    mu_mean       = prior_parameters$mu_mean,
+    mu_prec       = prior_parameters$mu_sd^-2,
+    precision_tau = prior_parameters$tau_scale^-2,
+    p_t           = target_rates,
+    J             = length(target_rates)
   )
 
-  prior_parameters_list <- list(berry_mix = prior_parameters)
-  class(prior_parameters_list) <- "prior_parameters_list"
-  prior_parameters_list
+  j_model_file <- getModelFile("berry_mix")
+  j_parameters <- c("p", "mu", "tau")
+
 }
 
+j_parameters <- c("p", "mu", "tau", "z_mu")
 
-setPriorParametersBerryMix <- function(mu_mean, mu_sd, w_mu, tau_scale) {
-  # checkmate validations similar to your ExNex style:
-  # - lengths equal
-  # - mu_sd > 0
-  # - weights in [0,1], sum=1
-  # - tau_scale > 0
-
-  prior_parameters <- list(
-    mu_mean   = mu_mean,
-    mu_sd     = mu_sd,
-    w_mu      = w_mu,
-    tau_scale = tau_scale
-  )
-
-  out <- list(berry_mix = prior_parameters)
-  class(out) <- "prior_parameters_list"
-  out
-}
