@@ -1,39 +1,24 @@
 ## Berry-compatible robust MAP baseline model (single-arm basket, binary endpoint)
-## For each cohort j:
-##   - Baseline response psi[j] has a robust MAP prior as a mixture of Betas
-##   - Trial shift theta[j] borrows across cohorts via Normal(mu, tau^2)
-##   - Observed responders r[j] ~ Binomial(n[j], p[j])
-##   - logit(p[j]) = theta[j] + logit(psi[j])
-
 model {
 
-  ## -----------------------------
   ## Hyperpriors for cohort shifts
-  ## -----------------------------
   mu       ~ dnorm(mean_mu, precision_mu)
 
   tau      ~ dnorm(0, precision_tau) I(0.001, )
   tau_prec <- pow(tau, -2)
 
-  ## -----------------------------------------
-  ## Cohort-specific robust MAP baseline priors
-  ## -----------------------------------------
   for (j in 1:J) {
 
-    ## mixture indicator for baseline prior component
-    z_psi[j] ~ dcat(w_psi[1:K_psi])
+    ## cohort-specific mixture weights
+    z_psi[j] ~ dcat(w_psi[1:K_psi, j])
 
-    ## baseline response probability (historical-informed)
+    ## cohort-specific baseline prior
     psi[j] ~ dbeta(a_psi[z_psi[j], j], b_psi[z_psi[j], j])
 
-    ## -----------------------------
-    ## Trial shift (Berry borrowing)
-    ## -----------------------------
+    ## Berry borrowing on shift
     theta[j] ~ dnorm(mu, tau_prec)
 
-    ## -----------------------------
-    ## Likelihood for current trial
-    ## -----------------------------
+    ## Likelihood
     logit(p[j]) <- theta[j] + logit(psi[j])
     r[j] ~ dbin(p[j], n[j])
   }
