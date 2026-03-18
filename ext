@@ -1,34 +1,24 @@
-Would it be feasible to look into implementing a mixture prior in the binary endpoint case, e.g. until Friday? This question now comes up repeatedly across projects.
- 
-I will start looking into it from today
- 
-Im sure its possible :)
- 
-Awesome 
- 
-Hi Stephan, when talking about mixture priors we are interested in using the mixture to decide whether to trust an informative prior or a non informative prior right? 
- 
-Hi Soham  yes, that can be one aspect of it
- 
-it is more about the approximation capabilities of mixture priors that we are interested, e.g., when using a MAP prior, as described here: Getting started with RBesT (binary) • RBesT
- 
-I see, there is a paper Robust Meta-Analytic-Predictive Priors in Clinical Trials with Historical Control Information. I am trying to see if I can adapt it to one treatment arm and use it on top of berry. This way we have the hierarchical model but also mixture prior
- 
-Wojciekowski,Stephan (ExpMED ONC) BIP-DE-B
-it is more about the approximation capabilities of mixture priors that we are interested, e.g., when using a MAP prior, as described here: Getting started with RBesT (binary) • RBesT
-Okay, having a look
- 
-awesome! I would think that for the simple hierarchical model (and consequently for berry), there is already code available for mixture priors and hierarchical models and eg copilot should be able to provide code (and maybe even citation)
- 
-I would expect that it will become a bit more tricky to look into the exnex implementation with a mixture prior
- 
-Wojciekowski,Stephan (ExpMED ONC) BIP-DE-B
-it is more about the approximation capabilities of mixture priors that we are interested, e.g., when using a MAP prior, as described here: Getting started with RBesT (binary) • RBesT
-the workflow is that colleagues try to leverage historical data by implementing a mixture prior. when they then want to use that prior for their (basket) trial and not use RBesT for some reason (maybe complicated interim analysis structure), then bhmbasket would be a solution, but the functions so far do not accept a mixture prior
- 
-I see, thanks for explaining this, I will see what I can do and get back to you with questions 
- 
-thank you 
- 
-Of course
- 
+## Bayesian Hierarchical Model: Berry with Mixture Prior on mu
+
+model {
+
+  ## Mixture prior for mu
+  z_mu ~ dcat(w_mu[1:K_mu])                     # component indicator
+  mu   ~ dnorm(mu_mean[z_mu], mu_prec[z_mu])    # component-specific normal
+
+  ## Prior for tau (same as berry.txt)
+  tau      ~ dnorm(0, precision_tau) I(0.001, )
+  tau_prec <- pow(tau, -2)
+
+  for (j in 1:J) {
+
+    ## Prior
+    theta[j] ~ dnorm(mu, tau_prec)
+
+    ## Likelihood
+    logit(p[j]) <- theta[j] + logit(p_t[j])
+    r[j] ~ dbin(p[j], n[j])
+
+  }
+
+}
