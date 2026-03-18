@@ -1,62 +1,34 @@
-#' @title saveAnalyses
-#' @md
-#' @description This function saves one or more analyses (objects of class `analysis_list`)
-#' created with \code{\link[bhmbasket]{performAnalyses}}. The saved files can later be loaded
-#' with \code{\link[bhmbasket]{loadAnalyses}}. Analyses may originate from binary endpoints
-#' (response rates) or normal endpoints (continuous means).
-#' @param analyses_list An object of class `analysis_list`, as created with
-#' \code{\link[bhmbasket]{performAnalyses}}.
-#' @param save_path A string for the directory where the analyses should be stored.
-#' Default: \code{\link[base]{tempdir}}.
-#' @param analysis_numbers A vector of positive integers specifying the analysis number for each
-#' scenario (length must equal `length(analyses_list)`). If `NULL`, the function determines the
-#' next available analysis number per scenario by counting existing files in `save_path`.
-#' Default: `NULL`.
-#' @return A named list with entries `scenario_numbers`, `analysis_numbers`, and `path`.
-#' @seealso
-#'  \code{\link[bhmbasket]{performAnalyses}}
-#'  \code{\link[bhmbasket]{loadAnalyses}}
-#'  \code{\link[base]{tempdir}}
-#' @rdname saveAnalyses
-#' @examples
-#' ## Binary endpoint
-#' trial_data <- createTrial(
-#'   n_subjects   = c(10, 20, 30),
-#'   n_responders = c(1, 2, 3)
-#' )
-#'
-#' analysis_list <- performAnalyses(
-#'   scenario_list     = trial_data,
-#'   target_rates      = rep(0.5, 3),
-#'   n_mcmc_iterations = 100
-#' )
-#'
-#' save_info <- saveAnalyses(analysis_list)
-#' analysis_list_loaded <- loadAnalyses(
-#'   scenario_numbers = save_info$scenario_numbers,
-#'   analysis_numbers = save_info$analysis_numbers,
-#'   load_path        = save_info$path
-#' )
-#'
-#' ## Normal endpoint
-#' trial_data_n <- createTrial(
-#'   n_subjects = c(10, 20, 30),
-#'   y          = c(2, 3, 4),
-#'   sds        = c(1, 1, 1),
-#'   endpoint   = "normal"
-#' )
-#'
-#' analysis_list_n <- performAnalyses(
-#'   scenario_list     = trial_data_n,
-#'   method_names      = "normal",
-#'   n_mcmc_iterations = 100
-#' )
-#'
-#' save_info_n <- saveAnalyses(analysis_list_n)
-#' analysis_list_n_loaded <- loadAnalyses(
-#'   scenario_numbers = save_info_n$scenario_numbers,
-#'   analysis_numbers = save_info_n$analysis_numbers,
-#'   load_path        = save_info_n$path
-#' )
-#' @author Stephan Wojciekowski
-#' @export
+Would it be feasible to look into implementing a mixture prior in the binary endpoint case, e.g. until Friday? This question now comes up repeatedly across projects.
+ 
+I will start looking into it from today
+ 
+Im sure its possible :)
+ 
+Awesome 
+ 
+Hi Stephan, when talking about mixture priors we are interested in using the mixture to decide whether to trust an informative prior or a non informative prior right? 
+ 
+Hi Soham  yes, that can be one aspect of it
+ 
+it is more about the approximation capabilities of mixture priors that we are interested, e.g., when using a MAP prior, as described here: Getting started with RBesT (binary) • RBesT
+ 
+I see, there is a paper Robust Meta-Analytic-Predictive Priors in Clinical Trials with Historical Control Information. I am trying to see if I can adapt it to one treatment arm and use it on top of berry. This way we have the hierarchical model but also mixture prior
+ 
+Wojciekowski,Stephan (ExpMED ONC) BIP-DE-B
+it is more about the approximation capabilities of mixture priors that we are interested, e.g., when using a MAP prior, as described here: Getting started with RBesT (binary) • RBesT
+Okay, having a look
+ 
+awesome! I would think that for the simple hierarchical model (and consequently for berry), there is already code available for mixture priors and hierarchical models and eg copilot should be able to provide code (and maybe even citation)
+ 
+I would expect that it will become a bit more tricky to look into the exnex implementation with a mixture prior
+ 
+Wojciekowski,Stephan (ExpMED ONC) BIP-DE-B
+it is more about the approximation capabilities of mixture priors that we are interested, e.g., when using a MAP prior, as described here: Getting started with RBesT (binary) • RBesT
+the workflow is that colleagues try to leverage historical data by implementing a mixture prior. when they then want to use that prior for their (basket) trial and not use RBesT for some reason (maybe complicated interim analysis structure), then bhmbasket would be a solution, but the functions so far do not accept a mixture prior
+ 
+I see, thanks for explaining this, I will see what I can do and get back to you with questions 
+ 
+thank you 
+ 
+Of course
+ 
