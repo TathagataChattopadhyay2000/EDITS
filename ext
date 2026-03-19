@@ -1,21 +1,49 @@
-## Bayesian Hierarchical Model: Berry with Mixture Prior on mu
+## berry_mix ####
 
-model {
+getPriorParametersBerryMix <- function(
+    target_rates,
+    tau_scale = 1,
+    n_worth   = 1,
+    w_mu      = c(0.8, 0.2),
+    vague_mult = 5
+) {
 
-  ## Mixture prior for mu
-  z_mu ~ dcat(w_mu[1:K_mu])
-  mu   ~ dnorm(mu_mean[z_mu], mu_prec[z_mu])
+  target_rate_max_var <- target_rates[abs(target_rates - 0.5) == max(abs(target_rates - 0.5))][1]
 
-  ## Prior for tau (same as berry)
-  tau      ~ dnorm(0, precision_tau) I(0.001, )
-  tau_prec <- pow(tau, -2)
+  mu_var <- getMuVar(target_rate_max_var, tau_scale, n_worth)
 
-  for (j in 1:J) {
+  if (mu_var <= 0) stop(simpleError(paste(
+    "The provided input parameters lead to a variance of mu <= 0.",
+    "Consider to decrease 'tau_scale' or 'n_worth'"
+  )))
 
-    theta[j] ~ dnorm(mu, tau_prec)
+  mu_sd_1 <- sqrt(mu_var)
+  mu_sd_2 <- mu_sd_1 * vague_mult
 
-    logit(p[j]) <- theta[j] + logit(p_t[j])
-    r[j] ~ dbin(p[j], n[j])
+  prior_parameters <- list(
+    mu_mean   = c(0, 0),
+    mu_sd     = c(mu_sd_1, mu_sd_2),
+    w_mu      = w_mu,
+    tau_scale = tau_scale
+  )
 
-  }
+  prior_parameters_list <- list(berry_mix = prior_parameters)
+  class(prior_parameters_list) <- "prior_parameters_list"
+  prior_parameters_list
 }
+
+setPriorParametersBerryMix <- function(mu_mean, mu_sd, w_mu, tau_scale) {
+
+  prior_parameters <- list(
+    mu_mean   = mu_mean,
+    mu_sd     = mu_sd,
+    w_mu      = w_mu,
+    tau_scale = tau_scale
+  )
+
+  out <- list(berry_mix = prior_parameters)
+  class(out) <- "prior_parameters_list"
+  out
+}
+
+## exnex ####
