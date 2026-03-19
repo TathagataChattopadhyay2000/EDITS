@@ -1,21 +1,21 @@
-I had a question with this line "colleagues try to leverage historical data by implementing a mixture prior". Do we expect that the user provides the parameters of the mixture components? I have added a berry_mix model which takes into consideration mixture priors on the overall mean but the user has to provide parameters through setPriorParameters. For example:
- 
-prior_mix <- setPriorParametersBerryMix(
-mu_mean = ....
-mu_sd = ....
-w_mu =.... (weights),
-tau_scale = ....
-)
- 
-Or is it more like in RBesT where the user gives a historical trial counts, and settings like weights etc.
- 
-Also I ask this question because I am currently working with berry, we currently model the target rates, if we do use historical baseline doesnt it make sense to then replace these target rates with a historical baseline prior?
- 
-Chattopadhyay,Tathagata (MED BDS) BIP-DE-B
-I had a question with this line "colleagues try to leverage historical data by implementing a mixture prior". Do we expect that the user provides the parameters of the mixture components? I have added a berry_mix model which takes into consideration mixture priors on the overall mean but the user h…
-The user is likely using RBesT to derive a mixture prior of the object type mixbeta for the response rate of a cohort on the probability scale, which would then need to be translated to the logit (aka log odds) scale by sampling from the mixbeta object, applying the logit transformation, and fitting a mixnorm object to the transformed sample. The mixnorm object is then to be fed into performAnalyses as prior information. 
- 
-Chattopadhyay,Tathagata (MED BDS) BIP-DE-B
-Also I ask this question because I am currently working with berry, we currently model the target rates, if we do use historical baseline doesnt it make sense to then replace these target rates with a historical baseline prior?
-it would, but this would be a new model. it is really a great thought 
- 
+## Bayesian Hierarchical Model: Berry with Mixture Prior on mu
+
+model {
+
+  ## Mixture prior for mu
+  z_mu ~ dcat(w_mu[1:K_mu])
+  mu   ~ dnorm(mu_mean[z_mu], mu_prec[z_mu])
+
+  ## Prior for tau (same as berry)
+  tau      ~ dnorm(0, precision_tau) I(0.001, )
+  tau_prec <- pow(tau, -2)
+
+  for (j in 1:J) {
+
+    theta[j] ~ dnorm(mu, tau_prec)
+
+    logit(p[j]) <- theta[j] + logit(p_t[j])
+    r[j] ~ dbin(p[j], n[j])
+
+  }
+}
