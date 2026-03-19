@@ -1,54 +1,168 @@
+library(bhmbasket)
+library(coda)
 
-      ## Bayesian Hierarchical Model: ExNex
-      ## Model taken from Neuenschwander, Beat, et al.
-      ##  'Robust exchangeability designs for early phase clinical trials with multiple strata.'
-      ##  Pharmaceutical statistics 15.2 (2016): 123-134.
-      ##  https://doi.org/10.1002/pst.1730
-      
-      model {
-      
-        # prior distributions for EX-parameters
-        for (jj in 1:Nexch) {
-          mu[jj] ~ dnorm(mu_mean[jj], mu_prec[jj])
-          prior_tau_prec[jj] <- pow(tau_HN_scale[jj], -2)
-          tau[jj] ~ dnorm(0, prior_tau_prec[jj])I(0.001, )
-          prec_tau[jj] <- pow(tau[jj], -2)
-        }
-        
-        # log-odds parameters under EX
-        for (jj in 1:Nexch) {
-          for (j in 1:Nstrata) {
-            re[jj,j] ~ dnorm(0, prec_tau[jj])
-            LogOdds[jj, j] <- mu[jj] + re[jj, j]
-          }
-        }
-        
-        # log-odds parameters under NEX
-        for (j in 1:Nstrata) {
-          LogOdds[Nmix, j] ~ dnorm(nex_mean[j], nex_prec[j]) ## Deviation from Appendix of Neuenschwander:
-        }                                                    ## Different parameters for each
-                                                             ## Nex component possible.
-        
-        # latent mixture indicators:
-        # exch_index: categorial 1, ..., Nmix = Nexch + 1
-        # exch: Nstrata x Nmix matrix of 0/1 elements
-        for (j in 1:Nstrata) {
-          exch_index[j] ~ dcat(pMix[1:Nmix])
-          for (jj in 1:Nmix) {
-            exch[j, jj] <- equals(exch_index[j], jj)
-          }
-        }
-        
-        # pick theta
-        for (j in 1:Nstrata) {
-          theta[j] <- LogOdds[exch_index[j], j]
-        }
-        
-        # likelihood part
-        for (i in 1:Nstrata) {
-          logit(p[i]) <- theta[i]
-          # p_success[i] <- step(p[i] - p_cut) ## Deviation from Appendix of Neuenschwander:
-          r[i] ~ dbin(p[i], n[i])              ## No posterior response rate assessment within JAGS.
-        }
-      
-      }
+############################################################
+# 1. Create trial
+############################################################
+
+trial_one <- createTrial(
+  n_subjects = c(30,30,30),
+  means      = c(1.0, 1.5, 2.0),
+  sds        = c(0.5, 0.5, 0.5),
+  endpoint   = "normal"
+)
+scenario <- trial_one[[1]]
+
+############################################################
+# 2. Correct prior parameters for your JAGS model
+############################################################
+
+priors <- list(
+  mu_pop_mean = 0,
+  prec_mu_pop = 1/10^2,
+  
+  tau_shape   = 0.001,
+  tau_rate    = 0.001,
+  
+  sigma_shape = 0.001,
+  sigma_rate  = 0.001
+)
+
+prep <- prepareAnalysis(
+  method_name      = "normal",
+  prior_parameters = priors
+)
+
+############################################################
+# 3. Build correct JAGS data for THIS model
+############################################################
+
+j_data <- prep$j_data
+j_data$y <- scenario$y[1, ]
+j_data$n <- scenario$n_subjects[1, ]
+j_data$J <- length(j_data$y)
+
+############################################################
+# 4. Get posterior samples
+############################################################
+
+samples <- getPosteriors(
+  j_parameters      = prep$j_parameters,
+  j_model_file      = prep$j_model_file,
+  j_data            = j_data,
+  n_mcmc_iterations = 200
+)
+
+
+samples <- as.matrix(samples)
+
+# Two chains: getPosteriors includes both chains interleaved
+chain1 <- samples[seq(1, nrow(samples), 2), ]
+chain2 <- samples[seq(2, nrow(samples), 2), ]
+
+mcmc_list <- mcmc.list(mcmc(chain1), mcmc(chain2))
+
+############################################################
+# 4. Supervisor-requested diagnostics
+############################################################
+
+# A) Traceplot
+plot(mcmc_list[, "theta_1"], main = "Traceplot for theta_1 (two chains)")
+
+# B) Cumulative mean
+theta <- samples[, "theta_1"]
+cma <- cumsum(theta) / seq_along(theta)
+plot(cma, type="l", main="Cumulative Mean of theta_1")
+
+# C) Cumulative 97.5% quantile
+cum_q975 <- sapply(seq_along(theta), function(k)
+  quantile(theta[1:k], 0.975)
+)
+plot(cum_q975, type="l", main="Cumulative 97.5% Quantile of theta_1")
+
+# D) Gelman–Rubin Rhat
+gelman.diag(mcmc_list)
+
+
+
+library(bhmbasket)
+library(future)
+
+################################################################################
+# PART 2 — MONTE CARLO STABILITY (GO PROBABILITY)
+################################################################################
+
+# --- Number of simulated trials ---
+set.seed(123)
+Nsim <- 1000   # increase to 3000–5000 for final checks
+
+################################################################################
+# 1. Simulate scenarios for the normal endpoint correctly
+################################################################################
+
+scenario_list <- simulateScenarios(
+  n_subjects_list = list(rep(30, 3)),       # 3 cohorts, each with n=30
+  means_list      = list(c(0.4, 0.5, 0.6)), # true means
+  sds_list        = list(rep(2.5, 3)),      # per-cohort SD
+  n_trials        = Nsim,
+  endpoint        = "normal"
+)
+
+# scenario_list is a scenario_list of length 1 with Nsim simulated trials inside.
+
+################################################################################
+# 2. Run the analysis (normal endpoint)
+################################################################################
+
+plan(multisession)
+
+ana <- performAnalyses(
+  scenario_list     = scenario_list,
+  method_names      = "normal",
+  n_mcmc_iterations = 3000,
+  verbose           = FALSE
+)
+
+# ana is an analysis_list of length 1 ("scenario_1")
+
+################################################################################
+# 3. Apply go-decision rule
+################################################################################
+# Example rule for continuous endpoint:
+# GO if:   P(theta_j > 1.0) > 0.95   for any cohort j
+# Adjust to your actual rule.
+
+decision_rules <- quote(c(
+  x[1] > 0.5,
+  x[2] > 0.5,
+  x[3] > 1.0
+))
+
+go_list <- getGoDecisions(
+  analyses_list   = ana,
+  cohort_names    = c("theta_1", "theta_2", "theta_3"),
+  evidence_levels = c(0.95, 0.95, 0.95),
+  boundary_rules  = decision_rules
+)
+
+# go_list$scenario_1$decisions_list$normal is an (Nsim x 4) matrix:
+#  - column "overall" first
+#  - then 3 cohort-level decisions
+
+go_matrix <- go_list$scenario_1$decisions_list$normal
+go_vec <- go_matrix[, "overall"]    # TRUE/FALSE vector of length Nsim
+
+################################################################################
+# 4. Compute moving average of GO probability
+################################################################################
+
+mov <- cumsum(go_vec) / seq_along(go_vec)
+
+plot(
+  mov, type = "l", lwd = 2,
+  main = "Stabilization of GO Probability",
+  xlab = "Number of Simulated Trials",
+  ylab = "Estimated GO Probability"
+)
+abline(h = mov[Nsim], col = "red", lwd = 2)
+
