@@ -1,43 +1,41 @@
-## berry_mix ####
+setPriorParametersBerryMix <- function(mu_mean = NULL, mu_sd = NULL, w_mu = NULL, tau_scale,
+                                       mixbeta = NULL, n_mc = 200000, K_mu = NULL) {
 
-getPriorParametersBerryMix <- function(
-    target_rates,
-    tau_scale = 1,
-    n_worth   = 1,
-    w_mu      = c(0.8, 0.2),
-    vague_mult = 5
-) {
+  # --- If user provides an RBesT beta-mixture prior, convert it ---
+  if (!is.null(mixbeta)) {
 
-  target_rate_max_var <- target_rates[abs(target_rates - 0.5) == max(abs(target_rates - 0.5))][1]
+    # draw from mixbeta on probability scale
+    p <- RBesT::rmix(mixbeta, n = n_mc)
 
-  mu_var <- getMuVar(target_rate_max_var, tau_scale, n_worth)
+    # transform to logit scale (mu lives on log-odds scale)
+    x <- stats::qlogis(p)
 
-  if (mu_var <= 0) stop(simpleError(paste(
-    "The provided input parameters lead to a variance of mu <= 0.",
-    "Consider to decrease 'tau_scale' or 'n_worth'"
-  )))
+    # fit normal mixture to x (user decides/you implement this fitter)
+    # Must return list(w, mean, sd) of length K_mu (or chosen automatically)
+    fit <- fit_mixnorm(x, K = K_mu)   # <-- implement or plug in your fitter
 
-  mu_sd_1 <- sqrt(mu_var)
-  mu_sd_2 <- mu_sd_1 * vague_mult
+    mu_mean <- fit$mean
+    mu_sd   <- fit$sd
+    w_mu    <- fit$w
+  }
 
-  prior_parameters <- list(
-    mu_mean   = c(0, 0),
-    mu_sd     = c(mu_sd_1, mu_sd_2),
-    w_mu      = w_mu,
-    tau_scale = tau_scale
-  )
+  # --- Validate numeric inputs ---
+  checkmate::assertNumber(tau_scale, lower = 0)
+  checkmate::assertTRUE(tau_scale > 0)
 
-  prior_parameters_list <- list(berry_mix = prior_parameters)
-  class(prior_parameters_list) <- "prior_parameters_list"
-  prior_parameters_list
-}
+  checkmate::assertNumeric(mu_mean, any.missing = FALSE)
+  checkmate::assertNumeric(mu_sd, any.missing = FALSE)
+  checkmate::assertNumeric(w_mu, any.missing = FALSE, lower = 0, upper = 1)
 
-setPriorParametersBerryMix <- function(mu_mean, mu_sd, w_mu, tau_scale) {
+  checkmate::assertTRUE(length(mu_mean) == length(mu_sd))
+  checkmate::assertTRUE(length(mu_mean) == length(w_mu))
+  checkmate::assertTRUE(all(mu_sd > 0))
+  checkmate::assertTRUE(isTRUE(all.equal(sum(w_mu), 1)))
 
   prior_parameters <- list(
-    mu_mean   = mu_mean,
-    mu_sd     = mu_sd,
-    w_mu      = w_mu,
+    mu_mean   = as.numeric(mu_mean),
+    mu_sd     = as.numeric(mu_sd),
+    w_mu      = as.numeric(w_mu),
     tau_scale = tau_scale
   )
 
@@ -45,5 +43,3 @@ setPriorParametersBerryMix <- function(mu_mean, mu_sd, w_mu, tau_scale) {
   class(out) <- "prior_parameters_list"
   out
 }
-
-## exnex ####
