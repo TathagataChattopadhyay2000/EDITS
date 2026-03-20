@@ -1,26 +1,202 @@
-setPriorParametersBerryMix <- function(mu_mean, mu_sd, w_mu, tau_scale) {
+## pooled ####
 
-  # validations
-  checkmate::assertNumber(tau_scale)
-  checkmate::assertTRUE(tau_scale > 0)
+getPriorParametersPooled <- function (
 
-  checkmate::assertNumeric(mu_mean, any.missing = FALSE)
-  checkmate::assertNumeric(mu_sd, any.missing = FALSE)
-  checkmate::assertNumeric(w_mu, any.missing = FALSE, lower = 0, upper = 1)
+  target_rates,
+  n_worth = 1
 
-  checkmate::assertTRUE(length(mu_mean) == length(mu_sd))
-  checkmate::assertTRUE(length(mu_mean) == length(w_mu))
-  checkmate::assertTRUE(all(mu_sd > 0))
-  checkmate::assertTRUE(isTRUE(all.equal(sum(w_mu), 1)))
+) {
 
-  prior_parameters <- list(
-    mu_mean   = as.numeric(mu_mean),
-    mu_sd     = as.numeric(mu_sd),
-    w_mu      = as.numeric(w_mu),
-    tau_scale = tau_scale
+  error_target_rates <-
+    "Providing a vector of numerics in (0, 1) for the argument 'target_rates'"
+  error_n_worth      <-
+    "Providing a positive integer for the argument 'n_worth'"
+
+  checkmate::assertNumeric(
+    target_rates, any.missing = FALSE, .var.name = error_target_rates
+  )
+  checkmate::assertTRUE(
+    all(target_rates > 0 & target_rates < 1), .var.name = error_target_rates
   )
 
-  out <- list(berry_mix = prior_parameters)
-  class(out) <- "prior_parameters_list"
-  out
+  checkmate::assertInt(
+    n_worth, lower = 1, .var.name = error_n_worth
+  )
+
+  ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
+
+  target_rate_min_var <- target_rates[abs(target_rates - 0.5) == min(abs(target_rates - 0.5))][1]
+
+  a <- target_rate_min_var * n_worth
+  b <- (1 - target_rate_min_var) * n_worth
+
+  prior_parameters <- list(a = a, b = b)
+
+  prior_parameters_list        <- list(pooled = prior_parameters)
+  class(prior_parameters_list) <- "prior_parameters_list"
+
+  return (prior_parameters_list)
+
+}
+
+#' @title setPriorParametersPooled
+#' @md
+#' @description This function sets prior parameters for the analysis method `"pooled"`
+#' for use in \code{\link[bhmbasket]{performAnalyses}}.
+#' @param a A positive numeric for \eqn{\alpha}
+#' @param b A positive numeric for \eqn{\beta}
+#' @return A list with prior parameters of class `prior_parameters_list`
+#' @details
+#' The method `"pooled"` is a beta-binomial model that pools all cohorts.
+#' The prior parameters are the scale parameters of the beta prior distribution.
+#' @author Stephan Wojciekowski
+#' @examples
+#'  prior_parameters_pooled <- setPriorParametersPooled(1, 2)
+#' @rdname setPriorParametersPooled
+#' @seealso
+#'  \code{\link[bhmbasket]{performAnalyses}}
+#'  \code{\link[bhmbasket]{getPriorParameters}}
+#'  \code{\link[bhmbasket]{combinePriorParameters}}
+#'  \code{\link[bhmbasket]{setPriorParametersBerry}}
+#'  \code{\link[bhmbasket]{setPriorParametersExNex}}
+#'  \code{\link[bhmbasket]{setPriorParametersExNexAdj}}
+#'  \code{\link[bhmbasket]{setPriorParametersStratified}}
+#'  \code{\link[bhmbasket]{getMuVar}}
+#' @export
+setPriorParametersPooled <- function (
+
+  a,
+  b
+
+) {
+
+  error_a <- "Providing a positive numeric for the argument 'a'"
+  error_b <- "Providing a positive numeric for the argument 'b'"
+
+  checkmate::assertNumber(
+    a, .var.name = error_a
+  )
+  checkmate::assertTRUE(
+    a > 0, .var.name = error_a
+  )
+
+  checkmate::assertNumber(
+    b, .var.name = error_b
+  )
+  checkmate::assertTRUE(
+    b > 0, .var.name = error_b
+  )
+
+  ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
+
+  prior_parameters <- list(a = a, b = b)
+
+  prior_parameters_list        <- list(pooled = prior_parameters)
+  class(prior_parameters_list) <- "prior_parameters_list"
+
+  return (prior_parameters_list)
+
+}
+
+## stratified ####
+
+getPriorParametersStratified <- function (
+
+  target_rates,
+  n_worth = 1
+
+) {
+
+  error_target_rates <-
+    "Providing a vector of numerics in (0, 1) for the argument 'target_rates'"
+  error_n_worth      <-
+    "Providing a positive integer for the argument 'n_worth'"
+
+  checkmate::assertNumeric(
+    target_rates, any.missing = FALSE, .var.name = error_target_rates
+  )
+  checkmate::assertTRUE(
+    all(target_rates > 0 & target_rates < 1), .var.name = error_target_rates
+  )
+
+  checkmate::assertInt(
+    n_worth, lower = 1, .var.name = error_n_worth
+  )
+
+  ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
+
+  a_j <- target_rates * n_worth
+  b_j <- (1 - target_rates) * n_worth
+
+  prior_parameters <- list(a_j = a_j, b_j = b_j)
+
+  prior_parameters_list        <- list(stratified = prior_parameters)
+  class(prior_parameters_list) <- "prior_parameters_list"
+
+  return (prior_parameters_list)
+
+}
+
+#' @title setPriorParametersStratified
+#' @md
+#' @description This function sets prior parameters for the analysis method `"stratified"`
+#' for use in \code{\link[bhmbasket]{performAnalyses}}.
+#' @param a_j A vector of positive numerics for \eqn{\alpha}
+#' @param b_j A vector of positive numerics for \eqn{\beta}
+#' @return A list with prior parameters of class `prior_parameters_list`
+#' @details
+#' The method `"stratified"` is a beta-binomial model that assesses each cohort individually.
+#' The prior parameters are the scale parameters of the beta prior distributions.
+#' @author Stephan Wojciekowski
+#' @examples
+#'  prior_parameters_pooled <- setPriorParametersStratified(c(1, 2), c(3, 4))
+#' @rdname setPriorParametersStratified
+#' @seealso
+#'  \code{\link[bhmbasket]{performAnalyses}}
+#'  \code{\link[bhmbasket]{getPriorParameters}}
+#'  \code{\link[bhmbasket]{combinePriorParameters}}
+#'  \code{\link[bhmbasket]{setPriorParametersBerry}}
+#'  \code{\link[bhmbasket]{setPriorParametersExNex}}
+#'  \code{\link[bhmbasket]{setPriorParametersExNexAdj}}
+#'  \code{\link[bhmbasket]{setPriorParametersPooled}}
+#'  \code{\link[bhmbasket]{getMuVar}}
+#' @export
+setPriorParametersStratified <- function (
+
+  a_j,
+  b_j
+
+) {
+
+  error_a_j          <- "Providing a (vector of) positive numeric(s) for the argument 'a_j'"
+  error_b_j          <- "Providing a (vector of) positive numeric(s) for the argument 'b_j'"
+  error_a_j_b_j_len  <- "a_j and b_j must have the same length"
+
+  checkmate::assertNumeric(
+    a_j, any.missing = FALSE, .var.name = error_a_j
+  )
+  checkmate::assertTRUE(
+    all(a_j > 0), .var.name = error_a_j
+  )
+
+  checkmate::assertNumeric(
+    b_j, any.missing = FALSE, .var.name = error_b_j
+  )
+  checkmate::assertTRUE(
+    all(b_j > 0), .var.name = error_b_j
+  )
+
+  checkmate::assertTRUE(
+    length(a_j) == length(b_j), .var.name = error_a_j_b_j_len
+  )
+
+  ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
+
+  prior_parameters <- list(a_j = a_j, b_j = b_j)
+
+  prior_parameters_list        <- list(stratified = prior_parameters)
+  class(prior_parameters_list) <- "prior_parameters_list"
+
+  return (prior_parameters_list)
+
 }
