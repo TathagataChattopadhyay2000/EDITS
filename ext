@@ -1,3 +1,13 @@
+# flatten y -> numeric matrix 100 x 1000
+X <- do.call(rbind, lapply(y, function(block) as.numeric(unlist(block))))
 
-y <- foreach(i = 1:100, .options.future = list(seed = TRUE)) %dofuture% 
-  {foreach(j = 1:1000, .options.future = list(seed = TRUE)) %dofuture% {rnorm(1)}}
+# lag-1 correlation inside each block
+lag1 <- apply(X, 1, function(v) cor(v[-1], v[-length(v)]))
+
+# plot lag-1 correlations for all 100 blocks
+plot(lag1, type="h", xlab="Block", ylab="Lag-1 corr", main="Lag-1 autocorr per block")
+abline(h=0, lty=2)
+
+# pairwise correlation between blocks (should be ~0 if independent)
+C <- cor(t(X))
+hist(C[upper.tri(C)], breaks=50, main="Pairwise corr between blocks", xlab="corr")
