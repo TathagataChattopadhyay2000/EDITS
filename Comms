@@ -1,202 +1,110 @@
-## pooled ####
+1)
 
-getPriorParametersPooled <- function (
+setPriorParametersPooledMix <- function(w, a, b) {
 
-  target_rates,
-  n_worth = 1
+  checkmate::assertNumeric(w, any.missing=FALSE, lower=0, upper=1)
+  checkmate::assertTRUE(isTRUE(all.equal(sum(w), 1)))
 
-) {
+  checkmate::assertNumeric(a, any.missing=FALSE)
+  checkmate::assertNumeric(b, any.missing=FALSE)
+  checkmate::assertTRUE(all(a > 0))
+  checkmate::assertTRUE(all(b > 0))
+  checkmate::assertTRUE(length(w) == length(a) && length(a) == length(b))
 
-  error_target_rates <-
-    "Providing a vector of numerics in (0, 1) for the argument 'target_rates'"
-  error_n_worth      <-
-    "Providing a positive integer for the argument 'n_worth'"
-
-  checkmate::assertNumeric(
-    target_rates, any.missing = FALSE, .var.name = error_target_rates
-  )
-  checkmate::assertTRUE(
-    all(target_rates > 0 & target_rates < 1), .var.name = error_target_rates
-  )
-
-  checkmate::assertInt(
-    n_worth, lower = 1, .var.name = error_n_worth
-  )
-
-  ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
-
-  target_rate_min_var <- target_rates[abs(target_rates - 0.5) == min(abs(target_rates - 0.5))][1]
-
-  a <- target_rate_min_var * n_worth
-  b <- (1 - target_rate_min_var) * n_worth
-
-  prior_parameters <- list(a = a, b = b)
-
-  prior_parameters_list        <- list(pooled = prior_parameters)
-  class(prior_parameters_list) <- "prior_parameters_list"
-
-  return (prior_parameters_list)
-
+  out <- list(pooled_mix = list(w = w, a = a, b = b))
+  class(out) <- "prior_parameters_list"
+  out
 }
 
-#' @title setPriorParametersPooled
-#' @md
-#' @description This function sets prior parameters for the analysis method `"pooled"`
-#' for use in \code{\link[bhmbasket]{performAnalyses}}.
-#' @param a A positive numeric for \eqn{\alpha}
-#' @param b A positive numeric for \eqn{\beta}
-#' @return A list with prior parameters of class `prior_parameters_list`
-#' @details
-#' The method `"pooled"` is a beta-binomial model that pools all cohorts.
-#' The prior parameters are the scale parameters of the beta prior distribution.
-#' @author Stephan Wojciekowski
-#' @examples
-#'  prior_parameters_pooled <- setPriorParametersPooled(1, 2)
-#' @rdname setPriorParametersPooled
-#' @seealso
-#'  \code{\link[bhmbasket]{performAnalyses}}
-#'  \code{\link[bhmbasket]{getPriorParameters}}
-#'  \code{\link[bhmbasket]{combinePriorParameters}}
-#'  \code{\link[bhmbasket]{setPriorParametersBerry}}
-#'  \code{\link[bhmbasket]{setPriorParametersExNex}}
-#'  \code{\link[bhmbasket]{setPriorParametersExNexAdj}}
-#'  \code{\link[bhmbasket]{setPriorParametersStratified}}
-#'  \code{\link[bhmbasket]{getMuVar}}
-#' @export
-setPriorParametersPooled <- function (
+2)
 
-  a,
-  b
+} else if (method_name == "pooled_mix") {
 
-) {
+  # no JAGS needed
+  j_model_file <- "dummy path to JAGS model"
+  j_parameters <- "dummy JAGS parameters"
 
-  error_a <- "Providing a positive numeric for the argument 'a'"
-  error_b <- "Providing a positive numeric for the argument 'b'"
-
-  checkmate::assertNumber(
-    a, .var.name = error_a
+  # store mixture prior in j_data
+  j_data <- list(
+    w = prior_parameters$w,
+    a = prior_parameters$a,
+    b = prior_parameters$b
   )
-  checkmate::assertTRUE(
-    a > 0, .var.name = error_a
-  )
-
-  checkmate::assertNumber(
-    b, .var.name = error_b
-  )
-  checkmate::assertTRUE(
-    b > 0, .var.name = error_b
-  )
-
-  ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
-
-  prior_parameters <- list(a = a, b = b)
-
-  prior_parameters_list        <- list(pooled = prior_parameters)
-  class(prior_parameters_list) <- "prior_parameters_list"
-
-  return (prior_parameters_list)
-
 }
 
-## stratified ####
+3)
 
-getPriorParametersStratified <- function (
+getPostQuantilesPooledMix <- function(j_data, quantiles, n_mc = 200000) {
 
-  target_rates,
-  n_worth = 1
+  # pooled totals from current trial data
+  r_tot <- sum(j_data$r)
+  n_tot <- sum(j_data$n)
 
-) {
+  w <- j_data$w
+  a <- j_data$a
+  b <- j_data$b
 
-  error_target_rates <-
-    "Providing a vector of numerics in (0, 1) for the argument 'target_rates'"
-  error_n_worth      <-
-    "Providing a positive integer for the argument 'n_worth'"
+  # component-wise posterior parameters
+  a_post <- a + r_tot
+  b_post <- b + (n_tot - r_tot)
 
-  checkmate::assertNumeric(
-    target_rates, any.missing = FALSE, .var.name = error_target_rates
-  )
-  checkmate::assertTRUE(
-    all(target_rates > 0 & target_rates < 1), .var.name = error_target_rates
-  )
+  # update mixture weights using beta-binomial evidence
+  log_fk <- lbeta(a_post, b_post) - lbeta(a, b)  # proportional to marginal likelihood
+  log_w  <- log(w) + log_fk
+  w_post <- exp(log_w - max(log_w))
+  w_post <- w_post / sum(w_post)
 
-  checkmate::assertInt(
-    n_worth, lower = 1, .var.name = error_n_worth
-  )
+  # MC draws from mixture posterior for quantiles
+  k <- sample.int(length(w_post), size = n_mc, replace = TRUE, prob = w_post)
+  p_draw <- stats::rbeta(n_mc, a_post[k], b_post[k])
 
-  ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
+  q <- stats::quantile(p_draw, probs = quantiles)
 
-  a_j <- target_rates * n_worth
-  b_j <- (1 - target_rates) * n_worth
+  # keep same output shape as pooled(): matrix with p_1..p_J columns
+  posterior_quantiles <- matrix(q, nrow = length(quantiles), ncol = length(j_data$r))
+  colnames(posterior_quantiles) <- paste0("p_", seq_along(j_data$r))
+  rownames(posterior_quantiles) <- paste0(quantiles * 100, "%")
 
-  prior_parameters <- list(a_j = a_j, b_j = b_j)
+  # mixture mean/sd (closed form)
+  m_k <- a_post / (a_post + b_post)
+  v_k <- (a_post * b_post) / ((a_post + b_post)^2 * (a_post + b_post + 1))
+  m   <- sum(w_post * m_k)
+  v   <- sum(w_post * (v_k + (m_k - m)^2))
 
-  prior_parameters_list        <- list(stratified = prior_parameters)
-  class(prior_parameters_list) <- "prior_parameters_list"
+  posterior_quantiles <- rbind(posterior_quantiles, Mean = m, SD = sqrt(v))
 
-  return (prior_parameters_list)
-
+  posterior_quantiles
 }
 
-#' @title setPriorParametersStratified
-#' @md
-#' @description This function sets prior parameters for the analysis method `"stratified"`
-#' for use in \code{\link[bhmbasket]{performAnalyses}}.
-#' @param a_j A vector of positive numerics for \eqn{\alpha}
-#' @param b_j A vector of positive numerics for \eqn{\beta}
-#' @return A list with prior parameters of class `prior_parameters_list`
-#' @details
-#' The method `"stratified"` is a beta-binomial model that assesses each cohort individually.
-#' The prior parameters are the scale parameters of the beta prior distributions.
-#' @author Stephan Wojciekowski
-#' @examples
-#'  prior_parameters_pooled <- setPriorParametersStratified(c(1, 2), c(3, 4))
-#' @rdname setPriorParametersStratified
-#' @seealso
-#'  \code{\link[bhmbasket]{performAnalyses}}
-#'  \code{\link[bhmbasket]{getPriorParameters}}
-#'  \code{\link[bhmbasket]{combinePriorParameters}}
-#'  \code{\link[bhmbasket]{setPriorParametersBerry}}
-#'  \code{\link[bhmbasket]{setPriorParametersExNex}}
-#'  \code{\link[bhmbasket]{setPriorParametersExNexAdj}}
-#'  \code{\link[bhmbasket]{setPriorParametersPooled}}
-#'  \code{\link[bhmbasket]{getMuVar}}
-#' @export
-setPriorParametersStratified <- function (
+4)
 
-  a_j,
-  b_j
+} else if (method_name == "pooled_mix") {
 
-) {
-
-  error_a_j          <- "Providing a (vector of) positive numeric(s) for the argument 'a_j'"
-  error_b_j          <- "Providing a (vector of) positive numeric(s) for the argument 'b_j'"
-  error_a_j_b_j_len  <- "a_j and b_j must have the same length"
-
-  checkmate::assertNumeric(
-    a_j, any.missing = FALSE, .var.name = error_a_j
-  )
-  checkmate::assertTRUE(
-    all(a_j > 0), .var.name = error_a_j
+  posterior_quantiles <- getPostQuantilesPooledMix(
+    j_data    = j_data,
+    quantiles = quantiles
   )
 
-  checkmate::assertNumeric(
-    b_j, any.missing = FALSE, .var.name = error_b_j
-  )
-  checkmate::assertTRUE(
-    all(b_j > 0), .var.name = error_b_j
-  )
+5)
 
-  checkmate::assertTRUE(
-    length(a_j) == length(b_j), .var.name = error_a_j_b_j_len
-  )
+j_data$r <- n_responders
+j_data$n <- n_subjects
 
-  ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
+6)
 
-  prior_parameters <- list(a_j = a_j, b_j = b_j)
+trial <- createTrial(n_subjects=c(10,10,10), n_responders=c(2,1,3))
 
-  prior_parameters_list        <- list(stratified = prior_parameters)
-  class(prior_parameters_list) <- "prior_parameters_list"
+pri <- setPriorParametersPooledMix(
+  w = c(0.8, 0.2),
+  a = c(2, 1),
+  b = c(8, 1)
+)
 
-  return (prior_parameters_list)
-
-}
+res <- performAnalyses(
+  scenario_list         = trial,
+  method_names          = "pooled_mix",
+  prior_parameters_list = pri,
+  target_rates          = c(0.2,0.2,0.2),  # still required by performAnalyses signature
+  n_mcmc_iterations     = 100,
+  verbose               = FALSE
+)
