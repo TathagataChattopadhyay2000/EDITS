@@ -1,10 +1,6 @@
-setPriorParametersBerryMix <- function(
-    mu_mean = NULL, mu_sd = NULL, w_mu = NULL, tau_scale,
-    mixbeta = NULL,               # either 3xK matrix (rows w,a,b) OR list(w=,a=,b=)
-    n_mc = 200,                # MC sample size for conversion
-    K_mu = 2                      # number of normal-mixture components to fit
-) {
+setPriorParametersBerryMix <- function(mu_mean, mu_sd, w_mu, tau_scale) {
 
+  # validations
   checkmate::assertNumber(tau_scale)
   checkmate::assertTRUE(tau_scale > 0)
 
@@ -17,42 +13,6 @@ setPriorParametersBerryMix <- function(
   checkmate::assertTRUE(all(mu_sd > 0))
   checkmate::assertTRUE(isTRUE(all.equal(sum(w_mu), 1)))
 
-  if (!is.null(mixbeta)) {
-
-    if (is.matrix(mixbeta)) {
-      w <- as.numeric(mixbeta["w", ])
-      a <- as.numeric(mixbeta["a", ])
-      b <- as.numeric(mixbeta["b", ])
-    } else if (is.list(mixbeta)) {
-      w <- as.numeric(mixbeta$w)
-      a <- as.numeric(mixbeta$a)
-      b <- as.numeric(mixbeta$b)
-    } else {
-      stop("'mixbeta' must be a 3xK matrix with rows w/a/b or a list(w=,a=,b=).")
-    }
-
-    if (length(w) == 0L || length(w) != length(a) || length(a) != length(b)) {
-      stop("mixbeta components must have equal non-zero length: w, a, b.")
-    }
-    if (any(w < 0) || abs(sum(w) - 1) > 1e-8) stop("mixbeta weights must be >=0 and sum to 1.")
-    if (any(a <= 0) || any(b <= 0)) stop("mixbeta Beta parameters a,b must be > 0.")
-
-    k <- sample.int(length(w), size = n_mc, replace = TRUE, prob = w)
-    p <- stats::rbeta(n_mc, shape1 = a[k], shape2 = b[k])
-
-    eps <- 1e-12
-    p <- pmin(pmax(p, eps), 1 - eps)
-
-    x <- logit(p)
-
-    # fit mixture of normals to x
-    fit <- mixtools::normalmixEM(x, K = K_mu)
-
-    mu_mean <- fit$mean
-    mu_sd   <- fit$sd
-    w_mu    <- fit$w
-  }
-
   prior_parameters <- list(
     mu_mean   = as.numeric(mu_mean),
     mu_sd     = as.numeric(mu_sd),
@@ -63,4 +23,4 @@ setPriorParametersBerryMix <- function(
   out <- list(berry_mix = prior_parameters)
   class(out) <- "prior_parameters_list"
   out
-}  
+}
