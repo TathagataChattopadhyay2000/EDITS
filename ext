@@ -1,168 +1,50 @@
-library(bhmbasket)
-library(coda)
+A) Old way: doRNG + chunkVector
 
-############################################################
-# 1. Create trial
-############################################################
+You bundle trials into chunks first, then give each worker one chunk.
 
-trial_one <- createTrial(
-  n_subjects = c(30,30,30),
-  means      = c(1.0, 1.5, 2.0),
-  sds        = c(0.5, 0.5, 0.5),
-  endpoint   = "normal"
-)
-scenario <- trial_one[[1]]
+Example chunking:
+	•	Chunk 1: 1,2,3,4
+	•	Chunk 2: 5,6,7,8
+	•	Chunk 3: 9,10,11,12
 
-############################################################
-# 2. Correct prior parameters for your JAGS model
-############################################################
+How it runs:
+	•	Worker 1 runs trials 1→2→3→4 (one after another)
+	•	Worker 2 runs trials 5→6→7→8
+	•	Worker 3 runs trials 9→10→11→12
 
-priors <- list(
-  mu_pop_mean = 0,
-  prec_mu_pop = 1/10^2,
-  
-  tau_shape   = 0.001,
-  tau_rate    = 0.001,
-  
-  sigma_shape = 0.001,
-  sigma_rate  = 0.001
-)
+RNG implication: each worker’s random numbers get used sequentially across all trials in its chunk.
 
-prep <- prepareAnalysis(
-  method_name      = "normal",
-  prior_parameters = priors
-)
+If later you change to 4 workers, the chunking changes, so the order of random numbers per trial can change → results may change unless you’re extremely careful.
 
-############################################################
-# 3. Build correct JAGS data for THIS model
-############################################################
+⸻
 
-j_data <- prep$j_data
-j_data$y <- scenario$y[1, ]
-j_data$n <- scenario$n_subjects[1, ]
-j_data$J <- length(j_data$y)
+B) New way: future with future.scheduling = 3
 
-############################################################
-# 4. Get posterior samples
-############################################################
+Here, future also bundles work, but it does the bundling for you.
 
-samples <- getPosteriors(
-  j_parameters      = prep$j_parameters,
-  j_model_file      = prep$j_model_file,
-  j_data            = j_data,
-  n_mcmc_iterations = 200
-)
+scheduling = 3 means:
 
+“Make tasks that contain about 3 trials per task.”
 
-samples <- as.matrix(samples)
+So future creates tasks like:
+	•	Task A: trials 1,2,3
+	•	Task B: trials 4,5,6
+	•	Task C: trials 7,8,9
+	•	Task D: trials 10,11,12
 
-# Two chains: getPosteriors includes both chains interleaved
-chain1 <- samples[seq(1, nrow(samples), 2), ]
-chain2 <- samples[seq(2, nrow(samples), 2), ]
+Now assign tasks to 3 workers:
+	•	Worker 1 gets Task A (1,2,3)
+	•	Worker 2 gets Task B (4,5,6)
+	•	Worker 3 gets Task C (7,8,9)
+	•	when any worker finishes, the remaining Task D (10,11,12) is given to whoever becomes free first.
 
-mcmc_list <- mcmc.list(mcmc(chain1), mcmc(chain2))
+So workers do multiple tasks over time, but each task is a bundle of 3 trials.
 
-############################################################
-# 4. Supervisor-requested diagnostics
-############################################################
+RNG implication with future.seed=TRUE:
+	•	each task gets its own reproducible random stream.
+	•	but the three trials inside the same task share that task’s stream.
+	•	if the task grouping changes (different workers / different scheduling / load balancing), the RNG usage per trial can shift.
 
-# A) Traceplot
-plot(mcmc_list[, "theta_1"], main = "Traceplot for theta_1 (two chains)")
-
-# B) Cumulative mean
-theta <- samples[, "theta_1"]
-cma <- cumsum(theta) / seq_along(theta)
-plot(cma, type="l", main="Cumulative Mean of theta_1")
-
-# C) Cumulative 97.5% quantile
-cum_q975 <- sapply(seq_along(theta), function(k)
-  quantile(theta[1:k], 0.975)
-)
-plot(cum_q975, type="l", main="Cumulative 97.5% Quantile of theta_1")
-
-# D) Gelman–Rubin Rhat
-gelman.diag(mcmc_list)
-
-
-
-library(bhmbasket)
-library(future)
-
-################################################################################
-# PART 2 — MONTE CARLO STABILITY (GO PROBABILITY)
-################################################################################
-
-# --- Number of simulated trials ---
-set.seed(123)
-Nsim <- 1000   # increase to 3000–5000 for final checks
-
-################################################################################
-# 1. Simulate scenarios for the normal endpoint correctly
-################################################################################
-
-scenario_list <- simulateScenarios(
-  n_subjects_list = list(rep(30, 3)),       # 3 cohorts, each with n=30
-  means_list      = list(c(0.4, 0.5, 0.6)), # true means
-  sds_list        = list(rep(2.5, 3)),      # per-cohort SD
-  n_trials        = Nsim,
-  endpoint        = "normal"
-)
-
-# scenario_list is a scenario_list of length 1 with Nsim simulated trials inside.
-
-################################################################################
-# 2. Run the analysis (normal endpoint)
-################################################################################
-
-plan(multisession)
-
-ana <- performAnalyses(
-  scenario_list     = scenario_list,
-  method_names      = "normal",
-  n_mcmc_iterations = 3000,
-  verbose           = FALSE
-)
-
-# ana is an analysis_list of length 1 ("scenario_1")
-
-################################################################################
-# 3. Apply go-decision rule
-################################################################################
-# Example rule for continuous endpoint:
-# GO if:   P(theta_j > 1.0) > 0.95   for any cohort j
-# Adjust to your actual rule.
-
-decision_rules <- quote(c(
-  x[1] > 0.5,
-  x[2] > 0.5,
-  x[3] > 1.0
-))
-
-go_list <- getGoDecisions(
-  analyses_list   = ana,
-  cohort_names    = c("theta_1", "theta_2", "theta_3"),
-  evidence_levels = c(0.95, 0.95, 0.95),
-  boundary_rules  = decision_rules
-)
-
-# go_list$scenario_1$decisions_list$normal is an (Nsim x 4) matrix:
-#  - column "overall" first
-#  - then 3 cohort-level decisions
-
-go_matrix <- go_list$scenario_1$decisions_list$normal
-go_vec <- go_matrix[, "overall"]    # TRUE/FALSE vector of length Nsim
-
-################################################################################
-# 4. Compute moving average of GO probability
-################################################################################
-
-mov <- cumsum(go_vec) / seq_along(go_vec)
-
-plot(
-  mov, type = "l", lwd = 2,
-  main = "Stabilization of GO Probability",
-  xlab = "Number of Simulated Trials",
-  ylab = "Estimated GO Probability"
-)
-abline(h = mov[Nsim], col = "red", lwd = 2)
-
+So compared to scheduling=1:
+	•	scheduling=3 is faster (fewer tasks)
+	•	but slightly less “exactly reproducible across different parallel setups”
