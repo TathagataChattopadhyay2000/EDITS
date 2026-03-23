@@ -1,65 +1,28 @@
-getPriorParametersStratifiedMix <- function (
+library(bhmbasket)
 
-  target_rates,
-  n_worth = 1,
-  w       = c(0.8, 0.2)
+trial_data <- createTrial(
+  n_subjects   = c(20, 20, 20),
+  n_responders = c(4, 6, 5)
+)
 
-) {
-
-  error_target_rates <-
-    "Providing a vector of numerics in (0, 1) for the argument 'target_rates'"
-  error_n_worth      <-
-    "Providing a positive integer for the argument 'n_worth'"
-  error_w            <-
-    "Providing a numeric vector of weights in [0, 1] summing to 1 for the argument 'w'"
-
-  checkmate::assertNumeric(
-    target_rates, any.missing = FALSE, .var.name = error_target_rates
+pri <- setPriorParametersStratifiedMix(
+  w = c(0.8, 0.2),
+  a_j = rbind(
+    c(10, 12,  8),   # component 1
+    c( 1,  1,  1)    # component 2 (vague)
+  ),
+  b_j = rbind(
+    c(30, 28, 32),   # component 1
+    c( 1,  1,  1)    # component 2
   )
-  checkmate::assertTRUE(
-    all(target_rates > 0 & target_rates < 1), .var.name = error_target_rates
-  )
+)
 
-  checkmate::assertInt(
-    n_worth, lower = 1, .var.name = error_n_worth
-  )
+res <- performAnalyses(
+  scenario_list         = trial_data,
+  method_names          = "stratified_mix",
+  prior_parameters_list = pri,
+  target_rates          = c(0.2, 0.3, 0.2),  # still needed by performAnalyses signature
+  verbose               = FALSE
+)
 
-  checkmate::assertNumeric(
-    w, any.missing = FALSE, lower = 0, upper = 1, .var.name = error_w
-  )
-  checkmate::assertTRUE(
-    isTRUE(all.equal(sum(w), 1)), .var.name = error_w
-  )
-
-  ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
-
-  K <- length(w)
-  J <- length(target_rates)
-
-  if (K != 2) {
-    stop(simpleError("The default implementation of 'getPriorParametersStratifiedMix()' currently expects a weight vector of length 2."))
-  }
-
-  a_j <- matrix(NA_real_, nrow = K, ncol = J)
-  b_j <- matrix(NA_real_, nrow = K, ncol = J)
-
-  ## component 1: informative stratified prior
-  a_j[1, ] <- target_rates * n_worth
-  b_j[1, ] <- (1 - target_rates) * n_worth
-
-  ## component 2: vague prior
-  a_j[2, ] <- rep(1, J)
-  b_j[2, ] <- rep(1, J)
-
-  prior_parameters <- list(
-    w   = w,
-    a_j = a_j,
-    b_j = b_j
-  )
-
-  prior_parameters_list <- list(stratified_mix = prior_parameters)
-  class(prior_parameters_list) <- "prior_parameters_list"
-
-  return (prior_parameters_list)
-
-}
+res[[1]]$quantiles_list$stratified_mix
