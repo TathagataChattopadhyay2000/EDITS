@@ -1,27 +1,58 @@
-setPriorParametersStratifiedMix <- function(
-  w,
-  a_j,
-  b_j
+getPriorParametersStratifiedMix <- function (
+
+  target_rates,
+  n_worth = 1,
+  w       = c(0.8, 0.2)
+
 ) {
 
-  error_w    <- "Providing a numeric vector of weights in [0,1] summing to 1 for argument 'w'"
-  error_a_j  <- "Providing a positive numeric matrix for argument 'a_j'"
-  error_b_j  <- "Providing a positive numeric matrix for argument 'b_j'"
-  error_dim  <- "a_j and b_j must have the same dimensions, and nrow(a_j) must equal length(w)"
+  error_target_rates <-
+    "Providing a vector of numerics in (0, 1) for the argument 'target_rates'"
+  error_n_worth      <-
+    "Providing a positive integer for the argument 'n_worth'"
+  error_w            <-
+    "Providing a numeric vector of weights in [0, 1] summing to 1 for the argument 'w'"
 
-  checkmate::assertNumeric(w, any.missing = FALSE, lower = 0, upper = 1, .var.name = error_w)
-  checkmate::assertTRUE(isTRUE(all.equal(sum(w), 1)), .var.name = error_w)
+  checkmate::assertNumeric(
+    target_rates, any.missing = FALSE, .var.name = error_target_rates
+  )
+  checkmate::assertTRUE(
+    all(target_rates > 0 & target_rates < 1), .var.name = error_target_rates
+  )
 
-  checkmate::assertTRUE(is.matrix(a_j), .var.name = error_a_j)
-  checkmate::assertTRUE(is.matrix(b_j), .var.name = error_b_j)
-  checkmate::assertTRUE(all(a_j > 0), .var.name = error_a_j)
-  checkmate::assertTRUE(all(b_j > 0), .var.name = error_b_j)
+  checkmate::assertInt(
+    n_worth, lower = 1, .var.name = error_n_worth
+  )
 
-  checkmate::assertTRUE(all(dim(a_j) == dim(b_j)), .var.name = error_dim)
-  checkmate::assertTRUE(nrow(a_j) == length(w), .var.name = error_dim)
+  checkmate::assertNumeric(
+    w, any.missing = FALSE, lower = 0, upper = 1, .var.name = error_w
+  )
+  checkmate::assertTRUE(
+    isTRUE(all.equal(sum(w), 1)), .var.name = error_w
+  )
+
+  ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
+
+  K <- length(w)
+  J <- length(target_rates)
+
+  if (K != 2) {
+    stop(simpleError("The default implementation of 'getPriorParametersStratifiedMix()' currently expects a weight vector of length 2."))
+  }
+
+  a_j <- matrix(NA_real_, nrow = K, ncol = J)
+  b_j <- matrix(NA_real_, nrow = K, ncol = J)
+
+  ## component 1: informative stratified prior
+  a_j[1, ] <- target_rates * n_worth
+  b_j[1, ] <- (1 - target_rates) * n_worth
+
+  ## component 2: vague prior
+  a_j[2, ] <- rep(1, J)
+  b_j[2, ] <- rep(1, J)
 
   prior_parameters <- list(
-    w   = as.numeric(w),
+    w   = w,
     a_j = a_j,
     b_j = b_j
   )
@@ -29,24 +60,6 @@ setPriorParametersStratifiedMix <- function(
   prior_parameters_list <- list(stratified_mix = prior_parameters)
   class(prior_parameters_list) <- "prior_parameters_list"
 
-  return(prior_parameters_list)
+  return (prior_parameters_list)
+
 }
-
-
-} else if (method_name == "stratified_mix") {
-
-  ## For method "stratified_mix" no MCMC simulations are necessary,
-  ## as each cohort posterior is a mixture of beta distributions.
-
-  j_model_file <- "dummy path to JAGS model"
-  j_parameters <- "dummy JAGS parameters"
-  j_data       <- prior_parameters
-
-} else if (method_name == "stratified_mix") {
-
-  posterior_quantiles <- getPostQuantilesStratifiedMix(
-    j_data            = j_data,
-    quantiles         = quantiles,
-    calc_differences  = calc_differences,
-    n_mcmc_iterations = n_mcmc_iterations
-  )
