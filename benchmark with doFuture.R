@@ -77,13 +77,14 @@ res_par <- performAnalyses(
 identical(res_seq, res_par)
 
 # ------------------------------------------------------------------------------
-
 library(bhmbasket)
 library(future)
-library(doFuture)
+library(future.apply)
+library(parallelly)
 library(ggplot2)
 
 set.seed(999)
+
 scenario_list <- list()
 
 for (i in 1:500) {
@@ -96,6 +97,9 @@ for (i in 1:500) {
 
 class(scenario_list) <- "scenario_list"
 
+cat("Detected cores:", parallel::detectCores(), "\n")
+cat("Available cores:", availableCores(), "\n")
+
 run_benchmark <- function(workers,
                           scheduling = NULL,
                           chunk_size = NULL,
@@ -103,29 +107,22 @@ run_benchmark <- function(workers,
   
   plan(multisession, workers = workers)
   
-  opts <- list(seed = TRUE)
-  
-  if (!is.null(chunk_size)) {
-    opts$chunk.size <- chunk_size
-  } else if (!is.null(scheduling)) {
-    opts$scheduling <- scheduling
-  }
-  
   t <- system.time({
-    res <- foreach(
-      i = seq_along(scenario_list),
-      .combine = c,
-      .options.future = opts,
-      .packages = "bhmbasket"
-    ) %dofuture% {
-      performAnalyses(
-        scenario_list     = structure(list(scenario_list[[i]]), class = "scenario_list"),
-        target_rates      = rep(0.3, 3),
-        method_names      = "berry",
-        n_mcmc_iterations = n_mcmc_iterations,
-        verbose           = FALSE
-      )
-    }
+    res <- future_lapply(
+      X = seq_along(scenario_list),
+      FUN = function(i) {
+        performAnalyses(
+          scenario_list = structure(list(scenario_list[[i]]), class = "scenario_list"),
+          target_rates = rep(0.3, 3),
+          method_names = "berry",
+          n_mcmc_iterations = n_mcmc_iterations,
+          verbose = FALSE
+        )
+      },
+      future.seed = TRUE,
+      future.scheduling = scheduling,
+      future.chunk.size = chunk_size
+    )
   })
   
   plan(sequential)
@@ -140,7 +137,7 @@ run_benchmark <- function(workers,
   )
 }
 
-worker_grid <- c(2, 4, 8, 16, 32)
+worker_grid <- c(2, 4, 8, 16)
 scheduling_grid <- c(1, 2, 4)
 chunk_grid <- c(5, 10, 20)
 
@@ -169,6 +166,7 @@ results_chunk <- do.call(
 )
 
 results_all <- rbind(results_sched, results_chunk)
+
 print(results_all)
 
 best_run <- results_all[which.min(results_all$elapsed), ]
@@ -177,15 +175,59 @@ print(best_run)
 p1 <- ggplot(results_sched, aes(x = workers, y = elapsed, color = factor(scheduling), group = factor(scheduling))) +
   geom_line() +
   geom_point(size = 2) +
-  labs(color = "scheduling")
+  labs(title = "Runtime vs Workers (different scheduling values)",
+       x = "Workers",
+       y = "Elapsed time (s)",
+       color = "Scheduling")
 
 p2 <- ggplot(results_chunk, aes(x = workers, y = elapsed, color = factor(chunk_size), group = factor(chunk_size))) +
   geom_line() +
   geom_point(size = 2) +
-  labs(color = "chunk_size")
+  labs(title = "Runtime vs Workers (different chunk sizes)",
+       x = "Workers",
+       y = "Elapsed time (s)",
+       color = "Chunk size")
 
 print(p1)
 print(p2)
+
+plan(multisession, workers = 4)
+
+set.seed(111)
+res1 <- future_lapply(
+  X = seq_along(scenario_list),
+  FUN = function(i) {
+    performAnalyses(
+      scenario_list = structure(list(scenario_list[[i]]), class = "scenario_list"),
+      target_rates = rep(0.3, 3),
+      method_names = "berry",
+      n_mcmc_iterations = 5000,
+      verbose = FALSE
+    )
+  },
+  future.seed = TRUE,
+  future.scheduling = 1
+)
+
+set.seed(111)
+res2 <- future_lapply(
+  X = seq_along(scenario_list),
+  FUN = function(i) {
+    performAnalyses(
+      scenario_list = structure(list(scenario_list[[i]]), class = "scenario_list"),
+      target_rates = rep(0.3, 3),
+      method_names = "berry",
+      n_mcmc_iterations = 5000,
+      verbose = FALSE
+    )
+  },
+  future.seed = TRUE,
+  future.scheduling = 1
+)
+
+plan(sequential)
+
+identical(res1, res2)
 
 #------------
 
