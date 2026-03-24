@@ -1,9 +1,2 @@
-Error in checkNumberOfLocalWorkers(workers) : 
-  Attempting to set up 8 localhost parallel workers with only 2 CPU cores available for this R process (per ‘system’), which could result in a 400% load. The hard limit is set to 300%. Overusing the CPUs has negative impact on the current R process, but also on all other processes of yours and others running on the same machine. See help("parallelly.maxWorkers.localhost", package = "parallelly") for further explanations and how to override the hard limit that triggered this error
-In addition: Warning messages:
-1: In checkNumberOfLocalWorkers(workers) :
-  Careful, you are setting up 4 localhost parallel workers with only 2 CPU cores available for this R process (per ‘system’), which could result in a 200% load. The soft limit is set to 100%. Overusing the CPUs has negative impact on the current R process, but also on all other processes of yours and others running on the same machine. See help("parallelly.maxWorkers.localhost", package = "parallelly") for further explanations and how to override the soft limit that triggered this warning
-2: In checkNumberOfLocalWorkers(workers) :
-  Careful, you are setting up 4 localhost parallel workers with only 2 CPU cores available for this R process (per ‘system’), which could result in a 200% load. The soft limit is set to 100%. Overusing the CPUs has negative impact on the current R process, but also on all other processes of yours and others running on the same machine. See help("parallelly.maxWorkers.localhost", package = "parallelly") for further explanations and how to override the soft limit that triggered this warning
-3: In checkNumberOfLocalWorkers(workers) :
-  Careful, you are setting up 4 localhost parallel workers with only 2 CPU cores available for this R process (per ‘system’), which could result in a 200% load. The soft limit is set to 100%. Overusing the CPUs has negative impact on the current R process, but also on all other processes of yours and others running on the same machine. See help("parallelly.maxWorkers.localhost", package = "parallelly") for further explanations and how to override the soft limit that triggered this warning
+Error: ‘length(future.scheduling) == 1L’ is not TRUE
+Timing stopped at: 0.003 0.005 0.008
