@@ -108,21 +108,39 @@ run_benchmark <- function(workers,
   plan(multisession, workers = workers)
   
   t <- system.time({
-    res <- future_lapply(
-      X = seq_along(scenario_list),
-      FUN = function(i) {
-        performAnalyses(
-          scenario_list = structure(list(scenario_list[[i]]), class = "scenario_list"),
-          target_rates = rep(0.3, 3),
-          method_names = "berry",
-          n_mcmc_iterations = n_mcmc_iterations,
-          verbose = FALSE
-        )
-      },
-      future.seed = TRUE,
-      future.scheduling = scheduling,
-      future.chunk.size = chunk_size
-    )
+    
+    if (!is.null(chunk_size)) {
+      res <- future_lapply(
+        X = seq_along(scenario_list),
+        FUN = function(i) {
+          performAnalyses(
+            scenario_list = structure(list(scenario_list[[i]]), class = "scenario_list"),
+            target_rates = rep(0.3, 3),
+            method_names = "berry",
+            n_mcmc_iterations = n_mcmc_iterations,
+            verbose = FALSE
+          )
+        },
+        future.seed = TRUE,
+        future.chunk.size = chunk_size
+      )
+      
+    } else {
+      res <- future_lapply(
+        X = seq_along(scenario_list),
+        FUN = function(i) {
+          performAnalyses(
+            scenario_list = structure(list(scenario_list[[i]]), class = "scenario_list"),
+            target_rates = rep(0.3, 3),
+            method_names = "berry",
+            n_mcmc_iterations = n_mcmc_iterations,
+            verbose = FALSE
+          )
+        },
+        future.seed = TRUE,
+        future.scheduling = scheduling
+      )
+    }
   })
   
   plan(sequential)
@@ -131,9 +149,7 @@ run_benchmark <- function(workers,
     workers = workers,
     scheduling = if (is.null(scheduling)) NA else scheduling,
     chunk_size = if (is.null(chunk_size)) NA else chunk_size,
-    elapsed = unname(t["elapsed"]),
-    user.self = unname(t["user.self"]),
-    sys.self = unname(t["sys.self"])
+    elapsed = unname(t["elapsed"])
   )
 }
 
