@@ -1,2 +1,114 @@
-Error: Please provide a (vector of) strings for the argument 'method_names'
- Must be one of 'berry', 'exnex', 'exnex_adj', 'pooled', 'stratified'
+getPostQuantiles <- function (
+    
+  ## The method to be applied to the likelihood and the quantiles of the posterior
+  method_name,
+  quantiles,
+  
+  ## Scenario data
+  scenario_data,
+  
+  ## Differences between cohorts
+  calc_differences  = NULL,
+  
+  ## JAGS parameters
+  j_parameters,
+  j_model_file,
+  j_data,
+  
+  ## MCMC Parameters
+  n_mcmc_iterations = 1e4,
+  
+  ## Where to save one of the posterior response rates approximations provided by JAGS
+  save_path         = NULL,
+  save_trial        = NULL
+  
+) {
+  
+  endpoint <- if (!is.null(scenario_data$endpoint)) scenario_data$endpoint else "binary"
+  
+  if (endpoint == "binary") {
+    
+    if (is.null(dim(scenario_data$n_responders))) {
+      
+      scenario_data$n_responders <- t(convertVector2Matrix(scenario_data$n_responders))
+      scenario_data$n_subjects   <- t(convertVector2Matrix(scenario_data$n_subjects))
+      
+    }
+    
+    n_analyses <- nrow(scenario_data$n_responders)
+    
+  } else {
+    
+    if (is.null(dim(scenario_data$y))) {
+      
+      scenario_data$y          <- t(convertVector2Matrix(scenario_data$y))
+      scenario_data$n_subjects <- t(convertVector2Matrix(scenario_data$n_subjects))
+      
+      if (!is.null(scenario_data$sds_observed)) {
+        scenario_data$sds_observed <- t(convertVector2Matrix(scenario_data$sds_observed))
+      }
+    }
+    
+    n_analyses <- nrow(scenario_data$y)
+  }
+  
+  ## Create random index for saving one of the posterior response rates
+  if (is.null(save_trial) && !is.null(save_path)) {
+    save_trial <- sample(seq_len(n_analyses), size = 1)
+  }
+  
+  posterior_quantiles_list <- future.apply::future_lapply(
+    X = seq_len(n_analyses),
+    FUN = function(j) {
+      
+      if (endpoint == "binary") {
+        
+        getPostQuantilesOfTrial(
+          n_responders      = as.numeric(scenario_data$n_responders[j, ]),
+          n_subjects        = as.numeric(scenario_data$n_subjects[j, ]),
+          y                 = NULL,
+          sds               = NULL,
+          j_data            = j_data,
+          j_parameters      = j_parameters,
+          j_model_file      = j_model_file,
+          method_name       = method_name,
+          quantiles         = quantiles,
+          calc_differences  = calc_differences,
+          n_mcmc_iterations = n_mcmc_iterations,
+          save_path         = save_path,
+          save_trial        = save_trial,
+          trial_index       = j,
+          endpoint          = "binary"
+        )
+        
+      } else {
+        
+        getPostQuantilesOfTrial(
+          n_responders      = NULL,
+          n_subjects        = as.numeric(scenario_data$n_subjects[j, ]),
+          y                 = as.numeric(scenario_data$y[j, ]),
+          sds               = if (!is.null(scenario_data$sds_observed))
+            as.numeric(scenario_data$sds_observed[j, ])
+          else NULL,
+          j_data            = j_data,
+          j_parameters      = j_parameters,
+          j_model_file      = j_model_file,
+          method_name       = method_name,
+          quantiles         = quantiles,
+          calc_differences  = calc_differences,
+          n_mcmc_iterations = n_mcmc_iterations,
+          save_path         = save_path,
+          save_trial        = save_trial,
+          trial_index       = j,
+          endpoint          = "normal"
+        )
+      }
+      
+    },
+    future.seed = TRUE,
+    future.scheduling = 1
+  )
+  
+  return(posterior_quantiles_list)
+  
+}
