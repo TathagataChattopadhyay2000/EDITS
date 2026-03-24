@@ -1,2 +1,28 @@
-Error: ‘length(future.scheduling) == 1L’ is not TRUE
-Timing stopped at: 0.003 0.005 0.008
+> results_chunk
+   workers scheduling chunk_size elapsed
+1        2         NA          5  25.074
+2        2         NA         10  22.621
+3        2         NA         20  21.982
+4        4         NA          5  14.312
+5        4         NA         10  12.563
+6        4         NA         20  12.236
+7        8         NA          5  16.890
+8        8         NA         10   9.125
+9        8         NA         20   7.565
+10      16         NA          5  32.639
+11      16         NA         10  17.376
+12      16         NA         20   9.547
+> results_sched
+   workers scheduling chunk_size elapsed user.self sys.self
+1        2          1         NA  11.971     0.481    0.103
+2        2          2         NA  12.185     0.547    0.105
+3        2          4         NA  12.507     0.711    0.133
+4        4          1         NA   6.585     0.540    0.068
+5        4          2         NA   6.702     0.862    0.077
+6        4          4         NA   6.982     1.470    0.145
+7        8          1         NA   4.677     1.273    0.102
+8        8          2         NA   4.954     2.593    0.177
+9        8          4         NA   6.189     4.658    0.347
+10      16          1         NA   6.748     4.242    0.267
+11      16          2         NA  11.327     8.666    0.617
+12      16          4         NA  20.658    17.282    1.277
