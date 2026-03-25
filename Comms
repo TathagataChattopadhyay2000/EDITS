@@ -1,107 +1,46 @@
+model {
 
-      ## Bayesian Hierarchical Model: ExNex
-      ## Model taken from Neuenschwander, Beat, et al.
-      ##  'Robust exchangeability designs for early phase clinical trials with multiple strata.'
-      ##  Pharmaceutical statistics 15.2 (2016): 123-134.
-      ##  https://doi.org/10.1002/pst.1730
-      
-      model {
-      
-        # prior distributions for EX-parameters
-        for (jj in 1:Nexch) {
-          mu[jj] ~ dnorm(mu_mean[jj], mu_prec[jj])
-          prior_tau_prec[jj] <- pow(tau_HN_scale[jj], -2)
-          tau[jj] ~ dnorm(0, prior_tau_prec[jj])I(0.001, )
-          prec_tau[jj] <- pow(tau[jj], -2)
-        }
-        
-        # log-odds parameters under EX
-        for (jj in 1:Nexch) {
-          for (j in 1:Nstrata) {
-            re[jj,j] ~ dnorm(0, prec_tau[jj])
-            LogOdds[jj, j] <- mu[jj] + re[jj, j]
-          }
-        }
-        
-        # log-odds parameters under NEX
-        for (j in 1:Nstrata) {
-          LogOdds[Nmix, j] ~ dnorm(nex_mean[j], nex_prec[j]) ## Deviation from Appendix of Neuenschwander:
-        }                                                    ## Different parameters for each
-                                                             ## Nex component possible.
-        
-        # latent mixture indicators:
-        # exch_index: categorial 1, ..., Nmix = Nexch + 1
-        # exch: Nstrata x Nmix matrix of 0/1 elements
-        for (j in 1:Nstrata) {
-          exch_index[j] ~ dcat(pMix[1:Nmix])
-          for (jj in 1:Nmix) {
-            exch[j, jj] <- equals(exch_index[j], jj)
-          }
-        }
-        
-        # pick theta
-        for (j in 1:Nstrata) {
-          theta[j] <- LogOdds[exch_index[j], j]
-        }
-        
-        # likelihood part
-        for (i in 1:Nstrata) {
-          logit(p[i]) <- theta[i]
-          # p_success[i] <- step(p[i] - p_cut) ## Deviation from Appendix of Neuenschwander:
-          r[i] ~ dbin(p[i], n[i])              ## No posterior response rate assessment within JAGS.
-        }
-      
-      }
+  # Mixture on mu and tau for EX components
+  for (jj in 1:Nexch) {
 
+    z_mu[jj] ~ dcat(w_mu[1:K_mu])
+    mu[jj] ~ dnorm(mu_mean[z_mu[jj], jj], mu_prec[z_mu[jj], jj])
 
+    z_tau[jj] ~ dcat(w_tau[1:K_tau])
+    tau[jj] ~ dnorm(0, tau_prec[z_tau[jj], jj]) I(0.001,)
+    prec_tau[jj] <- pow(tau[jj], -2)
 
-      ## Bayesian Hierarchical Model: ExNex with mixture prior
+    for (j in 1:Nstrata) {
+      re[jj,j] ~ dnorm(0, prec_tau[jj])
+      LogOdds[jj,j] <- mu[jj] + re[jj,j]
+    }
+  }
 
-      model {
+  # Mixture for the NEX component
+  for (j in 1:Nstrata) {
 
-        # prior distributions for EX-parameters
-        for (jj in 1:Nexch) {
-          z_mu[jj] ~ dcat(w_mu[1:K_mu])
-          mu[jj] ~ dnorm(mu_mean[z_mu[jj], jj], mu_prec[z_mu[jj], jj])
-          prior_tau_prec[jj] <- pow(tau_HN_scale[jj], -2)
-          tau[jj] ~ dnorm(0, prior_tau_prec[jj])I(0.001, )
-          prec_tau[jj] <- pow(tau[jj], -2)
-        }
+    z_nex_mu[j] ~ dcat(w_nex_mu[1:K_nex_mu])
+    mu_nex[j] ~ dnorm(nex_mu_mean[z_nex_mu[j], j],
+                      nex_mu_prec[z_nex_mu[j], j])
 
-        # log-odds parameters under EX
-        for (jj in 1:Nexch) {
-          for (j in 1:Nstrata) {
-            re[jj,j] ~ dnorm(0, prec_tau[jj])
-            LogOdds[jj, j] <- mu[jj] + re[jj, j]
-          }
-        }
+    z_nex_tau[j] ~ dcat(w_nex_tau[1:K_nex_tau])
+    tau_nex[j] ~ dnorm(0, nex_tau_prec[z_nex_tau[j], j]) I(0.001,)
+    prec_tau_nex[j] <- pow(tau_nex[j], -2)
 
-        # log-odds parameters under NEX
-        for (j in 1:Nstrata) {
-          LogOdds[Nmix, j] ~ dnorm(nex_mean[j], nex_prec[j]) ## Deviation from Appendix of Neuenschwander:
-        }                                                    ## Different parameters for each
-                                                             ## Nex component possible.
+    re_nex[j] ~ dnorm(0, prec_tau_nex[j])
+    LogOdds[Nmix, j] <- mu_nex[j] + re_nex[j]
+  }
 
-        # latent mixture indicators:
-        # exch_index: categorial 1, ..., Nmix = Nexch + 1
-        # exch: Nstrata x Nmix matrix of 0/1 elements
-        for (j in 1:Nstrata) {
-          exch_index[j] ~ dcat(pMix[1:Nmix])
-          for (jj in 1:Nmix) {
-            exch[j, jj] <- equals(exch_index[j], jj)
-          }
-        }
+  # EX vs NEX mixture allocation
+  for (j in 1:Nstrata) {
+    exch_index[j] ~ dcat(pMix[1:Nmix])      # Nmix = Nexch + 1
+    theta[j] <- LogOdds[exch_index[j], j]
+  }
 
-        # pick theta
-        for (j in 1:Nstrata) {
-          theta[j] <- LogOdds[exch_index[j], j]
-        }
+  # Likelihood
+  for (j in 1:Nstrata) {
+    logit(p[j]) <- theta[j]
+    r[j] ~ dbin(p[j], n[j])
+  }
 
-        # likelihood part
-        for (i in 1:Nstrata) {
-          logit(p[i]) <- theta[i]
-          # p_success[i] <- step(p[i] - p_cut) ## Deviation from Appendix of Neuenschwander:
-          r[i] ~ dbin(p[i], n[i])              ## No posterior response rate assessment within JAGS.
-        }
-
-      }
+}
