@@ -1,43 +1,63 @@
 model {
 
-  # Mixture on mu and tau for EX components
+  #################################################################
+  # EX branch: mixture on mu and tau for exchangeable components
+  #################################################################
+
   for (jj in 1:Nexch) {
 
+    # Mixture prior on EX mean
     z_mu[jj] ~ dcat(w_mu[1:K_mu])
-    mu[jj] ~ dnorm(mu_mean[z_mu[jj], jj], mu_prec[z_mu[jj], jj])
+    mu[jj] ~ dnorm(mu_mean[z_mu[jj], jj],
+                   mu_prec[z_mu[jj], jj])
 
+    # Mixture prior on EX heterogeneity
     z_tau[jj] ~ dcat(w_tau[1:K_tau])
-    tau[jj] ~ dnorm(0, tau_prec[z_tau[jj], jj]) I(0.001,)
+    tau[jj] ~ dnorm(0, tau_prec[z_tau[jj], jj]) I(0.001, )
     prec_tau[jj] <- pow(tau[jj], -2)
 
+    # Exchangeable stratum-specific log-odds
     for (j in 1:Nstrata) {
-      re[jj,j] ~ dnorm(0, prec_tau[jj])
-      LogOdds[jj,j] <- mu[jj] + re[jj,j]
+      re[jj, j] ~ dnorm(0, prec_tau[jj])
+      LogOdds[jj, j] <- mu[jj] + re[jj, j]
     }
   }
 
-  # Mixture for the NEX component
+
+  #################################################################
+  # NEX branch: mixture prior directly on non-exchangeable log-odds
+  #################################################################
+
   for (j in 1:Nstrata) {
 
-    z_nex_mu[j] ~ dcat(w_nex_mu[1:K_nex_mu])
-    mu_nex[j] ~ dnorm(nex_mu_mean[z_nex_mu[j], j],
-                      nex_mu_prec[z_nex_mu[j], j])
+    # Each stratum chooses one NEX prior component
+    z_nex[j] ~ dcat(w_nex[1:K_nex])
 
-    z_nex_tau[j] ~ dcat(w_nex_tau[1:K_nex_tau])
-    tau_nex[j] ~ dnorm(0, nex_tau_prec[z_nex_tau[j], j]) I(0.001,)
-    prec_tau_nex[j] <- pow(tau_nex[j], -2)
-
-    re_nex[j] ~ dnorm(0, prec_tau_nex[j])
-    LogOdds[Nmix, j] <- mu_nex[j] + re_nex[j]
+    # Direct mixture prior on stratum-specific NEX log-odds
+    LogOdds[Nmix, j] ~ dnorm(nex_mean[z_nex[j], j],
+                             nex_prec[z_nex[j], j])
   }
 
-  # EX vs NEX mixture allocation
+
+  #################################################################
+  # EX vs NEX allocation
+  #################################################################
+
   for (j in 1:Nstrata) {
-    exch_index[j] ~ dcat(pMix[1:Nmix])      # Nmix = Nexch + 1
+    exch_index[j] ~ dcat(pMix[1:Nmix])   # Nmix = Nexch + 1
+
+    for (jj in 1:Nmix) {
+      exch[j, jj] <- equals(exch_index[j], jj)
+    }
+
     theta[j] <- LogOdds[exch_index[j], j]
   }
 
+
+  #################################################################
   # Likelihood
+  #################################################################
+
   for (j in 1:Nstrata) {
     logit(p[j]) <- theta[j]
     r[j] ~ dbin(p[j], n[j])
