@@ -1,4 +1,3 @@
-
 library(bhmbasket)
 library(ggplot2)
 
@@ -7,108 +6,90 @@ trial_data <- createTrial(
   n_responders = c(10, 11, 9)
 )
 
-pri <- setPriorParametersStratifiedMix(
+pri <- setPriorParametersPooledMix(
   w = c(0.8, 0.2),
-  a_j = rbind(
-    c(10, 12,  8),
-    c( 1,  1,  1)
-  ),
-  b_j = rbind(
-    c(30, 28, 32),
-    c( 1,  1,  1)
-  )
+  a = c(10, 1),
+  b = c(30, 1)
 )
 
 res <- performAnalyses(
   scenario_list         = trial_data,
-  method_names          = "stratified_mix",
+  method_names          = "pooled_mix",
   prior_parameters_list = pri,
   target_rates          = c(0.2, 0.3, 0.2),
   verbose               = FALSE
 )
 
-w   <- pri$stratified_mix$w
-a_j <- pri$stratified_mix$a_j
-b_j <- pri$stratified_mix$b_j
+w <- pri$pooled_mix$w
+a <- pri$pooled_mix$a
+b <- pri$pooled_mix$b
 
 n <- as.numeric(res$scenario_1$scenario_data$n_subjects[1, ])
 r <- as.numeric(res$scenario_1$scenario_data$n_responders[1, ])
-obs_rate <- r / n
 
-qmat <- res$scenario_1$quantiles_list$stratified_mix[[1]]
+n_total <- sum(n)
+r_total <- sum(r)
+obs_rate_pooled <- r_total / n_total
 
-posterior_mean <- as.numeric(qmat["Mean", ])
-posterior_sd   <- as.numeric(qmat["SD", ])
-posterior_q025 <- as.numeric(qmat["2.5%", ])
-posterior_q50  <- as.numeric(qmat["50%", ])
-posterior_q975 <- as.numeric(qmat["97.5%", ])
+qmat <- res$scenario_1$quantiles_list$pooled_mix[[1]]
 
-shape_1 <- a_j + matrix(r, nrow = nrow(a_j), ncol = ncol(a_j), byrow = TRUE)
-shape_2 <- b_j + matrix(n - r, nrow = nrow(b_j), ncol = ncol(a_j), byrow = TRUE)
+posterior_mean <- as.numeric(qmat["Mean", 1])
+posterior_sd   <- as.numeric(qmat["SD", 1])
+posterior_q025 <- as.numeric(qmat["2.5%", 1])
+posterior_q50  <- as.numeric(qmat["50%", 1])
+posterior_q975 <- as.numeric(qmat["97.5%", 1])
 
-w_post <- matrix(NA_real_, nrow = length(w), ncol = ncol(a_j))
+shape_1 <- a + r_total
+shape_2 <- b + n_total - r_total
 
-for (j in seq_len(ncol(a_j))) {
-  log_fk <- lbeta(shape_1[, j], shape_2[, j]) - lbeta(a_j[, j], b_j[, j])
-  log_w  <- log(w) + log_fk
-  w_post[, j] <- exp(log_w - max(log_w))
-  w_post[, j] <- w_post[, j] / sum(w_post[, j])
-}
+log_fk <- lbeta(shape_1, shape_2) - lbeta(a, b)
+log_w  <- log(w) + log_fk
+w_post <- exp(log_w - max(log_w))
+w_post <- w_post / sum(w_post)
 
-prior_mean <- numeric(ncol(a_j))
-
-for (j in seq_len(ncol(a_j))) {
-  prior_mean_k <- a_j[, j] / (a_j[, j] + b_j[, j])
-  prior_mean[j] <- sum(w * prior_mean_k)
-}
+prior_mean_k <- a / (a + b)
+prior_mean <- sum(w * prior_mean_k)
 
 summary_table <- data.frame(
-  cohort = paste0("C", 1:3),
-  n = n,
-  r = r,
-  observed_rate = obs_rate,
+  total_n = n_total,
+  total_r = r_total,
+  observed_rate_pooled = obs_rate_pooled,
   prior_mean = prior_mean,
   posterior_mean = posterior_mean,
   posterior_sd = posterior_sd,
   posterior_q025 = posterior_q025,
   posterior_median = posterior_q50,
   posterior_q975 = posterior_q975,
-  prior_weight_comp1 = rep(w[1], 3),
-  prior_weight_comp2 = rep(w[2], 3),
-  posterior_weight_comp1 = w_post[1, ],
-  posterior_weight_comp2 = w_post[2, ]
+  prior_weight_comp1 = w[1],
+  prior_weight_comp2 = w[2],
+  posterior_weight_comp1 = w_post[1],
+  posterior_weight_comp2 = w_post[2]
 )
 
 print(summary_table)
 
 weights_df <- data.frame(
-  cohort = rep(paste0("C", 1:3), each = 4),
-  type = rep(c("Prior", "Prior", "Posterior", "Posterior"), times = 3),
-  component = rep(c("Comp1", "Comp2", "Comp1", "Comp2"), times = 3),
-  weight = c(
-    w[1], w[2], w_post[1, 1], w_post[2, 1],
-    w[1], w[2], w_post[1, 2], w_post[2, 2],
-    w[1], w[2], w_post[1, 3], w_post[2, 3]
-  )
+  type = c("Prior", "Prior", "Posterior", "Posterior"),
+  component = c("Comp1", "Comp2", "Comp1", "Comp2"),
+  weight = c(w[1], w[2], w_post[1], w_post[2])
 )
 
 p_weights <- ggplot(weights_df, aes(x = component, y = weight, fill = type)) +
   geom_col(position = "dodge") +
-  facet_wrap(~ cohort) +
   ylim(0, 1)
 
 print(p_weights)
 
 mean_df <- data.frame(
-  cohort = paste0("C", 1:3),
+  group = "Pooled",
   prior_mean = prior_mean,
-  observed_rate = obs_rate,
+  observed_rate = obs_rate_pooled,
   posterior_mean = posterior_mean,
   posterior_q025 = posterior_q025,
   posterior_q975 = posterior_q975
 )
 
-p_means <- ggplot(mean_df, aes(x = cohort)) +
+p_means <- ggplot(mean_df, aes(x = group)) +
   geom_point(aes(y = posterior_mean, shape = "Posterior mean"), size = 3) +
   geom_errorbar(aes(ymin = posterior_q025, ymax = posterior_q975, color = "95% posterior interval"), width = 0.15) +
   geom_point(aes(y = observed_rate, shape = "Observed rate"), size = 3) +
@@ -125,38 +106,27 @@ print(p_means)
 
 grid <- seq(0, 1, length.out = 2000)
 
-dens_df <- NULL
+prior_comp1 <- dbeta(grid, a[1], b[1])
+prior_comp2 <- dbeta(grid, a[2], b[2])
+prior_mix   <- w[1] * prior_comp1 + w[2] * prior_comp2
 
-for (j in seq_len(ncol(a_j))) {
-  prior_comp1 <- dbeta(grid, a_j[1, j], b_j[1, j])
-  prior_comp2 <- dbeta(grid, a_j[2, j], b_j[2, j])
-  prior_mix   <- w[1] * prior_comp1 + w[2] * prior_comp2
-  
-  post_comp1 <- dbeta(grid, shape_1[1, j], shape_2[1, j])
-  post_comp2 <- dbeta(grid, shape_1[2, j], shape_2[2, j])
-  post_mix   <- w_post[1, j] * post_comp1 + w_post[2, j] * post_comp2
-  
-  temp <- data.frame(
-    p = rep(grid, 6),
-    density = c(prior_comp1, prior_comp2, prior_mix, post_comp1, post_comp2, post_mix),
-    curve = rep(c("Prior comp1", "Prior comp2", "Prior mixture",
-                  "Posterior comp1", "Posterior comp2", "Posterior mixture"),
-                each = length(grid)),
-    cohort = paste0("C", j)
-  )
-  
-  dens_df <- rbind(dens_df, temp)
-}
+post_comp1 <- dbeta(grid, shape_1[1], shape_2[1])
+post_comp2 <- dbeta(grid, shape_1[2], shape_2[2])
+post_mix   <- w_post[1] * post_comp1 + w_post[2] * post_comp2
 
-obs_df <- data.frame(
-  cohort = paste0("C", 1:3),
-  obs_rate = obs_rate
+dens_df <- data.frame(
+  p = rep(grid, 6),
+  density = c(prior_comp1, prior_comp2, prior_mix, post_comp1, post_comp2, post_mix),
+  curve = rep(c("Prior comp1", "Prior comp2", "Prior mixture",
+                "Posterior comp1", "Posterior comp2", "Posterior mixture"),
+              each = length(grid))
 )
+
+obs_df <- data.frame(obs_rate = obs_rate_pooled)
 
 p_dens <- ggplot(dens_df, aes(x = p, y = density, color = curve, linetype = curve)) +
   geom_line() +
-  geom_vline(data = obs_df, aes(xintercept = obs_rate), inherit.aes = FALSE) +
-  facet_wrap(~ cohort, scales = "free_y")
+  geom_vline(data = obs_df, aes(xintercept = obs_rate), inherit.aes = FALSE)
 
 print(p_dens)
 
@@ -164,7 +134,6 @@ dens_mix_only <- dens_df[dens_df$curve %in% c("Prior mixture", "Posterior mixtur
 
 p_mix_only <- ggplot(dens_mix_only, aes(x = p, y = density, color = curve, linetype = curve)) +
   geom_line(linewidth = 1) +
-  geom_vline(data = obs_df, aes(xintercept = obs_rate), inherit.aes = FALSE) +
-  facet_wrap(~ cohort, scales = "free_y")
+  geom_vline(data = obs_df, aes(xintercept = obs_rate), inherit.aes = FALSE)
 
 print(p_mix_only)
