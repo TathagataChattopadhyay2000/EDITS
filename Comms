@@ -1,139 +1,46 @@
-library(bhmbasket)
-library(ggplot2)
+> summary_table <- data.frame(
++   total_n = n_total,
++   total_r = r_total,
++   observed_rate_pooled = obs_rate_pooled,
++   prior_mean = prior_mean,
++   posterior_mean = posterior_mean,
++   posterior_sd = posterior_sd,
++   posterior_q025 = posterior_q025,
++   posterior_median = posterior_q50,
++   posterior_q975 = posterior_q975,
++   prior_weight_comp1 = w[1],
++   prior_weight_comp2 = w[2],
++   posterior_weight_comp1 = w_post[1],
++   posterior_weight_comp2 = w_post[2]
++ )
+Error in data.frame(total_n = n_total, total_r = r_total, observed_rate_pooled = obs_rate_pooled,  : 
+  arguments imply differing number of rows: 1, 0
 
-trial_data <- createTrial(
-  n_subjects   = c(20, 20, 20),
-  n_responders = c(10, 11, 9)
-)
-
-pri <- setPriorParametersPooledMix(
-  w = c(0.8, 0.2),
-  a = c(10, 1),
-  b = c(30, 1)
-)
-
-res <- performAnalyses(
-  scenario_list         = trial_data,
-  method_names          = "pooled_mix",
-  prior_parameters_list = pri,
-  target_rates          = c(0.2, 0.3, 0.2),
-  verbose               = FALSE
-)
-
-w <- pri$pooled_mix$w
-a <- pri$pooled_mix$a
-b <- pri$pooled_mix$b
-
-n <- as.numeric(res$scenario_1$scenario_data$n_subjects[1, ])
-r <- as.numeric(res$scenario_1$scenario_data$n_responders[1, ])
-
-n_total <- sum(n)
-r_total <- sum(r)
-obs_rate_pooled <- r_total / n_total
-
-qmat <- res$scenario_1$quantiles_list$pooled_mix[[1]]
-
-posterior_mean <- as.numeric(qmat["Mean", 1])
-posterior_sd   <- as.numeric(qmat["SD", 1])
-posterior_q025 <- as.numeric(qmat["2.5%", 1])
-posterior_q50  <- as.numeric(qmat["50%", 1])
-posterior_q975 <- as.numeric(qmat["97.5%", 1])
-
-shape_1 <- a + r_total
-shape_2 <- b + n_total - r_total
-
-log_fk <- lbeta(shape_1, shape_2) - lbeta(a, b)
-log_w  <- log(w) + log_fk
-w_post <- exp(log_w - max(log_w))
-w_post <- w_post / sum(w_post)
-
-prior_mean_k <- a / (a + b)
-prior_mean <- sum(w * prior_mean_k)
-
-summary_table <- data.frame(
-  total_n = n_total,
-  total_r = r_total,
-  observed_rate_pooled = obs_rate_pooled,
-  prior_mean = prior_mean,
-  posterior_mean = posterior_mean,
-  posterior_sd = posterior_sd,
-  posterior_q025 = posterior_q025,
-  posterior_median = posterior_q50,
-  posterior_q975 = posterior_q975,
-  prior_weight_comp1 = w[1],
-  prior_weight_comp2 = w[2],
-  posterior_weight_comp1 = w_post[1],
-  posterior_weight_comp2 = w_post[2]
-)
-
-print(summary_table)
-
-weights_df <- data.frame(
-  type = c("Prior", "Prior", "Posterior", "Posterior"),
-  component = c("Comp1", "Comp2", "Comp1", "Comp2"),
-  weight = c(w[1], w[2], w_post[1], w_post[2])
-)
-
-p_weights <- ggplot(weights_df, aes(x = component, y = weight, fill = type)) +
-  geom_col(position = "dodge") +
-  ylim(0, 1)
-
-print(p_weights)
-
-mean_df <- data.frame(
-  group = "Pooled",
-  prior_mean = prior_mean,
-  observed_rate = obs_rate_pooled,
-  posterior_mean = posterior_mean,
-  posterior_q025 = posterior_q025,
-  posterior_q975 = posterior_q975
-)
-
-p_means <- ggplot(mean_df, aes(x = group)) +
-  geom_point(aes(y = posterior_mean, shape = "Posterior mean"), size = 3) +
-  geom_errorbar(aes(ymin = posterior_q025, ymax = posterior_q975, color = "95% posterior interval"), width = 0.15) +
-  geom_point(aes(y = observed_rate, shape = "Observed rate"), size = 3) +
-  geom_point(aes(y = prior_mean, shape = "Prior mean"), size = 3) +
-  scale_shape_manual(values = c(
-    "Posterior mean" = 16,
-    "Observed rate" = 17,
-    "Prior mean" = 15
-  )) +
-  scale_color_manual(values = c("95% posterior interval" = "black")) +
-  labs(shape = NULL, color = NULL)
-
-print(p_means)
-
-grid <- seq(0, 1, length.out = 2000)
-
-prior_comp1 <- dbeta(grid, a[1], b[1])
-prior_comp2 <- dbeta(grid, a[2], b[2])
-prior_mix   <- w[1] * prior_comp1 + w[2] * prior_comp2
-
-post_comp1 <- dbeta(grid, shape_1[1], shape_2[1])
-post_comp2 <- dbeta(grid, shape_1[2], shape_2[2])
-post_mix   <- w_post[1] * post_comp1 + w_post[2] * post_comp2
-
-dens_df <- data.frame(
-  p = rep(grid, 6),
-  density = c(prior_comp1, prior_comp2, prior_mix, post_comp1, post_comp2, post_mix),
-  curve = rep(c("Prior comp1", "Prior comp2", "Prior mixture",
-                "Posterior comp1", "Posterior comp2", "Posterior mixture"),
-              each = length(grid))
-)
-
-obs_df <- data.frame(obs_rate = obs_rate_pooled)
-
-p_dens <- ggplot(dens_df, aes(x = p, y = density, color = curve, linetype = curve)) +
-  geom_line() +
-  geom_vline(data = obs_df, aes(xintercept = obs_rate), inherit.aes = FALSE)
-
-print(p_dens)
-
-dens_mix_only <- dens_df[dens_df$curve %in% c("Prior mixture", "Posterior mixture"), ]
-
-p_mix_only <- ggplot(dens_mix_only, aes(x = p, y = density, color = curve, linetype = curve)) +
-  geom_line(linewidth = 1) +
-  geom_vline(data = obs_df, aes(xintercept = obs_rate), inherit.aes = FALSE)
-
-print(p_mix_only)
+> print(summary_table)
+  cohort  n  r observed_rate prior_mean posterior_mean posterior_sd posterior_q025 posterior_median posterior_q975 prior_weight_comp1
+1     C1 20 10          0.50       0.30      0.3936042    0.1125561      0.2299910        0.3692719      0.6661079                0.8
+2     C2 20 11          0.55       0.34      0.4374418    0.1096541      0.2758848        0.4138510      0.6970287                0.8
+3     C3 20  9          0.45       0.26      0.3525954    0.1157767      0.1891843        0.3246761      0.6168208                0.8
+  prior_weight_comp2 posterior_weight_comp1 posterior_weight_comp2
+1                0.2              0.6383749              0.3616251
+2                0.2              0.6662469              0.3337531
+3                0.2              0.5954606              0.4045394
+> weights_df <- data.frame(
++   type = c("Prior", "Prior", "Posterior", "Posterior"),
++   component = c("Comp1", "Comp2", "Comp1", "Comp2"),
++   weight = c(w[1], w[2], w_post[1], w_post[2])
++ )
+> p_weights <- ggplot(weights_df, aes(x = component, y = weight, fill = type)) +
++   geom_col(position = "dodge") +
++   ylim(0, 1)
+> print(p_weights)
+> mean_df <- data.frame(
++   group = "Pooled",
++   prior_mean = prior_mean,
++   observed_rate = obs_rate_pooled,
++   posterior_mean = posterior_mean,
++   posterior_q025 = posterior_q025,
++   posterior_q975 = posterior_q975
++ )
+Error in data.frame(group = "Pooled", prior_mean = prior_mean, observed_rate = obs_rate_pooled,  : 
+  arguments imply differing number of rows: 1, 0
