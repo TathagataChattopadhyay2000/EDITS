@@ -7,10 +7,17 @@ mean_df <- data.frame(
   posterior_q975 = posterior_q975
 )
 
-p_means <- ggplot(mean_df, aes(x = cohort, y = posterior_mean)) +
-  geom_point(size = 3) +
-  geom_errorbar(aes(ymin = posterior_q025, ymax = posterior_q975), width = 0.15) +
-  geom_point(aes(y = observed_rate), shape = 17, size = 3) +
-  geom_point(aes(y = prior_mean), shape = 15, size = 3)
+p_means <- ggplot(mean_df, aes(x = cohort)) +
+  geom_point(aes(y = posterior_mean, shape = "Posterior mean"), size = 3) +
+  geom_errorbar(aes(ymin = posterior_q025, ymax = posterior_q975, color = "95% posterior interval"), width = 0.15) +
+  geom_point(aes(y = observed_rate, shape = "Observed rate"), size = 3) +
+  geom_point(aes(y = prior_mean, shape = "Prior mean"), size = 3) +
+  scale_shape_manual(values = c(
+    "Posterior mean" = 16,
+    "Observed rate" = 17,
+    "Prior mean" = 15
+  )) +
+  scale_color_manual(values = c("95% posterior interval" = "black")) +
+  labs(shape = NULL, color = NULL)
 
 print(p_means)
