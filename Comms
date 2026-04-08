@@ -1,198 +1,55 @@
-2.2.6. Prior Parameters of the Hierarchical Methods
-All four hierarchical methods require prior values for the parameters mM, vM and
-sM. The prior value of sM is informative for the amount of borrowing across cohorts,
-because information about M is limited due to the usually small number of cohorts
-[Berry et al., 2013, Neuenschwander et al., 2016]. Neuenschwander et al. [2016] show,
-that posterior values of M from 0:125 to 1 correspond to large to small shrinkage and
-suggest using 0:5 or 1 as prior values for sM, as those values yield prior distributions
-with 95% credible intervals that cover above values of M, as shown in Table 2.1. Several
-Table 2.1.: Median and 95% credible intervals for M  HN(sM),
-from Neuenschwander et al., Table 2.
-sM Median(M) 95% Credible Interval for M
-0.5 0.34 (0.016, 1.12)
-1 0.67 (0.031, 2.24)
-distribution classes other than the half-normal prior for M have been considered, such as
-the uniform, half-Cauchy and half-t distribution [Spiegelhalter et al., 2004, Gelman et al.,
-2006, Polson et al., 2012], as well as an inverse-gamma prior for 2M
-[Berry et al., 2013].
-However, for the ease of comparability with the dierent methods under consideration,
-the half-normal distribution suggested in Spiegelhalter et al. [2004], Neuenschwander
-et al. [2016] with dierent prior values for sM is utilized.
-17
-A formula for a vague prior value of vM can be derived via the law of total variance
-[Neuenschwander et al., 2016]. The variance of logit(pMj
-) can be decomposed into
-V
-
-logit(pMj
-)
-
-= E
-
-V[logit(pMj
-)
-
-M; M]
-
-+V
-
-E[logit(pMj
-)
-
-; M; M]
-
-= E
-
-2M
-
-+V
-
-M
-
-;
-and it follows that
-V
-
-M
-
-= V
-
-logit(pMj
-)
-
-􀀀 E
-
-2M
-
-:
-The expectation of 2M
-is
-E
-
-2M
-
-= V
-
-M
-
-+
-􀀀
-E[M]
-2 = s2
-M
- 
-1 􀀀
-2
-
-!
-+
- 
-sM
-r
-2
-
-!2
-= s2
-M: (2.1)
-According to Rover [2017] and Borenstein et al. [2011] the variance of log(aj=bj) may be
-approximated with a􀀀1
-j + b􀀀1
-j , where aj and bj are the number of events and non-events
-of cohort j and aj + bj = nj . Assuming some event probability pM0
-2 (0; 1)  R, one can
-write aj = njpM0
-and bj = nj(1 􀀀 pM0
-), such that log(aj=bj) = logit(pM0
-) and
-V
-
-logit(pM0
-)
-
-
-1
-nj
-
-1
-pM0
-+
-1
-1 􀀀 pM0
-
-=
-
-nj pM0
-􀀀
-1 􀀀 pM0
- 􀀀1
-:
-Choosing nj = 1 yields a unit information variance for logit(pMj
-), which is approximately
-worth one observation. For the variance of M follows
-V
-
-M
-
-
-
-pM0
-􀀀
-1 􀀀 pM0
- 􀀀1
-􀀀 s2
-M =: vM: (2.2)
-The appropriate value for pM0
-depends on the method, as does the prior value of mM.
-For the method proposed by Berry et al., the prior value for mB is zero, assuming
-optimistically that the assumed positive response rates equal the actual response rates.
-The variance of logit(pBj
-)􀀀logit(p;j) equals the variance of logit(pBj
-), because logit(p;j)
-is constant. Still assuming, that the assumed positive response rates equal the response
-rates, the probability value pB0
-for the calculation of vB in Equation (2.2) is selected
-according to
-pB0
-= arg max
-j
-(jp;j 􀀀 0:5j) ;
-such that the variance of logit(pBj
-) 􀀀 logit(p;j) will be worth at most one observation
-for all cohorts. As probability values that are farther away from 0.5, lead to a higher
-variance the value that leads to the highest unit information variance is utilized. Usually,
-18
-this means to choose the smallest of the assumed positive response rates.
-The selection of prior parameters for the method ExNex is more demanding compared to
-the simple Bayesian hierarchical model [Neuenschwander et al., 2016], as also prior values
-for the parameters Ej
-and E
-j
-2
-for each cohort and the mixture weight must be elicited.
-For the non-borrowing component of the mixture prior, the prior value of the mean Ej
-is logit(p;j ), and according to Equation (2.2) the unit information variance is given by
-E
-j
-2
-= p􀀀1
-;j + (1 􀀀 p;j)􀀀1, assuming that the response rates equal the assumed positive
-response rates. For the borrowing component, the variance vE is derived according to
-Equation (2.2) with
-pE0
-= arg max
-j
-(jp;j 􀀀 0:5j) ;
-with the same reason as for the method by Berry et al. The prior value of the mean mE
-is then logit(pE0
-). The prior mixture weight wE
-j is set equal to 0:5 for all cohorts as in
-[Neuenschwander et al., 2016], which neither favors the borrowing nor the non-borrowing
-component of the mixture distribution and represents absence of prior knowledge about
-the exchangeability of the cohorts. When prior information about a cohort is available,
-one may implement it using the non-borrowing component and adjust the weight of that
-cohort accordingly.
-The method ExNex Adjusted is a combination of the two methods proposed by Berry
-et al. and Neuenschwander et al., and so is the elicitation of its prior parameters. All
-prior parameters except mA are selected as for the prior values of the method ExNex,
-whereas mA is set equal to zero as for the prior value of mB of the method by Berry
-et al.
+model {
+
+
+  # mixture prior distributions for EX-parameters
+  for (jj in 1:Nexch) {
+
+    # Mixture prior on EX mean
+    z_mu[jj] ~ dcat(w_mu[1:K_mu])
+    mu[jj] ~ dnorm(mu_mean[z_mu[jj], jj],
+                   mu_prec[z_mu[jj], jj])
+
+    # Mixture prior on EX heterogeneity
+    z_tau[jj] ~ dcat(w_tau[1:K_tau])
+    tau[jj] ~ dnorm(0, tau_prec[z_tau[jj], jj]) I(0.001, )
+    prec_tau[jj] <- pow(tau[jj], -2)
+  }
+
+  # log-odds parameters under EX
+  for (jj in 1:Nexch) {
+    for (j in 1:Nstrata) {
+      re[jj, j] ~ dnorm(0, prec_tau[jj])
+      LogOdds[jj, j] <- mu[jj] + re[jj, j]
+    }
+  }
+
+  # log-odds parameters under NEX with mixture priors
+  for (j in 1:Nstrata) {
+
+    # Each stratum chooses one NEX prior component
+    z_nex[j] ~ dcat(w_nex[1:K_nex])
+
+    LogOdds[Nmix, j] ~ dnorm(nex_mean[z_nex[j], j], nex_prec[z_nex[j], j])
+  }
+
+  # latent mixture indicators:
+  # exch_index: categorial 1, ..., Nmix = Nexch + 1
+  # exch: Nstrata x Nmix matrix of 0/1 elements
+  for (j in 1:Nstrata) {
+    exch_index[j] ~ dcat(pMix[1:Nmix])
+    for (jj in 1:Nmix) {
+      exch[j, jj] <- equals(exch_index[j], jj)
+    }
+  }
+
+  for (j in 1:Nstrata) {
+    theta[j] <- LogOdds[exch_index[j], j]
+  }
+
+  # likelihood part
+  for (j in 1:Nstrata) {
+    logit(p[j]) <- theta[j]
+    r[j] ~ dbin(p[j], n[j])
+  }
+
+}
