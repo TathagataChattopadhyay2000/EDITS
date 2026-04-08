@@ -1,17 +1,17 @@
 model {
 
-
-  # mixture prior distributions for EX-parameters
+  # shared mixture prior for EX parameters
   for (jj in 1:Nexch) {
 
-    # Mixture prior on EX mean
-    z_mu[jj] ~ dcat(w_mu[1:K_mu])
-    mu[jj] ~ dnorm(mu_mean[z_mu[jj], jj],
-                   mu_prec[z_mu[jj], jj])
+    # one common mixture indicator for both mu and tau
+    z_ex[jj] ~ dcat(w_ex[1:K_ex])
 
-    # Mixture prior on EX heterogeneity
-    z_tau[jj] ~ dcat(w_tau[1:K_tau])
-    tau[jj] ~ dnorm(0, tau_prec[z_tau[jj], jj]) I(0.001, )
+    # EX mean prior
+    mu[jj] ~ dnorm(mu_mean[z_ex[jj], jj],
+                   mu_prec[z_ex[jj], jj])
+
+    # EX heterogeneity prior
+    tau[jj] ~ dnorm(0, tau_prec[z_ex[jj], jj]) I(0.001, )
     prec_tau[jj] <- pow(tau[jj], -2)
   }
 
@@ -25,16 +25,12 @@ model {
 
   # log-odds parameters under NEX with mixture priors
   for (j in 1:Nstrata) {
-
-    # Each stratum chooses one NEX prior component
     z_nex[j] ~ dcat(w_nex[1:K_nex])
-
-    LogOdds[Nmix, j] ~ dnorm(nex_mean[z_nex[j], j], nex_prec[z_nex[j], j])
+    LogOdds[Nmix, j] ~ dnorm(nex_mean[z_nex[j], j],
+                             nex_prec[z_nex[j], j])
   }
 
-  # latent mixture indicators:
-  # exch_index: categorial 1, ..., Nmix = Nexch + 1
-  # exch: Nstrata x Nmix matrix of 0/1 elements
+  # EX/NEX allocation
   for (j in 1:Nstrata) {
     exch_index[j] ~ dcat(pMix[1:Nmix])
     for (jj in 1:Nmix) {
@@ -42,11 +38,12 @@ model {
     }
   }
 
+  # chosen log-odds
   for (j in 1:Nstrata) {
     theta[j] <- LogOdds[exch_index[j], j]
   }
 
-  # likelihood part
+  # likelihood
   for (j in 1:Nstrata) {
     logit(p[j]) <- theta[j]
     r[j] ~ dbin(p[j], n[j])
