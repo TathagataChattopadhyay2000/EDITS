@@ -1,195 +1,119 @@
-getPriorParametersExNexMix <- function(
 
-  target_rates,
-  tau_scale = 1,
-  n_worth   = 1,
-  w_j       = 0.5,
-  w_nex     = c(0.8, 0.2)
-
-) {
-
-  error_target_rates <- "Providing a vector of numerics in (0, 1) for the argument 'target_rates'"
-  error_tau_scale    <- "Providing a positive numeric for the argument 'tau_scale'"
-  error_n_worth      <- "Providing a positive integer for the argument 'n_worth'"
-  error_w_j          <- "Providing a numeric in (0, 1) for the argument 'w_j'"
-  error_w_nex        <- "Providing a numeric vector of weights in [0,1] summing to 1 for the argument 'w_nex'"
-
-  checkmate::assertNumeric(target_rates, any.missing = FALSE, .var.name = error_target_rates)
-  checkmate::assertTRUE(all(target_rates > 0 & target_rates < 1), .var.name = error_target_rates)
-
-  checkmate::assertNumber(tau_scale, .var.name = error_tau_scale)
-  checkmate::assertTRUE(tau_scale > 0, .var.name = error_tau_scale)
-
-  checkmate::assertInt(n_worth, lower = 1, .var.name = error_n_worth)
-
-  checkmate::assertNumeric(w_j, lower = 0, upper = 1, len = 1, .var.name = error_w_j)
-
-  checkmate::assertNumeric(w_nex, any.missing = FALSE, lower = 0, upper = 1, .var.name = error_w_nex)
-  checkmate::assertTRUE(isTRUE(all.equal(sum(w_nex), 1)), .var.name = error_w_nex)
-
-  target_rate_max_var <- target_rates[abs(target_rates - 0.5) == max(abs(target_rates - 0.5))][1]
-
-  mu_var <- getMuVar(target_rate_max_var, tau_scale, n_worth)
-
-  if (mu_var <= 0) {
-    stop(simpleError(paste(
-      "The provided input parameters lead to a variance of mu <= 0.",
-      "Consider to decrease 'tau_scale' or 'n_worth'"
-    )))
-  }
-
-  K_nex <- length(w_nex)
-  J     <- length(target_rates)
-
-  nex_mean <- matrix(NA_real_, nrow = K_nex, ncol = J)
-  nex_sd   <- matrix(NA_real_, nrow = K_nex, ncol = J)
-
-  ## component 1: informative cohort-specific NEX prior
-  nex_mean[1, ] <- logit(target_rates)
-  nex_sd[1, ]   <- sqrt(getMuVar(target_rates, 0, n_worth))
-
-  ## component 2: vague cohort-specific NEX prior
-  if (K_nex >= 2) {
-    for (k in 2:K_nex) {
-      nex_mean[k, ] <- logit(target_rates)
-      nex_sd[k, ]   <- sqrt(getMuVar(target_rates, 0, n_worth)) * 5
-    }
-  }
-
-  prior_parameters <- list(
-    mu_mean   = logit(target_rate_max_var),
-    mu_sd     = sqrt(mu_var),
-    tau_scale = tau_scale,
-    w_j       = w_j,
-    w_nex     = w_nex,
-    nex_mean  = nex_mean,
-    nex_sd    = nex_sd
+  match.arg(
+    method_names,
+    choices = c(
+      "berry", "exnex", "exnex_adj", "pooled", "stratified",
+      "berry_mix", "pooled_mix", "stratified_mix",
+      "exnex_mix", "exnex_adj_mix"
+    ),
+    several.ok = TRUE
   )
 
-  out <- list(exnex_mix = prior_parameters)
-  class(out) <- "prior_parameters_list"
-  out
-}
+}, error = function (e) e)
 
-setPriorParametersExNexMix <- function(
+    } else if (method_name == "exnex_mix") {
 
-  mu_mean,
-  mu_sd,
-  tau_scale,
-  w_j,
-  w_nex,
-  nex_mean,
-  nex_sd
+      getPriorParametersExNexMix(
+        target_rates = target_rates,
+        n_worth      = n_worth,
+        tau_scale    = tau_scale,
+        w_j          = w_j
+      )[[1]]
 
-) {
+    } else if (method_name == "exnex_adj_mix") {
 
-  error_mu_mean   <- "Providing numeric(s) for the argument 'mu_mean'"
-  error_mu_sd     <- "Providing positive numeric(s) for the argument 'mu_sd'"
-  error_tau_scale <- "Providing a positive numeric for the argument 'tau_scale'"
-  error_w_j       <- "Providing numeric(s) in [0,1] for the argument 'w_j'"
-  error_w_nex     <- "Providing numeric vector of weights in [0,1] summing to 1 for the argument 'w_nex'"
-  error_nex_mean  <- "Providing a numeric matrix for the argument 'nex_mean'"
-  error_nex_sd    <- "Providing a positive numeric matrix for the argument 'nex_sd'"
-  error_dim       <- "'nex_mean' and 'nex_sd' must have the same dimensions; nrow(nex_mean) must equal length(w_nex)"
+      getPriorParametersExNexAdjMix(
+        target_rates = target_rates,
+        n_worth      = n_worth,
+        tau_scale    = tau_scale,
+        w_j          = w_j
+      )[[1]]
 
-  checkmate::assertNumeric(mu_mean, any.missing = FALSE, .var.name = error_mu_mean)
-  checkmate::assertNumeric(mu_sd, any.missing = FALSE, lower = 0, .var.name = error_mu_sd)
-  checkmate::assertTRUE(all(mu_sd > 0), .var.name = error_mu_sd)
-  checkmate::assertTRUE(length(mu_mean) == length(mu_sd), .var.name = "'mu_mean' and 'mu_sd' must have same length")
+n_coh <- ncol(scenario_list[[1]]$n_subjects)
 
-  checkmate::assertNumber(tau_scale, .var.name = error_tau_scale)
-  checkmate::assertTRUE(tau_scale > 0, .var.name = error_tau_scale)
-
-  checkmate::assertNumeric(w_j, any.missing = FALSE, lower = 0, upper = 1, .var.name = error_w_j)
-  if (length(mu_mean) > 1) {
-    checkmate::assertTRUE(length(w_j) == length(mu_mean) + 1,
-                          .var.name = "'w_j' must have length equal to length(mu_mean) + 1 if length(mu_mean) > 1")
-    checkmate::assertTRUE(isTRUE(all.equal(sum(w_j), 1)),
-                          .var.name = "Sum over items in 'w_j' must equal 1 if length(w_j) > 1")
-  } else {
-    checkmate::assertTRUE(length(w_j) %in% c(1, 2),
-                          .var.name = "'w_j' must have length 1 or 2 if length(mu_mean) = 1")
-    if (length(w_j) == 2) {
-      checkmate::assertTRUE(isTRUE(all.equal(sum(w_j), 1)),
-                            .var.name = "Sum over items in 'w_j' must equal 1 if length(w_j) > 1")
+inconsistent_cohorts <- any(
+  sapply(
+    intersect(names(prior_parameters_list),
+              c("exnex", "exnex_adj", "stratified")),
+    function(name) {
+      max(sapply(prior_parameters_list[[name]], length)) != n_coh
     }
-  }
-
-  checkmate::assertNumeric(w_nex, any.missing = FALSE, lower = 0, upper = 1, .var.name = error_w_nex)
-  checkmate::assertTRUE(isTRUE(all.equal(sum(w_nex), 1)), .var.name = error_w_nex)
-
-  checkmate::assertTRUE(is.matrix(nex_mean), .var.name = error_nex_mean)
-  checkmate::assertTRUE(is.matrix(nex_sd), .var.name = error_nex_sd)
-  checkmate::assertTRUE(all(nex_sd > 0), .var.name = error_nex_sd)
-  checkmate::assertTRUE(all(dim(nex_mean) == dim(nex_sd)), .var.name = error_dim)
-  checkmate::assertTRUE(nrow(nex_mean) == length(w_nex), .var.name = error_dim)
-
-  prior_parameters <- list(
-    mu_mean   = as.numeric(mu_mean),
-    mu_sd     = as.numeric(mu_sd),
-    tau_scale = tau_scale,
-    w_j       = as.numeric(w_j),
-    w_nex     = as.numeric(w_nex),
-    nex_mean  = nex_mean,
-    nex_sd    = nex_sd
   )
+)
 
-  out <- list(exnex_mix = prior_parameters)
-  class(out) <- "prior_parameters_list"
-  out
+if (any(c("exnex_mix", "exnex_adj_mix") %in% names(prior_parameters_list))) {
+  inconsistent_mix <- any(
+    sapply(
+      intersect(names(prior_parameters_list), c("exnex_mix", "exnex_adj_mix")),
+      function(name) {
+        pp <- prior_parameters_list[[name]]
+        !is.matrix(pp$nex_mean) ||
+          !is.matrix(pp$nex_sd) ||
+          ncol(pp$nex_mean) != n_coh ||
+          ncol(pp$nex_sd) != n_coh ||
+          any(dim(pp$nex_mean) != dim(pp$nex_sd))
+      }
+    )
+  )
+  inconsistent_cohorts <- inconsistent_cohorts || inconsistent_mix
 }
 
-getPriorParametersExNexAdjMix <- function(
+  } else if (method_name == "exnex" | method_name == "exnex_adj") {
 
-  target_rates,
-  tau_scale = 1,
-  n_worth   = 1,
-  w_j       = 0.5,
-  w_nex     = c(0.8, 0.2)
+    j_data <- list(
+      Nexch        = length(prior_parameters$mu_mean),
+      Nmix         = length(prior_parameters$mu_mean) + 1L,
+      Nstrata      = length(prior_parameters$mu_j),
+      mu_mean      = prior_parameters$mu_mean,
+      mu_prec      = prior_parameters$mu_sd^-2,
+      tau_HN_scale = rep(prior_parameters$tau_scale,
+                         length(prior_parameters$mu_mean)),
+      nex_mean     = prior_parameters$mu_j,
+      nex_prec     = prior_parameters$tau_j^-2
+    )
 
-) {
-
-  prior_parameters <- getPriorParametersExNexMix(
-    target_rates = target_rates,
-    tau_scale    = tau_scale,
-    n_worth      = n_worth,
-    w_j          = w_j,
-    w_nex        = w_nex
-  )[[1]]
-
-  prior_parameters$mu_mean      <- 0
-  prior_parameters$nex_mean[1,] <- 0
-  if (nrow(prior_parameters$nex_mean) >= 2) {
-    for (k in 2:nrow(prior_parameters$nex_mean)) {
-      prior_parameters$nex_mean[k, ] <- 0
+    if (identical(length(prior_parameters$w_j), 1L)) {
+      j_data$pMix <- c(prior_parameters$w_j, 1 - prior_parameters$w_j)
+    } else {
+      j_data$pMix <- prior_parameters$w_j
     }
-  }
 
-  out <- list(exnex_adj_mix = prior_parameters)
-  class(out) <- "prior_parameters_list"
-  out
-}
+    if (method_name == "exnex") {
+      j_model_file <- getModelFile(method_name = "exnex")
+    } else {
+      j_data$p_target <- target_rates
+      j_model_file <- getModelFile(method_name = "exnex_adj")
+    }
 
-setPriorParametersExNexAdjMix <- function(
+    j_parameters <- c("p", "mu", "tau", "exch")
 
-  mu_mean,
-  mu_sd,
-  tau_scale,
-  w_j,
-  w_nex,
-  nex_mean,
-  nex_sd
+  } else if (method_name == "exnex_mix" | method_name == "exnex_adj_mix") {
 
-) {
-  out <- setPriorParametersExNexMix(
-    mu_mean   = mu_mean,
-    mu_sd     = mu_sd,
-    tau_scale = tau_scale,
-    w_j       = w_j,
-    w_nex     = w_nex,
-    nex_mean  = nex_mean,
-    nex_sd    = nex_sd
-  )
-  names(out) <- "exnex_adj_mix"
-  out
-}
+    j_data <- list(
+      Nexch        = length(prior_parameters$mu_mean),
+      Nmix         = length(prior_parameters$mu_mean) + 1L,
+      Nstrata      = ncol(prior_parameters$nex_mean),
+      mu_mean      = prior_parameters$mu_mean,
+      mu_prec      = prior_parameters$mu_sd^-2,
+      tau_HN_scale = rep(prior_parameters$tau_scale,
+                         length(prior_parameters$mu_mean)),
+      K_nex        = length(prior_parameters$w_nex),
+      w_nex        = prior_parameters$w_nex,
+      nex_mean     = prior_parameters$nex_mean,
+      nex_prec     = prior_parameters$nex_sd^-2
+    )
+
+    if (identical(length(prior_parameters$w_j), 1L)) {
+      j_data$pMix <- c(prior_parameters$w_j, 1 - prior_parameters$w_j)
+    } else {
+      j_data$pMix <- prior_parameters$w_j
+    }
+
+    if (method_name == "exnex_mix") {
+      j_model_file <- getModelFile("exnex_mix")
+    } else {
+      j_data$p_target <- target_rates
+      j_model_file <- getModelFile("exnex_adj_mix")
+    }
+
+    j_parameters <- c("p", "mu", "tau", "exch", "z_nex")
