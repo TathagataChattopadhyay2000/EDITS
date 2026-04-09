@@ -1,34 +1,15 @@
-
-  match.arg(
-    method_names,
-    choices = c(
-      "berry", "exnex", "exnex_adj", "pooled", "stratified",
-      "berry_mix", "pooled_mix", "stratified_mix",
-      "exnex_mix", "exnex_adj_mix"
-    ),
-    several.ok = TRUE
-  )
-
-}, error = function (e) e)
-
-    } else if (method_name == "exnex_mix") {
-
-      getPriorParametersExNexMix(
-        target_rates = target_rates,
-        n_worth      = n_worth,
-        tau_scale    = tau_scale,
-        w_j          = w_j
-      )[[1]]
-
-    } else if (method_name == "exnex_adj_mix") {
-
-      getPriorParametersExNexAdjMix(
-        target_rates = target_rates,
-        n_worth      = n_worth,
-        tau_scale    = tau_scale,
-        w_j          = w_j
-      )[[1]]
-
+' @title setPriorParametersExNex
+#' @md
+#' @description This function sets prior parameters for the analysis method `"exnex"`
+#' for use in \code{\link[bhmbasket]{performAnalyses}}.
+#' @param mu_mean A numeric for the mean of \eqn{\mu}
+#' @param mu_sd A positive numeric for the standard deviation of \eqn{\mu}
+#' @param tau_scale A positive numeric for the scale parameter of \eqn{\tau}
+#' @param mu_j A vector of numerics for the means \eqn{\mu_j}
+#' @param tau_j A vector of positive numerics for the standard deviations \eqn{\tau_j}
+#' @param w_j A numeric in `(0, 1)` for the weight of the Ex component
+#' @return A list with prior parameters of class `prior_parameters_list`
+#' @details
 n_coh <- ncol(scenario_list[[1]]$n_subjects)
 
 inconsistent_cohorts <- any(
