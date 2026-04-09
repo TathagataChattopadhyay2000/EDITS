@@ -1,17 +1,10 @@
 model {
 
-  # shared mixture prior for EX parameters
+  # prior distributions for EX parameters
   for (jj in 1:Nexch) {
-
-    # one common mixture indicator for both mu and tau
-    z_ex[jj] ~ dcat(w_ex[1:K_ex])
-
-    # EX mean prior
-    mu[jj] ~ dnorm(mu_mean[z_ex[jj], jj],
-                   mu_prec[z_ex[jj], jj])
-
-    # EX heterogeneity prior
-    tau[jj] ~ dnorm(0, tau_prec[z_ex[jj], jj]) I(0.001, )
+    mu[jj] ~ dnorm(mu_mean[jj], mu_prec[jj])
+    prior_tau_prec[jj] <- pow(tau_HN_scale[jj], -2)
+    tau[jj] ~ dnorm(0, prior_tau_prec[jj]) I(0.001, )
     prec_tau[jj] <- pow(tau[jj], -2)
   }
 
@@ -23,14 +16,15 @@ model {
     }
   }
 
-  # log-odds parameters under NEX with mixture priors
+  # log-odds parameters under NEX with mixture prior
   for (j in 1:Nstrata) {
     z_nex[j] ~ dcat(w_nex[1:K_nex])
     LogOdds[Nmix, j] ~ dnorm(nex_mean[z_nex[j], j],
                              nex_prec[z_nex[j], j])
   }
 
-  # EX/NEX allocation
+  # latent mixture indicators:
+  # exch_index: categorical 1, ..., Nmix = Nexch + 1
   for (j in 1:Nstrata) {
     exch_index[j] ~ dcat(pMix[1:Nmix])
     for (jj in 1:Nmix) {
@@ -38,12 +32,12 @@ model {
     }
   }
 
-  # chosen log-odds
+  # pick theta
   for (j in 1:Nstrata) {
     theta[j] <- LogOdds[exch_index[j], j]
   }
 
-  # likelihood
+  # likelihood part
   for (j in 1:Nstrata) {
     logit(p[j]) <- theta[j]
     r[j] ~ dbin(p[j], n[j])
