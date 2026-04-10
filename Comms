@@ -1,11 +1,9 @@
-> res_strat_mix <- performAnalyses(
-+   scenario_list         = trial_data,
-+   method_names          = "stratified_mix",
-+   prior_parameters_list = pp_strat_mix,
-+   n_mcmc_iterations     = 1000,
-+   verbose               = TRUE
-+ )
-10-Apr-2026 Performing Analyses
-         Analyzing 1 scenario (1 unique trial realization)
-
-Error in rep(".", 33 - nchar(out_message)) : invalid 'times' argument
+chattota@inter-standard-dy-cpr-interactive-st-19:~/github/bhmbasket$ git push
+To https://github.com/Boehringer-Ingelheim/bhmbasket.git
+ ! [rejected]        main -> main (fetch first)
+error: failed to push some refs to 'https://github.com/Boehringer-Ingelheim/bhmbasket.git'
+hint: Updates were rejected because the remote contains work that you do not
+hint: have locally. This is usually caused by another repository pushing to
+hint: the same ref. If you want to integrate the remote changes, use
+hint: 'git pull' before pushing again.
+hint: See the 'Note about fast-forwards' in 'git push --help' for details.
