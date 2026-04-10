@@ -1,1 +1,23 @@
 
+
+## Bayesian Hierarchical Model: Berry with Mixture Prior on mu
+
+model {
+
+  ## Mixture prior for mu
+  z_mu ~ dcat(w_mu[1:K_mu])
+  mu   ~ dnorm(mu_mean[z_mu], mu_prec[z_mu])
+
+  ## Prior for tau (same as berry)
+  tau      ~ dnorm(0, precision_tau) I(0.001, )
+  tau_prec <- pow(tau, -2)
+
+  for (j in 1:J) {
+
+    theta[j] ~ dnorm(mu, tau_prec)
+
+    logit(p[j]) <- theta[j] + logit(p_t[j])
+    r[j] ~ dbin(p[j], n[j])
+
+  }
+}
