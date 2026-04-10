@@ -1,36 +1,32 @@
-getPosteriors <- function (
+trial_data <- createTrial(
+  n_subjects   = c(15, 18, 20),
+  n_responders = c(3, 5, 4)
+)
 
-  j_parameters,
-  j_model_file,
-  j_data,
+prior_exnex_mix <- setPriorParametersExNex(
+  mu_mean   = qlogis(0.2),
+  mu_sd     = 1,
+  tau_scale = 0.5,
+  w_j       = 0.5,
+  w_nex     = c(0.7, 0.3),
+  mean_nex  = rbind(
+    qlogis(c(0.15, 0.20, 0.25)),
+    qlogis(c(0.05, 0.10, 0.15))
+  ),
+  sd_nex    = rbind(
+    c(2, 2, 2),
+    c(3, 3, 3)
+  )
+)
 
-  n_mcmc_iterations
+names(prior_exnex_mix) <- "exnex_mix"
 
-) {
+analysis_exnex_mix <- performAnalyses(
+  scenario_list         = trial_data,
+  method_names          = c("exnex_mix"),
+  prior_parameters_list = prior_exnex_mix,
+  n_mcmc_iterations     = 2000,
+  verbose               = TRUE
+)
 
-  ## Adaption and burn-in not included
-  posterior_samples <- performJags(
-    data               = j_data,
-    parameters_to_save = j_parameters,
-    model_file         = j_model_file,
-    n_iter             = n_mcmc_iterations)
-
-  ## replace squarebrackets provided by rjags with workable characters
-  colnames(posterior_samples) <- gsub("\\[", "_", colnames(posterior_samples))
-  colnames(posterior_samples) <- gsub("\\]", "", colnames(posterior_samples))
-
-  weights_indices <- grepl("exch", colnames(posterior_samples))
-  if (any(weights_indices)) {
-
-    superfluous_weights <- !grepl(",1", colnames(posterior_samples))
-
-    colnames(posterior_samples)[weights_indices] <-
-      paste0("w_", seq_along(j_data$n))
-
-    posterior_samples <- posterior_samples[, !(weights_indices & superfluous_weights)]
-
-  }
-
-  return (posterior_samples)
-
-}
+print(analysis_exnex_mix)
