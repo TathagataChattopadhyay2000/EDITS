@@ -1,9 +1,75 @@
-chattota@inter-standard-dy-cpr-interactive-st-19:~/github/bhmbasket$ git push
-To https://github.com/Boehringer-Ingelheim/bhmbasket.git
- ! [rejected]        main -> main (fetch first)
-error: failed to push some refs to 'https://github.com/Boehringer-Ingelheim/bhmbasket.git'
-hint: Updates were rejected because the remote contains work that you do not
-hint: have locally. This is usually caused by another repository pushing to
-hint: the same ref. If you want to integrate the remote changes, use
-hint: 'git pull' before pushing again.
-hint: See the 'Note about fast-forwards' in 'git push --help' for details.
+❯ checking R code for possible problems ... NOTE
+  getPriorParameters : <anonymous>: no visible global function definition
+    for ‘getPriorParametersExNexMix’
+    (/home/runner/work/bhmbasket/bhmbasket/check/bhmbasket.Rcheck/00_pkg_src/bhmbasket/R/PriorFunctions.R:156-161)
+  getPriorParameters : <anonymous>: no visible global function definition
+    for ‘getPriorParametersExNexAdjMix’
+    (/home/runner/work/bhmbasket/bhmbasket/check/bhmbasket.Rcheck/00_pkg_src/bhmbasket/R/PriorFunctions.R:165-170)
+  Undefined global functions or variables:
+    getPriorParametersExNexAdjMix getPriorParametersExNexMix
+
+── Test failures ───────────────────────────────────────────────── testthat ────
+
+> # This file is part of the standard setup for testthat.
+> # It is recommended that you do not modify it.
+> #
+> # Where should you do additional test configuration?
+> # Learn more about the roles of various files in:
+> # * https://r-pkgs.org/testing-design.html#sec-tests-files-overview
+> # * https://testthat.r-lib.org/articles/special-files.html
+> 
+> library(testthat)
+> library(bhmbasket)
+> 
+> test_check("bhmbasket")
+10-Apr-2026 Performing Analyses
+         Analyzing 1 scenario (1 unique trial realization)
+   14:31 - with Berry ...........
+             finished after 0 secs.
+         Processing scenarios ...
+             finished after 0 secs.
+         Analyzing 1 scenario (5 unique trial realizations)
+   14:31 - with Pooled ..........
+             finished after 0 secs.
+         Processing scenarios ...
+             finished after 0 secs.
+10-Apr-2026 Performing Analyses
+         Analyzing 1 scenario (9 unique trial realizations)
+   14:31 - with Berry ...........
+             finished after 0.1 secs.
+         Processing scenarios ...
+             finished after 0 secs.
+10-Apr-2026 Performing Analyses
+         Analyzing 1 scenario (1 unique trial realization)
+Saving _problems/test-OCFunctions-26.R
+[ FAIL 1 | WARN 1 | SKIP 0 | PASS 441 ]
+
+══ Warnings ════════════════════════════════════════════════════════════════════
+── Warning ('test-AnalysisFunctions.R:3:1'): (code run outside of `test_that()`) ──
+executing %dopar% sequentially: no parallel backend registered
+Backtrace:
+    ▆
+ 1. └─bhmbasket:::setup_applicable_prev_trials() at test-AnalysisFunctions.R:3:1
+ 2.   └─bhmbasket::performAnalyses(...) at ./helper-setup.R:12:3
+ 3.     └─bhmbasket:::getPostQuantiles(...) at bhmbasket/R/AnalysisFunctions.R:1208:5
+ 4.       ├─base::suppressMessages(...) at bhmbasket/R/AnalysisFunctions.R:187:3
+ 5.       │ └─base::withCallingHandlers(...)
+ 6.       ├─... %dorng% ... at bhmbasket/R/AnalysisFunctions.R:187:3
+ 7.       │ └─base::do.call(`%dopar%`, list(obj, ex), envir = parent.frame())
+ 8.       └─foreach (local) `<fn>`(...)
+ 9.         └─foreach:::getDoPar()
+
+══ Failed tests ════════════════════════════════════════════════════════════════
+── Error ('test-OCFunctions.R:22:1'): (code run outside of `test_that()`) ──────
+Error in `getPriorParametersExNexAdjMix(target_rates = target_rates, n_worth = n_worth, tau_scale = tau_scale, w_j = w_j)`: could not find function "getPriorParametersExNexAdjMix"
+Backtrace:
+    ▆
+ 1. └─bhmbasket::performAnalyses(...) at test-OCFunctions.R:22:1
+ 2.   └─bhmbasket::getPriorParameters(method_names = method_names, target_rates = target_rates) at bhmbasket/R/AnalysisFunctions.R:1180:5
+ 3.     └─base::lapply(...) at bhmbasket/R/PriorFunctions.R:129:3
+ 4.       └─bhmbasket (local) FUN(X[[i]], ...)
+
+[ FAIL 1 | WARN 1 | SKIP 0 | PASS 441 ]
+Error:
+! Test failures.
+Execution halted
