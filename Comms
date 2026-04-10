@@ -1,17 +1,4 @@
-getModelFile <- function(method_name) {
-
-  model_map <- c(
-    berry         = "berry.txt",
-    berry_mix     = "berry_mix.txt",
-    exnex         = "exnex.txt",
-    exnex_mix     = "exnex_mix.txt",
-    exnex_adj     = "exnex_adj.txt",
-    exnex_adj_mix = "exnex_adj_mix.txt"
-  )
-
-  if (!method_name %in% names(model_map)) {
-    stop("method_name must be one of berry, berry_mix, exnex, exnex_mix, exnex_adj, exnex_adj_mix")
-  }
-
-  system.file(package = "bhmbasket", "jags_models", model_map[[method_name]], mustWork = TRUE)
+if (is.null(prior_parameters_list) &&
+    any(method_names %in% c("exnex_mix", "exnex_adj_mix"))) {
+  stop("For 'exnex_mix' and 'exnex_adj_mix', please provide 'prior_parameters_list' explicitly.", call. = FALSE)
 }
