@@ -1,53 +1,31 @@
-j_data_strat <- list(
-  a_j = c(1, 1, 1),
-  b_j = c(1, 1, 1),
-  r   = c(3, 5, 4),
-  n   = c(15, 18, 20)
-)
-
-j_data_mix_k1 <- list(
-  w   = 1,
-  a_j = matrix(c(1, 1, 1), nrow = 1),
-  b_j = matrix(c(1, 1, 1), nrow = 1),
-  r   = c(3, 5, 4),
-  n   = c(15, 18, 20)
-)
-
-j_data_mix_k2 <- list(
-  w   = c(0.7, 0.3),
-  a_j = rbind(c(1, 1, 1), c(2, 2, 2)),
-  b_j = rbind(c(1, 1, 1), c(2, 2, 2)),
-  r   = c(3, 5, 4),
-  n   = c(15, 18, 20)
-)
-
-quantiles <- c(0.1, 0.5, 0.9)
-calc_differences <- matrix(c(2, 1, 3, 2), ncol = 2, byrow = TRUE)
-
-system.time({
-  out1 <- getPostQuantilesStratified(
-    j_data = j_data_strat,
-    quantiles = quantiles,
-    calc_differences = calc_differences,
-    n_mcmc_iterations = 10000
-  )
-})
-
-system.time({
-  out2 <- getPostQuantilesStratifiedMix(
-    j_data = j_data_mix_k1,
-    quantiles = quantiles,
-    calc_differences = calc_differences,
-    n_mcmc_iterations = 10000
-  )
-})
-
-system.time({
-  out3 <- getPostQuantilesStratifiedMix(
-    j_data = j_data_mix_k2,
-    quantiles = quantiles,
-    calc_differences = calc_differences,
-    n_mcmc_iterations = 10000
-  )
-})
-
+> system.time({
++   out1 <- getPostQuantilesStratified(
++     j_data = j_data_strat,
++     quantiles = quantiles,
++     calc_differences = calc_differences,
++     n_mcmc_iterations = 10000
++   )
++ })
+   user  system elapsed 
+  0.584   0.075   0.095 
+> system.time({
++   out2 <- getPostQuantilesStratifiedMix(
++     j_data = j_data_mix_k1,
++     quantiles = quantiles,
++     calc_differences = calc_differences,
++     n_mcmc_iterations = 10000
++   )
++ })
+   user  system elapsed 
+  0.024   0.000   0.027 
+> system.time({
++   out3 <- getPostQuantilesStratifiedMix(
++     j_data = j_data_mix_k2,
++     quantiles = quantiles,
++     calc_differences = calc_differences,
++     n_mcmc_iterations = 10000
++   )
++ })
+   user  system elapsed 
+  0.082   0.000   0.138 
+> 
