@@ -1,12 +1,224 @@
-if ("stratified_mix" %in% names(prior_parameters_list)) {
-  pp <- prior_parameters_list[["stratified_mix"]]
+trial_data <- createTrial(
+  n_subjects   = c(10, 12, 11),
+  n_responders = c(2, 3, 4)
+)
 
-  inconsistent_stratified_mix <-
-    !is.matrix(pp$a_j) ||
-    !is.matrix(pp$b_j) ||
-    any(dim(pp$a_j) != dim(pp$b_j)) ||
-    ncol(pp$a_j) != n_coh ||
-    length(pp$w) != nrow(pp$a_j)
+pp_exnex <- setPriorParametersExNex(
+  mu_mean   = 0,
+  mu_sd     = 1,
+  tau_scale = 0.5,
+  mu_j      = c(0, 0, 0),
+  tau_j     = c(1, 1, 1),
+  w_j       = 0.5
+)
 
-  inconsistent_cohorts <- inconsistent_cohorts || inconsistent_stratified_mix
-}
+res_exnex <- performAnalyses(
+  scenario_list         = trial_data,
+  method_names          = "exnex",
+  prior_parameters_list = pp_exnex,
+  n_mcmc_iterations     = 1000,
+  verbose               = TRUE
+)
+
+print(res_exnex)
+
+trial_data <- createTrial(
+  n_subjects   = c(10, 12, 11),
+  n_responders = c(2, 3, 4)
+)
+
+pp_exnex_mix <- setPriorParametersExNex(
+  mu_mean   = 0,
+  mu_sd     = 1,
+  tau_scale = 0.5,
+  w_j       = 0.5,
+  w_nex     = c(0.7, 0.3),
+  mean_nex  = rbind(
+    c(0, 0, 0),
+    c(-1, -1, -1)
+  ),
+  sd_nex    = rbind(
+    c(1, 1, 1),
+    c(2, 2, 2)
+  )
+)
+
+names(pp_exnex_mix) <- "exnex_mix"
+
+res_exnex_mix <- performAnalyses(
+  scenario_list         = trial_data,
+  method_names          = "exnex_mix",
+  prior_parameters_list = pp_exnex_mix,
+  n_mcmc_iterations     = 1000,
+  verbose               = TRUE
+)
+
+print(res_exnex_mix)
+
+trial_data <- createTrial(
+  n_subjects   = c(10, 12, 11),
+  n_responders = c(2, 3, 4)
+)
+
+pp_exnex_adj_mix <- setPriorParametersExNexAdj(
+  mu_mean   = 0,
+  mu_sd     = 1,
+  tau_scale = 0.5,
+  w_j       = 0.5,
+  w_nex     = c(0.7, 0.3),
+  mean_nex  = rbind(
+    c(0, 0, 0),
+    c(-1, -1, -1)
+  ),
+  sd_nex    = rbind(
+    c(1, 1, 1),
+    c(2, 2, 2)
+  )
+)
+
+names(pp_exnex_adj_mix) <- "exnex_adj_mix"
+
+res_exnex_adj_mix <- performAnalyses(
+  scenario_list         = trial_data,
+  method_names          = "exnex_adj_mix",
+  target_rates          = c(0.2, 0.2, 0.2),
+  prior_parameters_list = pp_exnex_adj_mix,
+  n_mcmc_iterations     = 1000,
+  verbose               = TRUE
+)
+
+print(res_exnex_adj_mix)
+
+trial_data <- createTrial(
+  n_subjects   = c(10, 12, 11),
+  n_responders = c(2, 3, 4)
+)
+
+pp_strat <- setPriorParametersStratified(
+  a_j = c(1, 1, 1),
+  b_j = c(1, 1, 1)
+)
+
+res_strat <- performAnalyses(
+  scenario_list         = trial_data,
+  method_names          = "stratified",
+  prior_parameters_list = pp_strat,
+  n_mcmc_iterations     = 1000,
+  verbose               = TRUE
+)
+
+print(res_strat)
+
+trial_data <- createTrial(
+  n_subjects   = c(10, 12, 11),
+  n_responders = c(2, 3, 4)
+)
+
+pp_strat_mix <- setPriorParametersStratifiedMix(
+  w   = c(0.7, 0.3),
+  a_j = rbind(
+    c(1, 1, 1),
+    c(2, 2, 2)
+  ),
+  b_j = rbind(
+    c(1, 1, 1),
+    c(2, 2, 2)
+  )
+)
+
+res_strat_mix <- performAnalyses(
+  scenario_list         = trial_data,
+  method_names          = "stratified_mix",
+  prior_parameters_list = pp_strat_mix,
+  n_mcmc_iterations     = 1000,
+  verbose               = TRUE
+)
+
+print(res_strat_mix)
+
+setPriorParametersExNex(
+  mu_mean   = 0,
+  mu_sd     = 1,
+  tau_scale = 0.5,
+  w_j       = 0.5,
+  w_nex     = c(0.7, 0.7),
+  mean_nex  = rbind(c(0, 0, 0), c(-1, -1, -1)),
+  sd_nex    = rbind(c(1, 1, 1), c(2, 2, 2))
+)
+
+setPriorParametersExNex(
+  mu_mean   = 0,
+  mu_sd     = 1,
+  tau_scale = 0.5,
+  w_j       = 0.5,
+  w_nex     = c(0.7, 0.3),
+  mean_nex  = rbind(c(0, 0, 0), c(-1, -1, -1)),
+  sd_nex    = rbind(c(1, 1), c(2, 2))
+)
+
+trial_data <- createTrial(
+  n_subjects   = c(10, 12, 11),
+  n_responders = c(2, 3, 4)
+)
+
+pp_exnex_adj_mix <- setPriorParametersExNexAdj(
+  mu_mean   = 0,
+  mu_sd     = 1,
+  tau_scale = 0.5,
+  w_j       = 0.5,
+  w_nex     = c(0.7, 0.3),
+  mean_nex  = rbind(c(0, 0, 0), c(-1, -1, -1)),
+  sd_nex    = rbind(c(1, 1, 1), c(2, 2, 2))
+)
+
+names(pp_exnex_adj_mix) <- "exnex_adj_mix"
+
+performAnalyses(
+  scenario_list         = trial_data,
+  method_names          = "exnex_adj_mix",
+  prior_parameters_list = pp_exnex_adj_mix,
+  n_mcmc_iterations     = 1000
+)
+
+trial_data <- createTrial(
+  n_subjects   = c(10, 12, 11),
+  n_responders = c(2, 3, 4)
+)
+
+pp_strat_mix_bad <- setPriorParametersStratifiedMix(
+  w   = c(0.7, 0.3),
+  a_j = rbind(c(1, 1), c(2, 2)),
+  b_j = rbind(c(1, 1), c(2, 2))
+)
+
+performAnalyses(
+  scenario_list         = trial_data,
+  method_names          = "stratified_mix",
+  prior_parameters_list = pp_strat_mix_bad,
+  n_mcmc_iterations     = 1000
+)
+
+trial_data <- createTrial(
+  n_subjects   = c(10, 12, 11),
+  n_responders = c(2, 3, 4)
+)
+
+pp_exnex_mix <- setPriorParametersExNex(
+  mu_mean   = 0,
+  mu_sd     = 1,
+  tau_scale = 0.5,
+  w_j       = 0.5,
+  w_nex     = c(0.7, 0.3),
+  mean_nex  = rbind(c(0, 0, 0), c(-1, -1, -1)),
+  sd_nex    = rbind(c(1, 1, 1), c(2, 2, 2))
+)
+
+## note: no renaming here
+
+performAnalyses(
+  scenario_list         = trial_data,
+  method_names          = "exnex_mix",
+  prior_parameters_list = pp_exnex_mix,
+  n_mcmc_iterations     = 1000
+)
+
