@@ -1,4 +1,31 @@
-if (is.null(prior_parameters_list) &&
-    any(method_names %in% c("exnex_mix", "exnex_adj_mix"))) {
-  stop("For 'exnex_mix' and 'exnex_adj_mix', please provide 'prior_parameters_list' explicitly.", call. = FALSE)
-}
+else if (method_name == "exnex_mix" | method_name == "exnex_adj_mix") {
+
+    j_data <- list(
+      Nexch        = length(prior_parameters$mu_mean),
+      Nmix         = length(prior_parameters$mu_mean) + 1L,
+      Nstrata      = ncol(prior_parameters$mean_nex),   # if matrix K_nex x J
+      mu_mean      = prior_parameters$mu_mean,
+      mu_prec      = prior_parameters$mu_sd^-2,
+      tau_HN_scale = rep(prior_parameters$tau_scale,
+                         length(prior_parameters$mu_mean)),
+      K_nex        = length(prior_parameters$w_nex),
+      w_nex        = prior_parameters$w_nex,
+      mean_nex     = prior_parameters$mean_nex,
+      nex_prec     = prior_parameters$sd_nex^-2
+    )
+
+    if (identical(length(prior_parameters$w_j), 1L)) {
+      j_data$pMix <- c(prior_parameters$w_j, 1 - prior_parameters$w_j)
+    } else {
+      j_data$pMix <- prior_parameters$w_j
+    }
+
+    if (method_name == "exnex_mix") {
+      j_model_file <- getModelFile("exnex_mix")
+    } else {
+      j_data$p_target <- target_rates
+      j_model_file <- getModelFile("exnex_adj_mix")
+    }
+
+    j_parameters <- c("p", "mu", "tau", "exch")
+  }
