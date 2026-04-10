@@ -1,215 +1,61 @@
-## exnex ####
-
-getPriorParametersExNex <- function (
-
-  target_rates,
-  tau_scale = 1,
-  n_worth   = 1,
-  w_j       = 0.5,
-
-  w_nex     = NULL,
-  mean_nex  = NULL,
-  sd_nex    = NULL
-
-) {
-
-  error_target_rates <- "Providing a vector of numerics in (0, 1) for the argument 'target_rates'"
-  error_tau_scale    <- "Providing a positive numeric for the argument 'tau_scale'"
-  error_n_worth      <- "Providing a positive integer for the argument 'n_worth'"
-  error_w_j          <- "Providing a numeric in (0, 1) for the argument 'w_j'"
-  error_w_nex        <- "Providing a numeric vector of weights in [0, 1] summing to 1 for the argument 'w_nex'"
-  error_mean_nex     <- "Providing a numeric matrix for the argument 'mean_nex'"
-  error_sd_nex       <- "Providing a positive numeric matrix for the argument 'sd_nex'"
-  error_dim          <- "'mean_nex' and 'sd_nex' must have the same dimensions, nrow(mean_nex) must equal length(w_nex), and ncol(mean_nex) must equal length(target_rates)"
-
-  checkmate::assertNumeric(target_rates, any.missing = FALSE, .var.name = error_target_rates)
-  checkmate::assertTRUE(all(target_rates > 0 & target_rates < 1), .var.name = error_target_rates)
-
-  checkmate::assertNumber(tau_scale, .var.name = error_tau_scale)
-  checkmate::assertTRUE(tau_scale > 0, .var.name = error_tau_scale)
-
-  checkmate::assertInt(n_worth, lower = 1, .var.name = error_n_worth)
-
-  checkmate::assertNumeric(w_j, lower = 0, upper = 1, len = 1, .var.name = error_w_j)
-
-  ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
-
-  target_rate_max_var <- target_rates[abs(target_rates - 0.5) == max(abs(target_rates - 0.5))][1]
-  mu_var <- getMuVar(target_rate_max_var, tau_scale, n_worth)
-
-  if (mu_var <= 0) {
-    stop(simpleError(paste(
-      "The provided input parameters lead to a variance of mu <= 0.",
-      "Consider to decrease 'tau_scale' or 'n_worth'"
-    )))
-  }
-
-  ## standard ExNex
-  if (is.null(w_nex) && is.null(mean_nex) && is.null(sd_nex)) {
-
-    prior_parameters <- list(
-      mu_mean   = logit(target_rate_max_var),
-      mu_sd     = sqrt(mu_var),
-      tau_scale = tau_scale,
-      mu_j      = logit(target_rates),
-      tau_j     = sqrt(getMuVar(target_rates, 0, n_worth)),
-      w_j       = w_j
-    )
-
-  } else {
-
-    ## mixed NEX version
-    checkmate::assertNumeric(w_nex, any.missing = FALSE, lower = 0, upper = 1, .var.name = error_w_nex)
-    checkmate::assertTRUE(isTRUE(all.equal(sum(w_nex), 1)), .var.name = error_w_nex)
-
-    checkmate::assertTRUE(is.matrix(mean_nex), .var.name = error_mean_nex)
-    checkmate::assertTRUE(is.matrix(sd_nex), .var.name = error_sd_nex)
-    checkmate::assertTRUE(all(sd_nex > 0), .var.name = error_sd_nex)
-    checkmate::assertTRUE(all(dim(mean_nex) == dim(sd_nex)), .var.name = error_dim)
-    checkmate::assertTRUE(nrow(mean_nex) == length(w_nex), .var.name = error_dim)
-    checkmate::assertTRUE(ncol(mean_nex) == length(target_rates), .var.name = error_dim)
-
-    prior_parameters <- list(
-      mu_mean   = logit(target_rate_max_var),
-      mu_sd     = sqrt(mu_var),
-      tau_scale = tau_scale,
-      w_j       = w_j,
-      w_nex     = as.numeric(w_nex),
-      mean_nex  = mean_nex,
-      sd_nex    = sd_nex
-    )
-  }
-
-  prior_parameters_list <- list(exnex = prior_parameters)
-  class(prior_parameters_list) <- "prior_parameters_list"
-
-  return(prior_parameters_list)
-}
-
-setPriorParametersExNex <- function (
-
-  mu_mean,
-  mu_sd,
-  tau_scale,
-
-  mu_j      = NULL,
-  tau_j     = NULL,
-
-  w_j,
-
-  w_nex     = NULL,
-  mean_nex  = NULL,
-  sd_nex    = NULL
-
-) {
-
-  error_mu_mean    <- "Providing a numeric for the argument 'mu_mean'"
-  error_mu_sd      <- "Providing a positive numeric for the argument 'mu_sd'"
-  error_tau_scale  <- "Providing a positive numeric for the argument 'tau_scale'"
-  error_mu_j       <- "Providing a (vector of) numeric(s) for the argument 'mu_j'"
-  error_tau_j      <- "Providing a (vector of) positive numeric(s) for the argument 'tau_j'"
-  error_w_j        <- "Providing a numeric in (0, 1) for the argument 'w_j'"
-  error_w_nex      <- "Providing a numeric vector of weights in [0, 1] summing to 1 for the argument 'w_nex'"
-  error_mean_nex   <- "Providing a numeric matrix for the argument 'mean_nex'"
-  error_sd_nex     <- "Providing a positive numeric matrix for the argument 'sd_nex'"
-  error_dim        <- "'mean_nex' and 'sd_nex' must have the same dimensions, and nrow(mean_nex) must equal length(w_nex)"
-  error_mu_mean_sd <- "'mu_mean' and 'mu_sd' must have same length"
-  error_mu_j_tau_j <- "'mu_j' and 'tau_j' must have the same length"
-  error_w_j_long   <- "'w_j' must have length equal to length(mu_mean) + 1 if length(mu_mean) > 1"
-  error_w_j_short  <- "'w_j' must have length 1 or 2 if length(mu_mean) = 1"
-  error_w_j_sum    <- "Sum over items in 'w_j' must equal 1 if length(w_j) > 1"
-
-  checkmate::assert_numeric(mu_mean, any.missing = FALSE, .var.name = error_mu_mean)
-  checkmate::assert_numeric(mu_sd, lower = 0, any.missing = FALSE, .var.name = error_mu_sd)
-  checkmate::assertTRUE(all(mu_sd > 0), .var.name = error_mu_sd)
-
-  checkmate::assertNumber(tau_scale, .var.name = error_tau_scale)
-  checkmate::assertTRUE(tau_scale > 0, .var.name = error_tau_scale)
-
-  checkmate::assert_numeric(w_j, lower = 0, upper = 1, any.missing = FALSE, .var.name = error_w_j)
-
-  checkmate::assert_true(length(mu_mean) == length(mu_sd), .var.name = error_mu_mean_sd)
-
-  if (length(mu_mean) > 1) {
-    checkmate::assert_true(length(w_j) == length(mu_mean) + 1, .var.name = error_w_j_long)
-  } else {
-    checkmate::assert_true(length(w_j) %in% c(1, 2), .var.name = error_w_j_short)
-  }
-
-  if (length(w_j) > 1) {
-    checkmate::assert_true(isTRUE(all.equal(sum(w_j), 1)), .var.name = error_w_j_sum)
-  }
-
-  ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
-
-  ## standard ExNex
-  if (is.null(w_nex) && is.null(mean_nex) && is.null(sd_nex)) {
-
-    checkmate::assert_numeric(mu_j, any.missing = FALSE, .var.name = error_mu_j)
-    checkmate::assert_numeric(tau_j, any.missing = FALSE, .var.name = error_tau_j)
-    checkmate::assertTRUE(all(tau_j > 0), .var.name = error_tau_j)
-    checkmate::assert_true(length(mu_j) == length(tau_j), .var.name = error_mu_j_tau_j)
-
-    prior_parameters <- list(
-      mu_mean   = mu_mean,
-      mu_sd     = mu_sd,
-      tau_scale = tau_scale,
-      mu_j      = mu_j,
-      tau_j     = tau_j,
-      w_j       = w_j
-    )
-
-  } else {
-
-    ## mixed NEX version
-    checkmate::assertNumeric(w_nex, any.missing = FALSE, lower = 0, upper = 1, .var.name = error_w_nex)
-    checkmate::assertTRUE(isTRUE(all.equal(sum(w_nex), 1)), .var.name = error_w_nex)
-
-    checkmate::assertTRUE(is.matrix(mean_nex), .var.name = error_mean_nex)
-    checkmate::assertTRUE(is.matrix(sd_nex), .var.name = error_sd_nex)
-    checkmate::assertTRUE(all(sd_nex > 0), .var.name = error_sd_nex)
-    checkmate::assertTRUE(all(dim(mean_nex) == dim(sd_nex)), .var.name = error_dim)
-    checkmate::assertTRUE(nrow(mean_nex) == length(w_nex), .var.name = error_dim)
-
-    prior_parameters <- list(
-      mu_mean   = mu_mean,
-      mu_sd     = mu_sd,
-      tau_scale = tau_scale,
-      w_j       = w_j,
-      w_nex     = as.numeric(w_nex),
-      mean_nex  = mean_nex,
-      sd_nex    = sd_nex
-    )
-  }
-
-  prior_parameters_list <- list(exnex = prior_parameters)
-  class(prior_parameters_list) <- "prior_parameters_list"
-
-  return(prior_parameters_list)
-}
-
-
-
-why did you remove the descriptions from the top? if anything you should have updated it to the new way we are doing it.
-
-this was the original for setPriorParametersExNEX
-
 #' @title setPriorParametersExNex
 #' @md
 #' @description This function sets prior parameters for the analysis method `"exnex"`
 #' for use in \code{\link[bhmbasket]{performAnalyses}}.
+#'
+#' It supports two specifications for the NEX part:
+#' \itemize{
+#'   \item the standard ExNex specification with cohort-specific NEX priors via `mu_j` and `tau_j`
+#'   \item an extended specification with a mixture prior on the NEX part via `w_nex`, `mean_nex`, and `sd_nex`
+#' }
+#'
 #' @param mu_mean A numeric for the mean of \eqn{\mu}
 #' @param mu_sd A positive numeric for the standard deviation of \eqn{\mu}
 #' @param tau_scale A positive numeric for the scale parameter of \eqn{\tau}
-#' @param mu_j A vector of numerics for the means \eqn{\mu_j}
+#' @param mu_j A vector of numerics for the means \eqn{\mu_j} of the standard NEX priors.
+#'   Ignored if `w_nex`, `mean_nex`, and `sd_nex` are provided.
 #' @param tau_j A vector of positive numerics for the standard deviations \eqn{\tau_j}
-#' @param w_j A numeric in `(0, 1)` for the weight of the Ex component
+#'   of the standard NEX priors. Ignored if `w_nex`, `mean_nex`, and `sd_nex` are provided.
+#' @param w_j A numeric in `(0, 1)` for the weight of the Ex component, or a numeric vector
+#'   of mixture weights summing to 1 if multiple Ex components are specified.
+#' @param w_nex An optional numeric vector of mixture weights in \eqn{[0,1]} summing to 1
+#'   for the NEX mixture prior.
+#' @param mean_nex An optional numeric matrix of NEX mixture means with one row per NEX
+#'   mixture component and one column per cohort.
+#' @param sd_nex An optional positive numeric matrix of NEX mixture standard deviations with
+#'   one row per NEX mixture component and one column per cohort.
+#'
 #' @return A list with prior parameters of class `prior_parameters_list`
+#'
 #' @details
 #' This function sets the prior parameters for the method proposed by Neuenschwander et al. (2016).
+#' If `w_nex`, `mean_nex`, and `sd_nex` are all `NULL`, the standard ExNex formulation is used.
+#' Otherwise, the NEX part is specified as a finite mixture prior.
+#'
 #' @author Stephan Wojciekowski
+#'
 #' @examples
-#'  prior_parameters_exnex <- setPriorParametersExNex(0, 1, 2, c(4, 5), c(6, 7), 0.8)
+#' ## standard ExNex
+#' prior_parameters_exnex <- setPriorParametersExNex(
+#'   mu_mean   = 0,
+#'   mu_sd     = 1,
+#'   tau_scale = 2,
+#'   mu_j      = c(4, 5),
+#'   tau_j     = c(6, 7),
+#'   w_j       = 0.8
+#' )
+#'
+#' ## ExNex with NEX mixture prior
+#' prior_parameters_exnex_mix <- setPriorParametersExNex(
+#'   mu_mean   = 0,
+#'   mu_sd     = 1,
+#'   tau_scale = 2,
+#'   w_j       = 0.8,
+#'   w_nex     = c(0.7, 0.3),
+#'   mean_nex  = rbind(c(4, 5), c(2, 3)),
+#'   sd_nex    = rbind(c(6, 7), c(8, 9))
+#' )
+#'
 #' @rdname setPriorParametersExNex
 #' @seealso
 #'  \code{\link[bhmbasket]{performAnalyses}}
