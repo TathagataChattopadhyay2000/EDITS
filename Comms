@@ -1,75 +1,123 @@
-❯ checking R code for possible problems ... NOTE
-  getPriorParameters : <anonymous>: no visible global function definition
-    for ‘getPriorParametersExNexMix’
-    (/home/runner/work/bhmbasket/bhmbasket/check/bhmbasket.Rcheck/00_pkg_src/bhmbasket/R/PriorFunctions.R:156-161)
-  getPriorParameters : <anonymous>: no visible global function definition
-    for ‘getPriorParametersExNexAdjMix’
-    (/home/runner/work/bhmbasket/bhmbasket/check/bhmbasket.Rcheck/00_pkg_src/bhmbasket/R/PriorFunctions.R:165-170)
-  Undefined global functions or variables:
-    getPriorParametersExNexAdjMix getPriorParametersExNexMix
+getPriorParameters <- function (
 
-── Test failures ───────────────────────────────────────────────── testthat ────
+  method_names,
+  target_rates,
+  n_worth   = 1,
+  tau_scale = 1,
+  w_j       = 0.5
 
-> # This file is part of the standard setup for testthat.
-> # It is recommended that you do not modify it.
-> #
-> # Where should you do additional test configuration?
-> # Learn more about the roles of various files in:
-> # * https://r-pkgs.org/testing-design.html#sec-tests-files-overview
-> # * https://testthat.r-lib.org/articles/special-files.html
-> 
-> library(testthat)
-> library(bhmbasket)
-> 
-> test_check("bhmbasket")
-10-Apr-2026 Performing Analyses
-         Analyzing 1 scenario (1 unique trial realization)
-   14:31 - with Berry ...........
-             finished after 0 secs.
-         Processing scenarios ...
-             finished after 0 secs.
-         Analyzing 1 scenario (5 unique trial realizations)
-   14:31 - with Pooled ..........
-             finished after 0 secs.
-         Processing scenarios ...
-             finished after 0 secs.
-10-Apr-2026 Performing Analyses
-         Analyzing 1 scenario (9 unique trial realizations)
-   14:31 - with Berry ...........
-             finished after 0.1 secs.
-         Processing scenarios ...
-             finished after 0 secs.
-10-Apr-2026 Performing Analyses
-         Analyzing 1 scenario (1 unique trial realization)
-Saving _problems/test-OCFunctions-26.R
-[ FAIL 1 | WARN 1 | SKIP 0 | PASS 441 ]
+) {
 
-══ Warnings ════════════════════════════════════════════════════════════════════
-── Warning ('test-AnalysisFunctions.R:3:1'): (code run outside of `test_that()`) ──
-executing %dopar% sequentially: no parallel backend registered
-Backtrace:
-    ▆
- 1. └─bhmbasket:::setup_applicable_prev_trials() at test-AnalysisFunctions.R:3:1
- 2.   └─bhmbasket::performAnalyses(...) at ./helper-setup.R:12:3
- 3.     └─bhmbasket:::getPostQuantiles(...) at bhmbasket/R/AnalysisFunctions.R:1208:5
- 4.       ├─base::suppressMessages(...) at bhmbasket/R/AnalysisFunctions.R:187:3
- 5.       │ └─base::withCallingHandlers(...)
- 6.       ├─... %dorng% ... at bhmbasket/R/AnalysisFunctions.R:187:3
- 7.       │ └─base::do.call(`%dopar%`, list(obj, ex), envir = parent.frame())
- 8.       └─foreach (local) `<fn>`(...)
- 9.         └─foreach:::getDoPar()
+  error_method_names <-
+    paste("Providing a (vector of) strings for the argument 'method_names'\n",
+          "Must be one of 'berry', 'exnex', 'exnex_adj', 'pooled', 'stratified'")
+  error_target_rates <-
+    "Providing a vector of numerics in (0, 1) for the argument 'target_rates'"
+  error_tau_scale    <-
+    "Providing a positive numeric for the argument 'tau_scale'"
+  error_n_worth      <- "Providing a positive integer for the argument 'n_worth'"
+  error_w_j          <- "Providing a numeric in (0, 1) for the argument 'w_j'"
 
-══ Failed tests ════════════════════════════════════════════════════════════════
-── Error ('test-OCFunctions.R:22:1'): (code run outside of `test_that()`) ──────
-Error in `getPriorParametersExNexAdjMix(target_rates = target_rates, n_worth = n_worth, tau_scale = tau_scale, w_j = w_j)`: could not find function "getPriorParametersExNexAdjMix"
-Backtrace:
-    ▆
- 1. └─bhmbasket::performAnalyses(...) at test-OCFunctions.R:22:1
- 2.   └─bhmbasket::getPriorParameters(method_names = method_names, target_rates = target_rates) at bhmbasket/R/AnalysisFunctions.R:1180:5
- 3.     └─base::lapply(...) at bhmbasket/R/PriorFunctions.R:129:3
- 4.       └─bhmbasket (local) FUN(X[[i]], ...)
+  checkmate::assertCharacter(method_names, any.missing = FALSE, .var.name = error_method_names)
 
-[ FAIL 1 | WARN 1 | SKIP 0 | PASS 441 ]
-Error:
-! Test failures.
-Execution halted
+  method_names <- tryCatch({
+
+    match.arg(
+      method_names,
+      choices = c(
+        "berry", "exnex", "exnex_adj", "pooled", "stratified", "stratified_mix",
+        "exnex_mix", "exnex_adj_mix"
+      ),
+      several.ok = TRUE
+    )
+
+  }, error = function (e) e)
+
+  checkmate::assertNumeric(target_rates, any.missing = FALSE, .var.name = error_target_rates)
+  checkmate::assertTRUE(all(target_rates > 0 & target_rates < 1), .var.name = error_target_rates)
+
+  checkmate::assertNumber(tau_scale, .var.name = error_tau_scale)
+  checkmate::assertTRUE(tau_scale > 0, .var.name = error_tau_scale)
+
+  checkmate::assertInt(n_worth, lower = 1, .var.name = error_n_worth)
+
+  checkmate::assertNumeric(w_j, lower = 0, upper = 1, len = 1, .var.name = error_w_j)
+
+
+  ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
+
+  method_names <- sort(method_names)
+
+  prior_parameters_list <- lapply(method_names, function (method_name) {
+
+    if (method_name == "berry") {
+
+      getPriorParametersBerry(
+        target_rates = target_rates,
+        n_worth      = n_worth,
+        tau_scale    = tau_scale)[[1]]
+
+    } else if (method_name == "exnex") {
+
+      getPriorParametersExNex(
+        target_rates = target_rates,
+        n_worth      = n_worth,
+        tau_scale    = tau_scale,
+        w_j          = w_j)[[1]]
+
+    } else if (method_name == "exnex_adj") {
+
+      getPriorParametersExNexAdj(
+        target_rates = target_rates,
+        n_worth      = n_worth,
+        tau_scale    = tau_scale,
+        w_j          = w_j)[[1]]
+
+    } else if (method_name == "exnex_mix") {
+
+      getPriorParametersExNexMix(
+        target_rates = target_rates,
+        n_worth      = n_worth,
+        tau_scale    = tau_scale,
+        w_j          = w_j
+      )[[1]]
+
+    } else if (method_name == "exnex_adj_mix") {
+
+      getPriorParametersExNexAdjMix(
+        target_rates = target_rates,
+        n_worth      = n_worth,
+        tau_scale    = tau_scale,
+        w_j          = w_j
+      )[[1]]
+
+    } else if (method_name == "pooled") {
+
+      getPriorParametersPooled(
+        target_rates = target_rates,
+        n_worth      = n_worth)[[1]]
+
+    } else if (method_name == "stratified") {
+
+      getPriorParametersStratified(
+        target_rates = target_rates,
+        n_worth      = n_worth)[[1]]
+
+    }
+
+    else if (method_name == "stratified_mix") {
+
+      getPriorParametersStratifiedMix(
+        target_rates = target_rates,
+        n_worth      = n_worth)[[1]]
+
+    }
+
+  })
+
+  names(prior_parameters_list) <- method_names
+  class(prior_parameters_list) <- "prior_parameters_list"
+
+  return (prior_parameters_list)
+
+}
