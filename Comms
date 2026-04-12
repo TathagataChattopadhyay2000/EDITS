@@ -1,42 +1,23 @@
+} else if (method_name == "exnex_mix") {
 
-── Failed tests ─────────────────────────────────────────────────
-Error (test-OCFunctions.R:22:1): (code run outside of `test_that()`)
-Error in `{
-    {
-        rngtools::RNGseed(.doRNG.stream)
-    }
-    {
-        chunks_inner <- chunkVector(k, foreach::getDoParWorkers())
-        foreach::foreach(i = chunks_inner, .combine = c) %dorng% 
-            {
-                lapply(i, function(j) {
-                  getPostQuantilesOfTrial(n_responders = as.numeric(scenario_data$n_responders[j, 
-                    ]), n_subjects = as.numeric(scenario_data$n_subjects[j, 
-                    ]), trial_index = j, j_data = j_data, j_parameters = j_parameters, 
-                    j_model_file = j_model_file, method_name = method_name, 
-                    quantiles = quantiles, calc_differences = calc_differences, 
-                    n_mcmc_iterations = n_mcmc_iterations, save_path = save_path, 
-                    save_trial = save_trial)
-                })
-            }
-    }
-}`: task 1 failed - "task 1 failed - "RUNTIME ERROR:
-Compilation error on line 47.
-Unknown variable Nstrata
-Either supply values for this variable with the data
-or define it  on the left hand side of a relation.
+  getPriorParametersExNex(
+    target_rates = target_rates,
+    n_worth      = n_worth,
+    tau_scale    = tau_scale,
+    w_j          = w_j,
+    w_nex        = 1,
+    mean_nex     = matrix(logit(target_rates), nrow = 1),
+    sd_nex       = matrix(sqrt(getMuVar(target_rates, 0, n_worth)), nrow = 1)
+  )[[1]]
 
-""
-Backtrace:
-    ▆
- 1. └─bhmbasket::performAnalyses(...) at test-OCFunctions.R:22:1
- 2.   └─bhmbasket:::getPostQuantiles(...) at bhmbasket/R/AnalysisFunctions.R:1208:5
- 3.     ├─base::suppressMessages(...) at bhmbasket/R/AnalysisFunctions.R:187:3
- 4.     │ └─base::withCallingHandlers(...)
- 5.     ├─... %dorng% ... at bhmbasket/R/AnalysisFunctions.R:187:3
- 6.     │ └─base::do.call(`%dopar%`, list(obj, ex), envir = parent.frame())
- 7.     └─foreach (local) `<fn>`(...)
- 8.       └─e$fun(obj, substitute(ex), parent.frame(), e$data)
+} else if (method_name == "exnex_adj_mix") {
 
-[ FAIL 1 | WARN 0 | SKIP 0 | PASS 441 ]
-> 
+  getPriorParametersExNexAdj(
+    target_rates = target_rates,
+    n_worth      = n_worth,
+    tau_scale    = tau_scale,
+    w_j          = w_j,
+    w_nex        = 1,
+    mean_nex     = matrix(0, nrow = 1, ncol = length(target_rates)),
+    sd_nex       = matrix(sqrt(getMuVar(target_rates, 0, n_worth)), nrow = 1)
+  )[[1]]
