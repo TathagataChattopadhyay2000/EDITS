@@ -1,123 +1,42 @@
-getPriorParameters <- function (
 
-  method_names,
-  target_rates,
-  n_worth   = 1,
-  tau_scale = 1,
-  w_j       = 0.5
-
-) {
-
-  error_method_names <-
-    paste("Providing a (vector of) strings for the argument 'method_names'\n",
-          "Must be one of 'berry', 'exnex', 'exnex_adj', 'pooled', 'stratified'")
-  error_target_rates <-
-    "Providing a vector of numerics in (0, 1) for the argument 'target_rates'"
-  error_tau_scale    <-
-    "Providing a positive numeric for the argument 'tau_scale'"
-  error_n_worth      <- "Providing a positive integer for the argument 'n_worth'"
-  error_w_j          <- "Providing a numeric in (0, 1) for the argument 'w_j'"
-
-  checkmate::assertCharacter(method_names, any.missing = FALSE, .var.name = error_method_names)
-
-  method_names <- tryCatch({
-
-    match.arg(
-      method_names,
-      choices = c(
-        "berry", "exnex", "exnex_adj", "pooled", "stratified", "stratified_mix",
-        "exnex_mix", "exnex_adj_mix"
-      ),
-      several.ok = TRUE
-    )
-
-  }, error = function (e) e)
-
-  checkmate::assertNumeric(target_rates, any.missing = FALSE, .var.name = error_target_rates)
-  checkmate::assertTRUE(all(target_rates > 0 & target_rates < 1), .var.name = error_target_rates)
-
-  checkmate::assertNumber(tau_scale, .var.name = error_tau_scale)
-  checkmate::assertTRUE(tau_scale > 0, .var.name = error_tau_scale)
-
-  checkmate::assertInt(n_worth, lower = 1, .var.name = error_n_worth)
-
-  checkmate::assertNumeric(w_j, lower = 0, upper = 1, len = 1, .var.name = error_w_j)
-
-
-  ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
-
-  method_names <- sort(method_names)
-
-  prior_parameters_list <- lapply(method_names, function (method_name) {
-
-    if (method_name == "berry") {
-
-      getPriorParametersBerry(
-        target_rates = target_rates,
-        n_worth      = n_worth,
-        tau_scale    = tau_scale)[[1]]
-
-    } else if (method_name == "exnex") {
-
-      getPriorParametersExNex(
-        target_rates = target_rates,
-        n_worth      = n_worth,
-        tau_scale    = tau_scale,
-        w_j          = w_j)[[1]]
-
-    } else if (method_name == "exnex_adj") {
-
-      getPriorParametersExNexAdj(
-        target_rates = target_rates,
-        n_worth      = n_worth,
-        tau_scale    = tau_scale,
-        w_j          = w_j)[[1]]
-
-    } else if (method_name == "exnex_mix") {
-
-      getPriorParametersExNexMix(
-        target_rates = target_rates,
-        n_worth      = n_worth,
-        tau_scale    = tau_scale,
-        w_j          = w_j
-      )[[1]]
-
-    } else if (method_name == "exnex_adj_mix") {
-
-      getPriorParametersExNexAdjMix(
-        target_rates = target_rates,
-        n_worth      = n_worth,
-        tau_scale    = tau_scale,
-        w_j          = w_j
-      )[[1]]
-
-    } else if (method_name == "pooled") {
-
-      getPriorParametersPooled(
-        target_rates = target_rates,
-        n_worth      = n_worth)[[1]]
-
-    } else if (method_name == "stratified") {
-
-      getPriorParametersStratified(
-        target_rates = target_rates,
-        n_worth      = n_worth)[[1]]
-
+── Failed tests ─────────────────────────────────────────────────
+Error (test-OCFunctions.R:22:1): (code run outside of `test_that()`)
+Error in `{
+    {
+        rngtools::RNGseed(.doRNG.stream)
     }
-
-    else if (method_name == "stratified_mix") {
-
-      getPriorParametersStratifiedMix(
-        target_rates = target_rates,
-        n_worth      = n_worth)[[1]]
-
+    {
+        chunks_inner <- chunkVector(k, foreach::getDoParWorkers())
+        foreach::foreach(i = chunks_inner, .combine = c) %dorng% 
+            {
+                lapply(i, function(j) {
+                  getPostQuantilesOfTrial(n_responders = as.numeric(scenario_data$n_responders[j, 
+                    ]), n_subjects = as.numeric(scenario_data$n_subjects[j, 
+                    ]), trial_index = j, j_data = j_data, j_parameters = j_parameters, 
+                    j_model_file = j_model_file, method_name = method_name, 
+                    quantiles = quantiles, calc_differences = calc_differences, 
+                    n_mcmc_iterations = n_mcmc_iterations, save_path = save_path, 
+                    save_trial = save_trial)
+                })
+            }
     }
+}`: task 1 failed - "task 1 failed - "RUNTIME ERROR:
+Compilation error on line 47.
+Unknown variable Nstrata
+Either supply values for this variable with the data
+or define it  on the left hand side of a relation.
 
-  })
+""
+Backtrace:
+    ▆
+ 1. └─bhmbasket::performAnalyses(...) at test-OCFunctions.R:22:1
+ 2.   └─bhmbasket:::getPostQuantiles(...) at bhmbasket/R/AnalysisFunctions.R:1208:5
+ 3.     ├─base::suppressMessages(...) at bhmbasket/R/AnalysisFunctions.R:187:3
+ 4.     │ └─base::withCallingHandlers(...)
+ 5.     ├─... %dorng% ... at bhmbasket/R/AnalysisFunctions.R:187:3
+ 6.     │ └─base::do.call(`%dopar%`, list(obj, ex), envir = parent.frame())
+ 7.     └─foreach (local) `<fn>`(...)
+ 8.       └─e$fun(obj, substitute(ex), parent.frame(), e$data)
 
-  names(prior_parameters_list) <- method_names
-  class(prior_parameters_list) <- "prior_parameters_list"
-
-  return (prior_parameters_list)
-
-}
+[ FAIL 1 | WARN 0 | SKIP 0 | PASS 441 ]
+> 
