@@ -1,185 +1,241 @@
-install.packages("RBesT")
-library(RBesT)
-library(bhmbasket)
+# ------------------------------------------------------------------
+# Test: RBesT comparison for mixture models
+# Input:
+#   - Fixed 2-component beta-mixture prior from RBesT
+#   - Two identical cohorts with same data
+# Behaviour:
+#   - stratified_mix should match RBesT closely (same beta-mixture updating)
+#   - exnex_mix and exnex_adj_mix use a logit-normal NEX mixture derived
+#     from the same RBesT prior via rmix() + normal-mixture fitting
+#   - identical cohorts should produce identical posteriors
+# Expectations:
+#   - stratified_mix close to RBesT
+#   - exnex_mix / exnex_adj_mix finite and symmetric across the 2 cohorts
+# Why:
+#   - Validates the three implemented mixture branches against a common
+#     external reference prior and checks structural symmetry.
+# ------------------------------------------------------------------
+test_that("mixture branches agree with RBesT reference prior and preserve symmetry", {
+  skip_if_not_installed("RBesT")
 
-## -----------------------------
-## toy data
-## -----------------------------
-n <- c(20, 18, 22)
-r <- c(6, 5, 9)
-probs <- c(0.025, 0.5, 0.975)
+  set.seed(123)
 
-trial_data <- createTrial(
-  n_subjects   = n,
-  n_responders = r
-)
+  ## -----------------------------
+  ## symmetric 2-cohort setup
+  ## -----------------------------
+  n <- c(20, 20)
+  r <- c(6, 6)
+  probs <- c(0.025, 0.5, 0.975)
 
+  trial_data <- createTrial(
+    n_subjects   = n,
+    n_responders = r
+  )
+
+  ## -----------------------------
+  ## fixed RBesT beta-mixture prior
+  ## same prior reused for all 3 branches
+  ## -----------------------------
+  w <- c(0.8, 0.2)
+
+  a_one <- c(4, 1)
+  b_one <- c(12, 1)
+
+  a_j <- cbind(a_one, a_one)
+  b_j <- cbind(b_one, b_one)
+
+  ## =============================
+  ## 1) stratified_mix vs RBesT
+  ## =============================
+  pp_strat_mix <- setPriorParametersStratifiedMix(
+    w   = w,
+    a_j = a_j,
+    b_j = b_j
+  )
+
+  res_strat <- performAnalyses(
+    scenario_list         = trial_data,
+    method_names          = "stratified_mix",
+    prior_parameters_list = pp_strat_mix,
+    n_mcmc_iterations     = 2000,
+    verbose               = FALSE
+  )
+
+  bhm_strat <- res_strat[[1]]$quantiles_list$stratified_mix[
+    c("2.5%", "50%", "97.5%", "Mean", "SD"),
+    c("p_1", "p_2"),
+    drop = FALSE
+  ]
+  rownames(bhm_strat) <- c("q025", "q500", "q975", "Mean", "SD")
+
+  ## RBesT reference, cohort 1 only
+  prior_rbest <- RBesT::mixbeta(
+    c(w[1], a_one[1], b_one[1]),
+    c(w[2], a_one[2], b_one[2])
+  )
+  post_rbest <- RBesT::postmix(prior_rbest, n = n[1], r = r[1])
+  sum_rbest  <- summary(post_rbest, probs = probs)
+
+  rbest_ref <- c(
+    q025 = unname(sum_rbest["2.5%"]),
+    q500 = unname(sum_rbest["50%"]),
+    q975 = unname(sum_rbest["97.5%"]),
+    Mean = unname(sum_rbest["mean"]),
+    SD   = unname(sum_rbest["sd"])
+  )
+
+  expect_equal(
+    unname(bhm_strat[, "p_1"]),
+    unname(rbest_ref),
+    tolerance = 0.02
+  )
+
+  expect_equal(
+    unname(bhm_strat[, "p_2"]),
+    unname(rbest_ref),
+    tolerance = 0.02
+  )
+
+  ## symmetry check
+  expect_equal(
+    unname(bhm_strat[, "p_1"]),
+    unname(bhm_strat[, "p_2"]),
+    tolerance = 1e-8
+  )
+
+  ## ==========================================
+  ## 2) derive logit-normal mixture for exnex*
+  ## ==========================================
+  ## draw from the same RBesT prior on probability scale
+  p_draws <- RBesT::rmix(prior_rbest, 20000)
+
+  ## avoid exact 0/1 before logit
+  eps <- 1e-8
+  p_draws <- pmin(pmax(p_draws, eps), 1 - eps)
+
+  eta_draws <- qlogis(p_draws)
+
+  ## fit Gaussian mixture on logit scale
+  ## output is expected as one row per component with columns:
+  ## weight, mean, sd
+  mix_fit <- RBesT::automixfit(eta_draws)
+
+  ## robust extraction for current RBesT object structure
+  fit_tab <- as.data.frame(mix_fit)
+  fit_names <- tolower(names(fit_tab))
+
+  w_col  <- which(fit_names %in% c("w", "weight", "prob"))
+  mu_col <- which(fit_names %in% c("mean", "mu"))
+  sd_col <- which(fit_names %in% c("sd", "sigma"))
+
+  expect_true(length(w_col)  == 1)
+  expect_true(length(mu_col) == 1)
+  expect_true(length(sd_col) == 1)
+
+  w_nex_derived <- fit_tab[[w_col]]
+  mean_one      <- fit_tab[[mu_col]]
+  sd_one        <- fit_tab[[sd_col]]
+
+  ## normalize weights just in case
+  w_nex_derived <- w_nex_derived / sum(w_nex_derived)
+
+  ## replicate same derived mixture for both identical cohorts
+  mean_nex <- cbind(mean_one, mean_one)
+  sd_nex   <- cbind(sd_one, sd_one)
+
+  ## =============================
+## 3) exnex_mix with EX off
 ## =============================
-## 1) stratified_mix vs RBesT
-## =============================
-
-## same 2-component beta-mixture prior for each cohort
-## rows = mixture components, cols = cohorts
-w <- c(0.8, 0.2)
-
-a_j <- rbind(
-  c(4, 5, 6),
-  c(1, 1, 1)
-)
-
-b_j <- rbind(
-  c(12, 10, 9),
-  c(1, 1, 1)
-)
-
-## bhmbasket
-pp_strat_mix <- setPriorParametersStratifiedMix(
-  w   = w,
-  a_j = a_j,
-  b_j = b_j
-)
-
-res_bhm <- performAnalyses(
-  scenario_list         = trial_data,
-  method_names          = "stratified_mix",
-  prior_parameters_list = pp_strat_mix,
-  n_mcmc_iterations     = 2000,
-  verbose               = FALSE
-)
-
-bhm_tab <- res_bhm[[1]]$quantiles_list$stratified_mix
-bhm_tab
-
-## RBesT: same prior, cohort by cohort
-rbest_tab <- sapply(seq_along(n), function(j) {
-  prior_j <- do.call(
-    RBesT::mixbeta,
-    lapply(seq_along(w), function(k) c(w[k], a_j[k, j], b_j[k, j]))
-  )
-
-  post_j <- RBesT::postmix(prior_j, n = n[j], r = r[j])
-
-  summ_j <- summary(post_j, probs = probs)
-
-  c(
-    q025 = unname(summ_j["2.5%"]),
-    q500 = unname(summ_j["50%"]),
-    q975 = unname(summ_j["97.5%"]),
-    Mean = unname(summ_j["mean"]),
-    SD   = unname(summ_j["sd"])
-  )
-})
-
-colnames(rbest_tab) <- paste0("cohort_", seq_along(n))
-rbest_tab
-
-## bhmbasket table in the same shape
-bhm_cmp <- bhm_tab[c("2.5%", "50%", "97.5%", "Mean", "SD"), paste0("p_", 1:3)]
-colnames(bhm_cmp) <- paste0("cohort_", 1:3)
-rownames(bhm_cmp) <- c("q025", "q500", "q975", "Mean", "SD")
-
-## side-by-side comparison
-comparison <- lapply(seq_along(n), function(j) {
-  out <- cbind(
-    bhmbasket = bhm_cmp[, j],
-    RBesT     = rbest_tab[, j]
-  )
-  rownames(out) <- c("q025", "q500", "q975", "Mean", "SD")
-  out
-})
-
-names(comparison) <- paste0("cohort_", seq_along(n))
-comparison
-
-## differences: bhmbasket - RBesT
-diff_tab <- sapply(seq_along(n), function(j) bhm_cmp[, j] - rbest_tab[, j])
-colnames(diff_tab) <- paste0("cohort_", seq_along(n))
-rownames(diff_tab) <- c("q025", "q500", "q975", "Mean", "SD")
-diff_tab
-
-
-## ===========================================
-## 2) exnex_mix with EX turned off vs RBesT
-## ===========================================
-## With w_j = 0, the EX part gets zero weight, so only the NEX mixture remains.
-## That makes the comparison to a pure beta-mixture posterior in RBesT natural.  [oai_citation:1‡Rdrr.io](https://rdrr.io/cran/RBesT/man/postmix.html?utm_source=chatgpt.com)
-
-w_nex <- c(0.8, 0.2)
-
-mean_nex <- rbind(
-  qlogis(c(4 / (4 + 12), 5 / (5 + 10), 6 / (6 + 9))),
-  qlogis(c(0.5, 0.5, 0.5))
-)
-
-sd_nex <- rbind(
-  c(0.5, 0.5, 0.5),
-  c(2.0, 2.0, 2.0)
-)
-
-pp_exnex_mix_zero_ex <- setPriorParametersExNex(
+pp_exnex_mix <- setPriorParametersExNex(
   mu_mean   = 0,
   mu_sd     = 1,
   tau_scale = 0.5,
   w_j       = 0,
-  w_nex     = w_nex,
+  w_nex     = w_nex_derived,
   mean_nex  = mean_nex,
   sd_nex    = sd_nex
 )
+names(pp_exnex_mix) <- "exnex_mix"
 
-names(pp_exnex_mix_zero_ex) <- "exnex_mix"
-
-res_ex0 <- performAnalyses(
+res_exnex_mix <- performAnalyses(
   scenario_list         = trial_data,
   method_names          = "exnex_mix",
-  prior_parameters_list = pp_exnex_mix_zero_ex,
+  prior_parameters_list = pp_exnex_mix,
   n_mcmc_iterations     = 4000,
   verbose               = FALSE
 )
 
-ex0_tab <- res_ex0[[1]]$quantiles_list$exnex_mix
-ex0_tab
+bhm_exnex_mix <- res_exnex_mix[[1]]$quantiles_list$exnex_mix[
+  c("2.5%", "50%", "97.5%", "Mean", "SD"),
+  c("p_1", "p_2"),
+  drop = FALSE
+]
+rownames(bhm_exnex_mix) <- c("q025", "q500", "q975", "Mean", "SD")
 
-## RBesT comparison
-## Convert each logit-normal NEX mixture component to an approximate beta prior
-## using its mean and variance on the probability scale.
-logitnorm_to_beta <- function(mu, sd) {
-  draws <- plogis(rnorm(200000, mean = mu, sd = sd))
-  m <- mean(draws)
-  v <- var(draws)
-  phi <- m * (1 - m) / v - 1
-  c(a = m * phi, b = (1 - m) * phi)
-}
+expect_true(all(is.finite(bhm_exnex_mix)))
+expect_equal(
+  unname(bhm_exnex_mix[, "p_1"]),
+  unname(bhm_exnex_mix[, "p_2"]),
+  tolerance = 1e-8
+)
 
-rbest_ex0_tab <- sapply(seq_along(n), function(j) {
-  ab <- t(sapply(seq_along(w_nex), function(k) {
-    logitnorm_to_beta(mean_nex[k, j], sd_nex[k, j])
-  }))
+expect_equal(
+  unname(bhm_exnex_mix[, "p_1"]),
+  unname(rbest_ref),
+  tolerance = 0.05
+)
 
-  prior_j <- do.call(
-    RBesT::mixbeta,
-    lapply(seq_along(w_nex), function(k) c(w_nex[k], ab[k, "a"], ab[k, "b"]))
-  )
+expect_equal(
+  unname(bhm_exnex_mix[, "p_2"]),
+  unname(rbest_ref),
+  tolerance = 0.05
+)
 
-  post_j <- RBesT::postmix(prior_j, n = n[j], r = r[j])
-  summ_j <- summary(post_j, probs = probs)
+## =============================
+## 4) exnex_adj_mix with EX off
+## =============================
+pp_exnex_adj_mix <- setPriorParametersExNexAdj(
+  mu_mean   = 0,
+  mu_sd     = 1,
+  tau_scale = 0.5,
+  w_j       = 0,
+  w_nex     = w_nex_derived,
+  mean_nex  = mean_nex,
+  sd_nex    = sd_nex
+)
+names(pp_exnex_adj_mix) <- "exnex_adj_mix"
 
-  c(
-    q025 = unname(summ_j["2.5%"]),
-    q500 = unname(summ_j["50%"]),
-    q975 = unname(summ_j["97.5%"]),
-    Mean = unname(summ_j["mean"]),
-    SD   = unname(summ_j["sd"])
-  )
-})
+res_exnex_adj_mix <- performAnalyses(
+  scenario_list         = trial_data,
+  method_names          = "exnex_adj_mix",
+  target_rates          = c(0.5, 0.5),
+  prior_parameters_list = pp_exnex_adj_mix,
+  n_mcmc_iterations     = 4000,
+  verbose               = FALSE
+)
 
-colnames(rbest_ex0_tab) <- paste0("cohort_", seq_along(n))
-rbest_ex0_tab
+bhm_exnex_adj_mix <- res_exnex_adj_mix[[1]]$quantiles_list$exnex_adj_mix[
+  c("2.5%", "50%", "97.5%", "Mean", "SD"),
+  c("p_1", "p_2"),
+  drop = FALSE
+]
+rownames(bhm_exnex_adj_mix) <- c("q025", "q500", "q975", "Mean", "SD")
 
-ex0_cmp <- ex0_tab[c("2.5%", "50%", "97.5%", "Mean", "SD"), paste0("p_", 1:3)]
-colnames(ex0_cmp) <- paste0("cohort_", 1:3)
-rownames(ex0_cmp) <- c("q025", "q500", "q975", "Mean", "SD")
+expect_true(all(is.finite(bhm_exnex_adj_mix)))
+expect_equal(
+  unname(bhm_exnex_adj_mix[, "p_1"]),
+  unname(bhm_exnex_adj_mix[, "p_2"]),
+  tolerance = 1e-8
+)
 
-ex0_diff <- sapply(seq_along(n), function(j) ex0_cmp[, j] - rbest_ex0_tab[, j])
-colnames(ex0_diff) <- paste0("cohort_", seq_along(n))
-rownames(ex0_diff) <- c("q025", "q500", "q975", "Mean", "SD")
-ex0_diff
+expect_equal(
+  unname(bhm_exnex_adj_mix[, "p_1"]),
+  unname(rbest_ref),
+  tolerance = 0.05
+)
+
+expect_equal(
+  unname(bhm_exnex_adj_mix[, "p_2"]),
+  unname(rbest_ref),
+  tolerance = 0.05
+)
