@@ -1,11 +1,30 @@
-─ Error: mixture branches agree with RBesT reference prior and preserve symmetry ──
-Error in `qmix.default(0.025, post_rbest)`: Unknown mixture
+── Failure: mixture branches agree with RBesT reference prior and preserve symmetry ──
+unname(bhm_strat[, "p_1"]) (`actual`) not equal to unname(bhm_strat[, "p_2"]) (`expected`).
+
+  `actual`: 0.150 0.277 0.439 0.282 0.077
+`expected`: 0.145 0.276 0.445 0.282 0.077
+
+── Failure: mixture branches agree with RBesT reference prior and preserve symmetry ──
+length(w_col) is not more than 1. Difference: -1
+
+── Failure: mixture branches agree with RBesT reference prior and preserve symmetry ──
+length(mu_col) is not more than 1. Difference: -1
+
+── Failure: mixture branches agree with RBesT reference prior and preserve symmetry ──
+length(sd_col) is not more than 1. Difference: -1
+
+── Error: mixture branches agree with RBesT reference prior and preserve symmetry ──
+Error in `setPriorParametersExNex(mu_mean = 0, mu_sd = 1, tau_scale = 0.5, 
+    w_j = 0, w_nex = w_nex_derived, mean_nex = mean_nex, sd_nex = sd_nex)`: Assertion on 'Providing a numeric vector of weights in [0, 1] summing to 1 for the argument 'w_nex'' failed: Must be TRUE.
 Backtrace:
     ▆
- 1. ├─base::unname(RBesT::qmix(0.025, post_rbest))
- 2. ├─RBesT::qmix(0.025, post_rbest)
- 3. └─RBesT:::qmix.default(0.025, post_rbest)
+ 1. └─bhmbasket::setPriorParametersExNex(...)
+ 2.   └─checkmate::assertTRUE(isTRUE(all.equal(sum(w_nex), 1)), .var.name = error_w_nex) at bhmbasket/R/PriorFunctions.R:690:5
+ 3.     └─checkmate::makeAssertion(x, res, .var.name, add)
+ 4.       └─checkmate:::mstop(...)
 
 Error:
 ! Test failed
 Run `rlang::last_trace()` to see where the error occurred.
+
+> 
