@@ -1,9 +1,10 @@
 ─ Error: mixture branches agree with RBesT reference prior and preserve symmetry ──
-Error in `rmix.default(50000, post_rbest)`: Unknown mixture
+Error in `qmix.default(0.025, post_rbest)`: Unknown mixture
 Backtrace:
     ▆
- 1. ├─RBesT::rmix(50000, post_rbest)
- 2. └─RBesT:::rmix.default(50000, post_rbest)
+ 1. ├─base::unname(RBesT::qmix(0.025, post_rbest))
+ 2. ├─RBesT::qmix(0.025, post_rbest)
+ 3. └─RBesT:::qmix.default(0.025, post_rbest)
 
 Error:
 ! Test failed
