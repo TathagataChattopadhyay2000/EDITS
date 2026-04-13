@@ -1,12 +1,49 @@
-> res_strat[[1]]$quantiles_list$stratified_mix
-[[1]]
-             p_1        p_2
-2.5%  0.15038658 0.14461635
-5%    0.16742479 0.16272384
-10%   0.18850390 0.18668520
-20%   0.21774807 0.21831295
-50%   0.27678998 0.27642014
-95%   0.41348992 0.41079956
-97.5% 0.43931660 0.44507352
-Mean  0.28155969 0.28155969
-SD    0.07704514 0.07704514
+─ Failure: mixture branches agree with RBesT reference prior and preserve symmetry ────
+unname(bhm_strat[, "p_1"]) (`actual`) not equal to unname(rbest_ref) (`expected`).
+
+  `actual`: 0.150 0.277 0.439 0.282 0.077
+`expected`:    NA    NA 0.446 0.282 0.077
+
+── Failure: mixture branches agree with RBesT reference prior and preserve symmetry ────
+unname(bhm_strat[, "p_2"]) (`actual`) not equal to unname(rbest_ref) (`expected`).
+
+  `actual`: 0.145 0.276 0.445 0.282 0.077
+`expected`:    NA    NA 0.446 0.282 0.077
+
+── Failure: mixture branches agree with RBesT reference prior and preserve symmetry ────
+unname(bhm_strat[, "p_1"]) (`actual`) not equal to unname(bhm_strat[, "p_2"]) (`expected`).
+
+  `actual`: 0.15039 0.27679 0.43932 0.28156 0.07705
+`expected`: 0.14462 0.27642 0.44507 0.28156 0.07705
+
+── Failure: mixture branches agree with RBesT reference prior and preserve symmetry ────
+length(w_col) == 1 is not TRUE
+
+`actual`:   FALSE
+`expected`: TRUE 
+
+── Failure: mixture branches agree with RBesT reference prior and preserve symmetry ────
+length(mu_col) == 1 is not TRUE
+
+`actual`:   FALSE
+`expected`: TRUE 
+
+── Failure: mixture branches agree with RBesT reference prior and preserve symmetry ────
+length(sd_col) == 1 is not TRUE
+
+`actual`:   FALSE
+`expected`: TRUE 
+
+── Error: mixture branches agree with RBesT reference prior and preserve symmetry ──────
+Error in `.subset2(x, i, exact = exact)`: attempt to select less than one element in get1index
+Backtrace:
+    ▆
+ 1. ├─fit_tab[[w_col]]
+ 2. └─base::`[[.data.frame`(fit_tab, w_col)
+ 3.   └─(function(x, i, exact) if (is.matrix(i)) as.matrix(x)[[i]] else .subset2(x, ...
+
+Error:
+! Test failed
+Run `rlang::last_trace()` to see where the error occurred.
+
+> 
