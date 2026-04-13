@@ -1,179 +1,139 @@
-getPriorParametersExNex <- function (
+install.packages("RBesT")
+library(RBesT)
+library(bhmbasket)
 
-  target_rates,
-  tau_scale = 1,
-  n_worth   = 1,
-  w_j       = 0.5,
+## -----------------------------
+## toy data
+## -----------------------------
+n <- c(20, 18, 22)
+r <- c(6, 5, 9)
+quantiles <- c(0.025, 0.5, 0.975)
 
-  w_nex     = NULL,
-  mean_nex  = NULL,
-  sd_nex    = NULL
+## -----------------------------
+## same 2-component beta-mixture prior for each cohort
+## rows = mixture components, cols = cohorts
+## component 1 = informative
+## component 2 = weak
+## -----------------------------
+w <- c(0.8, 0.2)
 
-) {
+a_j <- rbind(
+  c(4, 5, 6),
+  c(1, 1, 1)
+)
 
-  error_target_rates <- "Providing a vector of numerics in (0, 1) for the argument 'target_rates'"
-  error_tau_scale    <- "Providing a positive numeric for the argument 'tau_scale'"
-  error_n_worth      <- "Providing a positive integer for the argument 'n_worth'"
-  error_w_j          <- "Providing a numeric in (0, 1) for the argument 'w_j'"
-  error_w_nex        <- "Providing a numeric vector of weights in [0, 1] summing to 1 for the argument 'w_nex'"
-  error_mean_nex     <- "Providing a numeric matrix for the argument 'mean_nex'"
-  error_sd_nex       <- "Providing a positive numeric matrix for the argument 'sd_nex'"
-  error_dim          <- "'mean_nex' and 'sd_nex' must have the same dimensions, nrow(mean_nex) must equal length(w_nex), and ncol(mean_nex) must equal length(target_rates)"
+b_j <- rbind(
+  c(12, 10, 9),
+  c(1, 1, 1)
+)
 
-  checkmate::assertNumeric(target_rates, any.missing = FALSE, .var.name = error_target_rates)
-  checkmate::assertTRUE(all(target_rates > 0 & target_rates < 1), .var.name = error_target_rates)
+## -----------------------------
+## bhmbasket: stratified_mix
+## -----------------------------
+trial_data <- createTrial(
+  n_subjects   = n,
+  n_responders = r
+)
 
-  checkmate::assertNumber(tau_scale, .var.name = error_tau_scale)
-  checkmate::assertTRUE(tau_scale > 0, .var.name = error_tau_scale)
+pp_strat_mix <- setPriorParametersStratifiedMix(
+  w   = w,
+  a_j = a_j,
+  b_j = b_j
+)
 
-  checkmate::assertInt(n_worth, lower = 1, .var.name = error_n_worth)
+res_bhm <- performAnalyses(
+  scenario_list         = trial_data,
+  method_names          = "stratified_mix",
+  prior_parameters_list = pp_strat_mix,
+  n_mcmc_iterations     = 2000,
+  verbose               = FALSE
+)
 
-  checkmate::assertNumeric(w_j, lower = 0, upper = 1, len = 1, .var.name = error_w_j)
+bhm_tab <- res_bhm[[1]]$quantiles_list$stratified_mix
+bhm_tab
 
-  target_rate_max_var <- target_rates[abs(target_rates - 0.5) == max(abs(target_rates - 0.5))][1]
-  mu_var <- getMuVar(target_rate_max_var, tau_scale, n_worth)
+## -----------------------------
+## RBesT: same prior, cohort by cohort
+## -----------------------------
 
-  if (mu_var <= 0) {
-    stop(simpleError(paste(
-      "The provided input parameters lead to a variance of mu <= 0.",
-      "Consider to decrease 'tau_scale' or 'n_worth'"
-    )))
-  }
-
-  prior_base <- list(
-    mu_mean   = logit(target_rate_max_var),
-    mu_sd     = sqrt(mu_var),
-    tau_scale = tau_scale,
-    w_j       = w_j
+rbest_one <- function(n, r, w, a, b, probs = c(0.025, 0.5, 0.975), nsim = 100000) {
+  prior <- do.call(
+    RBesT::mixbeta,
+    lapply(seq_along(w), function(k) c(w[k], a[k], b[k]))
   )
-
-  if (is.null(w_nex) && is.null(mean_nex) && is.null(sd_nex)) {
-
-    prior_extra <- list(
-      mu_j  = logit(target_rates),
-      tau_j = sqrt(getMuVar(target_rates, 0, n_worth))
-    )
-
-  } else {
-
-    checkmate::assertNumeric(w_nex, any.missing = FALSE, lower = 0, upper = 1, .var.name = error_w_nex)
-    checkmate::assertTRUE(isTRUE(all.equal(sum(w_nex), 1)), .var.name = error_w_nex)
-
-    checkmate::assertTRUE(is.matrix(mean_nex), .var.name = error_mean_nex)
-    checkmate::assertTRUE(is.matrix(sd_nex), .var.name = error_sd_nex)
-    checkmate::assertTRUE(all(sd_nex > 0), .var.name = error_sd_nex)
-    checkmate::assertTRUE(all(dim(mean_nex) == dim(sd_nex)), .var.name = error_dim)
-    checkmate::assertTRUE(nrow(mean_nex) == length(w_nex), .var.name = error_dim)
-    checkmate::assertTRUE(ncol(mean_nex) == length(target_rates), .var.name = error_dim)
-
-    prior_extra <- list(
-      w_nex    = as.numeric(w_nex),
-      mean_nex = mean_nex,
-      sd_nex   = sd_nex
-    )
-  }
-
-  prior_parameters_list <- list(exnex = c(prior_base, prior_extra))
-  class(prior_parameters_list) <- "prior_parameters_list"
-
-  return(prior_parameters_list)
+  
+  post <- RBesT::postmix(prior, n = n, r = r)
+  
+  draws <- RBesT::rmix(post, nsim)
+  
+  c(
+    q025 = stats::quantile(draws, probs[1]),
+    q500 = stats::quantile(draws, probs[2]),
+    q975 = stats::quantile(draws, probs[3]),
+    Mean = mean(draws),
+    SD   = stats::sd(draws)
+  )
 }
 
---------------------------------
-
-setPriorParametersExNex <- function (
-
-  mu_mean,
-  mu_sd,
-  tau_scale,
-
-  mu_j      = NULL,
-  tau_j     = NULL,
-
-  w_j,
-
-  w_nex     = NULL,
-  mean_nex  = NULL,
-  sd_nex    = NULL
-
-) {
-
-  error_mu_mean    <- "Providing a numeric for the argument 'mu_mean'"
-  error_mu_sd      <- "Providing a positive numeric for the argument 'mu_sd'"
-  error_tau_scale  <- "Providing a positive numeric for the argument 'tau_scale'"
-  error_mu_j       <- "Providing a (vector of) numeric(s) for the argument 'mu_j'"
-  error_tau_j      <- "Providing a (vector of) positive numeric(s) for the argument 'tau_j'"
-  error_w_j        <- "Providing a numeric in (0, 1) for the argument 'w_j'"
-  error_w_nex      <- "Providing a numeric vector of weights in [0, 1] summing to 1 for the argument 'w_nex'"
-  error_mean_nex   <- "Providing a numeric matrix for the argument 'mean_nex'"
-  error_sd_nex     <- "Providing a positive numeric matrix for the argument 'sd_nex'"
-  error_dim        <- "'mean_nex' and 'sd_nex' must have the same dimensions, and nrow(mean_nex) must equal length(w_nex)"
-  error_mu_mean_sd <- "'mu_mean' and 'mu_sd' must have same length"
-  error_mu_j_tau_j <- "'mu_j' and 'tau_j' must have the same length"
-  error_w_j_long   <- "'w_j' must have length equal to length(mu_mean) + 1 if length(mu_mean) > 1"
-  error_w_j_short  <- "'w_j' must have length 1 or 2 if length(mu_mean) = 1"
-  error_w_j_sum    <- "Sum over items in 'w_j' must equal 1 if length(w_j) > 1"
-
-  checkmate::assert_numeric(mu_mean, any.missing = FALSE, .var.name = error_mu_mean)
-  checkmate::assert_numeric(mu_sd, lower = 0, any.missing = FALSE, .var.name = error_mu_sd)
-  checkmate::assertTRUE(all(mu_sd > 0), .var.name = error_mu_sd)
-
-  checkmate::assertNumber(tau_scale, .var.name = error_tau_scale)
-  checkmate::assertTRUE(tau_scale > 0, .var.name = error_tau_scale)
-
-  checkmate::assert_numeric(w_j, lower = 0, upper = 1, any.missing = FALSE, .var.name = error_w_j)
-
-  checkmate::assert_true(length(mu_mean) == length(mu_sd), .var.name = error_mu_mean_sd)
-
-  if (length(mu_mean) > 1) {
-    checkmate::assert_true(length(w_j) == length(mu_mean) + 1, .var.name = error_w_j_long)
-  } else {
-    checkmate::assert_true(length(w_j) %in% c(1, 2), .var.name = error_w_j_short)
-  }
-
-  if (length(w_j) > 1) {
-    checkmate::assert_true(isTRUE(all.equal(sum(w_j), 1)), .var.name = error_w_j_sum)
-  }
-
-  prior_base <- list(
-    mu_mean   = mu_mean,
-    mu_sd     = mu_sd,
-    tau_scale = tau_scale,
-    w_j       = w_j
+rbest_tab <- sapply(seq_along(n), function(j) {
+  rbest_one(
+    n = n[j],
+    r = r[j],
+    w = w,
+    a = a_j[, j],
+    b = b_j[, j],
+    probs = quantiles
   )
+})
 
-  if (is.null(w_nex) && is.null(mean_nex) && is.null(sd_nex)) {
+rbest_tab <- t(rbest_tab)
+rownames(rbest_tab) <- paste0("cohort_", seq_along(n))
+rbest_tab
 
-    checkmate::assert_numeric(mu_j, any.missing = FALSE, .var.name = error_mu_j)
-    checkmate::assert_numeric(tau_j, any.missing = FALSE, .var.name = error_tau_j)
-    checkmate::assertTRUE(all(tau_j > 0), .var.name = error_tau_j)
-    checkmate::assert_true(length(mu_j) == length(tau_j), .var.name = error_mu_j_tau_j)
+## -----------------------------
+## compare
+## -----------------------------
+bhm_cmp <- t(bhm_tab[c("2.5%", "50%", "97.5%", "Mean", "SD"), paste0("p_", 1:3)])
+colnames(bhm_cmp) <- c("q025", "q500", "q975", "Mean", "SD")
+rownames(bhm_cmp) <- paste0("cohort_", 1:3)
 
-    prior_extra <- list(
-      mu_j  = mu_j,
-      tau_j = tau_j
-    )
+comparison <- cbind(
+  bhm_cmp,
+  rbest_q025 = rbest_tab[, "q025"],
+  rbest_q500 = rbest_tab[, "q500"],
+  rbest_q975 = rbest_tab[, "q975"],
+  rbest_Mean = rbest_tab[, "Mean"],
+  rbest_SD   = rbest_tab[, "SD"]
+)
 
-  } else {
+comparison
+comparison[, 1:5] - comparison[, 6:10]
 
-    checkmate::assertNumeric(w_nex, any.missing = FALSE, lower = 0, upper = 1, .var.name = error_w_nex)
-    checkmate::assertTRUE(isTRUE(all.equal(sum(w_nex), 1)), .var.name = error_w_nex)
+## exnex_mix with EX turned off
+pp_exnex_mix_zero_ex <- setPriorParametersExNex(
+  mu_mean   = 0,
+  mu_sd     = 1,
+  tau_scale = 0.5,
+  w_j       = 0,
+  w_nex     = c(0.8, 0.2),
+  mean_nex  = rbind(
+    qlogis(c(4/(4+12), 5/(5+10), 6/(6+9))),
+    qlogis(c(0.5, 0.5, 0.5))
+  ),
+  sd_nex    = rbind(
+    c(0.5, 0.5, 0.5),
+    c(2, 2, 2)
+  )
+)
 
-    checkmate::assertTRUE(is.matrix(mean_nex), .var.name = error_mean_nex)
-    checkmate::assertTRUE(is.matrix(sd_nex), .var.name = error_sd_nex)
-    checkmate::assertTRUE(all(sd_nex > 0), .var.name = error_sd_nex)
-    checkmate::assertTRUE(all(dim(mean_nex) == dim(sd_nex)), .var.name = error_dim)
-    checkmate::assertTRUE(nrow(mean_nex) == length(w_nex), .var.name = error_dim)
+names(pp_exnex_mix_zero_ex) <- "exnex_mix"
 
-    prior_extra <- list(
-      w_nex    = as.numeric(w_nex),
-      mean_nex = mean_nex,
-      sd_nex   = sd_nex
-    )
-  }
+res_ex0 <- performAnalyses(
+  scenario_list         = trial_data,
+  method_names          = "exnex_mix",
+  prior_parameters_list = pp_exnex_mix_zero_ex,
+  n_mcmc_iterations     = 4000,
+  verbose               = FALSE
+)
 
-  prior_parameters_list <- list(exnex = c(prior_base, prior_extra))
-  class(prior_parameters_list) <- "prior_parameters_list"
-
-  return(prior_parameters_list)
-}
+res_ex0[[1]]$quantiles_list$exnex_mix
