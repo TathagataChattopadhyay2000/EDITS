@@ -1,191 +1,137 @@
-Run r-lib/actions/check-r-package@v2
-Run ## --------------------------------------------------------------------
-── R CMD build ─────────────────────────────────────────────────────────────────
-* checking for file ‘.../DESCRIPTION’ ... OK
-* preparing ‘bhmbasket’:
-* checking DESCRIPTION meta-information ... OK
-* installing the package to build vignettes
-* creating vignettes ... OK
-* checking for LF line-endings in source and make files and shell scripts
-* checking for empty or unneeded directories
-* building ‘bhmbasket_1.0.0.tar.gz’
+# install.packages("RBesT")
+library(RBesT)
+library(bhmbasket)
 
-── R CMD check ─────────────────────────────────────────────────────────────────
-* using log directory ‘/Users/runner/work/bhmbasket/bhmbasket/check/bhmbasket.Rcheck’
-* using R version 4.5.3 (2026-03-11)
-* using platform: aarch64-apple-darwin20
-* R was compiled by
-    Apple clang version 16.0.0 (clang-1600.0.26.6)
-    GNU Fortran (GCC) 14.2.0
-* running under: macOS Sequoia 15.7.4
-* using session charset: UTF-8
-* using options ‘--no-manual --as-cran’
-* checking for file ‘bhmbasket/DESCRIPTION’ ... OK
-* this is package ‘bhmbasket’ version ‘1.0.0’
-* package encoding: UTF-8
-* checking package namespace information ... OK
-* checking package dependencies ... OK
-* checking if this is a source package ... OK
-* checking if there is a namespace ... OK
-* checking for executable files ... OK
-* checking for hidden files and directories ... OK
-* checking for portable file names ... OK
-* checking for sufficient/correct file permissions ... OK
-* checking whether package ‘bhmbasket’ can be installed ... OK
-* checking installed package size ... OK
-* checking package directory ... OK
-* checking for future file timestamps ... OK
-* checking ‘build’ directory ... OK
-* checking DESCRIPTION meta-information ... OK
-* checking top-level files ... OK
-* checking for left-over files ... OK
-* checking index information ... OK
-* checking package subdirectories ... OK
-* checking code files for non-ASCII characters ... OK
-* checking R files for syntax errors ... OK
-* checking whether the package can be loaded ... OK
-* checking whether the package can be loaded with stated dependencies ... OK
-* checking whether the package can be unloaded cleanly ... OK
-* checking whether the namespace can be loaded with stated dependencies ... OK
-* checking whether the namespace can be unloaded cleanly ... OK
-* checking loading without being on the library search path ... OK
-* checking dependencies in R code ... OK
-* checking S3 generic/method consistency ... OK
-* checking replacement functions ... OK
-* checking foreign function calls ... OK
-* checking R code for possible problems ... OK
-* checking Rd files ... OK
-* checking Rd metadata ... OK
-* checking Rd line widths ... OK
-* checking Rd cross-references ... OK
-* checking for missing documentation entries ... OK
-* checking for code/documentation mismatches ... WARNING
-Warning: Codoc mismatches from Rd file 'performAnalyses.Rd':
-performAnalyses
-  Code: function(scenario_list, evidence_levels = c(0.025, 0.05, 0.5,
-                 0.8, 0.9, 0.95, 0.975), method_names = c("berry",
-                 "exnex", "exnex_mix", "exnex_adj", "exnex_adj_mix",
-                 "pooled", "stratified", "stratified_mix"),
-                 target_rates = NULL, prior_parameters_list = NULL,
-                 calc_differences = NULL, n_mcmc_iterations = 10000,
-                 n_cores = 1, seed = 1, verbose = TRUE)
-  Docs: function(scenario_list, evidence_levels = c(0.025, 0.05, 0.5,
-                 0.8, 0.9, 0.95, 0.975), method_names = c("berry",
-                 "exnex", "exnex_adj", "pooled", "stratified"),
-                 target_rates = NULL, prior_parameters_list = NULL,
-                 calc_differences = NULL, n_mcmc_iterations = 10000,
-                 n_cores = 1, seed = 1, verbose = TRUE)
-  Mismatches in argument default values:
-    Name: 'method_names'
-    Code: c("berry", "exnex", "exnex_mix", "exnex_adj", "exnex_adj_mix", 
-          "pooled", "stratified", "stratified_mix")
-    Docs: c("berry", "exnex", "exnex_adj", "pooled", "stratified")
-Codoc mismatches from Rd file 'setPriorParametersExNex.Rd':
-setPriorParametersExNex
-  Code: function(mu_mean, mu_sd, tau_scale, mu_j = NULL, tau_j = NULL,
-                 w_j, w_nex = NULL, mean_nex = NULL, sd_nex = NULL)
-  Docs: function(mu_mean, mu_sd, tau_scale, mu_j, tau_j, w_j)
-  Argument names in code not in docs:
-    w_nex mean_nex sd_nex
-  Mismatches in argument default values:
-    Name: 'mu_j' Code: NULL Docs: 
-    Name: 'tau_j' Code: NULL Docs: 
-Codoc mismatches from Rd file 'setPriorParametersExNexAdj.Rd':
-setPriorParametersExNexAdj
-  Code: function(mu_mean, mu_sd, tau_scale, mu_j = NULL, tau_j = NULL,
-                 w_j, w_nex = NULL, mean_nex = NULL, sd_nex = NULL)
-  Docs: function(mu_mean, mu_sd, tau_scale, mu_j, tau_j, w_j)
-  Argument names in code not in docs:
-    w_nex mean_nex sd_nex
-  Mismatches in argument default values:
-    Name: 'mu_j' Code: NULL Docs: 
-    Name: 'tau_j' Code: NULL Docs: 
-* checking Rd \usage sections ... OK
-* checking Rd contents ... OK
-* checking for unstated dependencies in examples ... OK
-* checking installed files from ‘inst/doc’ ... OK
-* checking files in ‘vignettes’ ... OK
-* checking examples ... OK
-* checking for unstated dependencies in ‘tests’ ... OK
-* checking tests ...
-  Running ‘testthat.R’
- OK
-* checking for unstated dependencies in vignettes ... OK
-* checking package vignettes ... OK
-* checking re-building of vignette outputs ... OK
-* checking for non-standard things in the check directory ... OK
-* checking for detritus in the temp directory ... OK
-* DONE
+## -----------------------------
+## toy data
+## -----------------------------
+n <- c(20, 18, 22)
+r <- c(6, 5, 9)
+quantiles <- c(0.025, 0.5, 0.975)
 
-Status: 1 WARNING
-See
-  ‘/Users/runner/work/bhmbasket/bhmbasket/check/bhmbasket.Rcheck/00check.log’
-for details.
+## -----------------------------
+## same 2-component beta-mixture prior for each cohort
+## rows = mixture components, cols = cohorts
+## component 1 = informative
+## component 2 = weak
+## -----------------------------
+w <- c(0.8, 0.2)
 
-── R CMD check results ──────────────────────────────────── bhmbasket 1.0.0 ────
-Duration: 28.7s
+a_j <- rbind(
+  c(4, 5, 6),
+  c(1, 1, 1)
+)
 
-❯ checking for code/documentation mismatches ... WARNING
-  Codoc mismatches from Rd file 'performAnalyses.Rd':
-Error: Error: R CMD check found WARNINGs
-Execution halted
-  performAnalyses
-    Code: function(scenario_list, evidence_levels = c(0.025, 0.05, 0.5,
-                   0.8, 0.9, 0.95, 0.975), method_names = c("berry",
-                   "exnex", "exnex_mix", "exnex_adj", "exnex_adj_mix",
-                   "pooled", "stratified", "stratified_mix"),
-                   target_rates = NULL, prior_parameters_list = NULL,
-                   calc_differences = NULL, n_mcmc_iterations = 10000,
-                   n_cores = 1, seed = 1, verbose = TRUE)
-    Docs: function(scenario_list, evidence_levels = c(0.025, 0.05, 0.5,
-                   0.8, 0.9, 0.95, 0.975), method_names = c("berry",
-                   "exnex", "exnex_adj", "pooled", "stratified"),
-                   target_rates = NULL, prior_parameters_list = NULL,
-                   calc_differences = NULL, n_mcmc_iterations = 10000,
-                   n_cores = 1, seed = 1, verbose = TRUE)
-    Mismatches in argument default values:
-      Name: 'method_names'
-      Code: c("berry", "exnex", "exnex_mix", "exnex_adj", "exnex_adj_mix", 
-            "pooled", "stratified", "stratified_mix")
-      Docs: c("berry", "exnex", "exnex_adj", "pooled", "stratified")
-  
-  Codoc mismatches from Rd file 'setPriorParametersExNex.Rd':
-  setPriorParametersExNex
-    Code: function(mu_mean, mu_sd, tau_scale, mu_j = NULL, tau_j = NULL,
-                   w_j, w_nex = NULL, mean_nex = NULL, sd_nex = NULL)
-    Docs: function(mu_mean, mu_sd, tau_scale, mu_j, tau_j, w_j)
-    Argument names in code not in docs:
-      w_nex mean_nex sd_nex
-    Mismatches in argument default values:
-      Name: 'mu_j' Code: NULL Docs: 
-      Name: 'tau_j' Code: NULL Docs: 
-  
-  Codoc mismatches from Rd file 'setPriorParametersExNexAdj.Rd':
-  setPriorParametersExNexAdj
-    Code: function(mu_mean, mu_sd, tau_scale, mu_j = NULL, tau_j = NULL,
-                   w_j, w_nex = NULL, mean_nex = NULL, sd_nex = NULL)
-    Docs: function(mu_mean, mu_sd, tau_scale, mu_j, tau_j, w_j)
-    Argument names in code not in docs:
-      w_nex mean_nex sd_nex
-    Mismatches in argument default values:
-      Name: 'mu_j' Code: NULL Docs: 
-      Name: 'tau_j' Code: NULL Docs: 
+b_j <- rbind(
+  c(12, 10, 9),
+  c(1, 1, 1)
+)
 
-0 errors ✔ | 1 warning ✖ | 0 notes ✔
-Error: Process completed with exit code 1.
-Run ## --------------------------------------------------------------------
-Show testthat output
-Run actions/upload-artifact@v4
-With the provided path, there will be 117 files uploaded
-Artifact name is valid!
-Root directory input is valid!
-Beginning upload of artifact content to blob storage
-Uploaded bytes 1790932
-Finished uploading artifact content to blob storage!
-SHA256 digest of uploaded artifact zip is 068761fb51eb21f7bf8324069f7b84c5557baac39c966f1ee8e511e59a9ee244
-Finalizing artifact upload
-Artifact macOS-ARM64-rrelease-0-results.zip successfully finalized. Artifact ID 6404523834
-Artifact macOS-ARM64-rrelease-0-results has been successfully uploaded! Final size is 1790932 bytes. Artifact ID is 6404523834
-Artifact download URL: https://github.com/Boehringer-Ingelheim/bhmbasket/actions/runs/24341188755/artifacts/6404523834
-Run actions/upload-artifact@v4
-No files were found with the provided path: /Users/runner/work/bhmbasket/bhmbasket/check/**/tests*/testthat/_snaps. No artifacts will be uploaded.
+## -----------------------------
+## bhmbasket: stratified_mix
+## -----------------------------
+trial_data <- createTrial(
+  n_subjects   = n,
+  n_responders = r
+)
+
+pp_strat_mix <- setPriorParametersStratifiedMix(
+  w   = w,
+  a_j = a_j,
+  b_j = b_j
+)
+
+res_bhm <- performAnalyses(
+  scenario_list         = trial_data,
+  method_names          = "stratified_mix",
+  prior_parameters_list = pp_strat_mix,
+  n_mcmc_iterations     = 2000,
+  verbose               = FALSE
+)
+
+bhm_tab <- res_bhm[[1]]$quantiles_list$stratified_mix
+bhm_tab
+
+## -----------------------------
+## RBesT: same prior, cohort by cohort
+## -----------------------------
+rbest_one <- function(n, r, w, a, b, probs = c(0.025, 0.5, 0.975)) {
+  prior <- do.call(
+    mixbeta,
+    lapply(seq_along(w), function(k) c(w[k], a[k], b[k]))
+  )
+
+  post <- postmix(prior, n = n, r = r)
+
+  c(
+    q025 = qmix(post, probs[1]),
+    q500 = qmix(post, probs[2]),
+    q975 = qmix(post, probs[3]),
+    Mean = mean(post),
+    SD   = sqrt(var(post))
+  )
+}
+
+rbest_tab <- sapply(seq_along(n), function(j) {
+  rbest_one(
+    n = n[j],
+    r = r[j],
+    w = w,
+    a = a_j[, j],
+    b = b_j[, j],
+    probs = quantiles
+  )
+})
+
+rbest_tab <- t(rbest_tab)
+rownames(rbest_tab) <- paste0("cohort_", seq_along(n))
+rbest_tab
+
+## -----------------------------
+## compare
+## -----------------------------
+bhm_cmp <- t(bhm_tab[c("2.5%", "50%", "97.5%", "Mean", "SD"), paste0("p_", 1:3)])
+colnames(bhm_cmp) <- c("q025", "q500", "q975", "Mean", "SD")
+rownames(bhm_cmp) <- paste0("cohort_", 1:3)
+
+comparison <- cbind(
+  bhm_cmp,
+  rbest_q025 = rbest_tab[, "q025"],
+  rbest_q500 = rbest_tab[, "q500"],
+  rbest_q975 = rbest_tab[, "q975"],
+  rbest_Mean = rbest_tab[, "Mean"],
+  rbest_SD   = rbest_tab[, "SD"]
+)
+
+comparison
+comparison[, 1:5] - comparison[, 6:10]
+
+## exnex_mix with EX turned off
+pp_exnex_mix_zero_ex <- setPriorParametersExNex(
+  mu_mean   = 0,
+  mu_sd     = 1,
+  tau_scale = 0.5,
+  w_j       = 0,
+  w_nex     = c(0.8, 0.2),
+  mean_nex  = rbind(
+    qlogis(c(4/(4+12), 5/(5+10), 6/(6+9))),
+    qlogis(c(0.5, 0.5, 0.5))
+  ),
+  sd_nex    = rbind(
+    c(0.5, 0.5, 0.5),
+    c(2, 2, 2)
+  )
+)
+
+names(pp_exnex_mix_zero_ex) <- "exnex_mix"
+
+res_ex0 <- performAnalyses(
+  scenario_list         = trial_data,
+  method_names          = "exnex_mix",
+  prior_parameters_list = pp_exnex_mix_zero_ex,
+  n_mcmc_iterations     = 4000,
+  verbose               = FALSE
+)
+
+res_ex0[[1]]$quantiles_list$exnex_mix
+
