@@ -1,14 +1,10 @@
-> mix_fit
-EM for Normal Mixture Model
-Log-Likelihood = -26453.2
+fit_tab <- as.data.frame(mix_fit)
 
-Univariate normal mixture
-Mixture Components:
-  comp1        comp2       
-w  0.782446558  0.208728440
-m -1.149631007 -0.306750236
-s  0.592045275  1.730718433
-  comp3       
-w  0.008825002
-m  0.673539054
-s  3.839912919
+w_nex_derived <- as.numeric(fit_tab["w", ])
+mean_one      <- as.numeric(fit_tab["m", ])
+sd_one        <- as.numeric(fit_tab["s", ])
+
+w_nex_derived <- w_nex_derived / sum(w_nex_derived)
+
+expect_equal(sum(w_nex_derived), 1, tolerance = 1e-8)
+expect_true(all(sd_one > 0))
