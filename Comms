@@ -1,15 +1,12 @@
-#' Possible additional parameters for the Bayesian hierarchical models are
-#' `c('mu', 'tau')` for `'berry'`, `'exnex'`, `'exnex_mix'`, `'exnex_adj'`,
-#' and `'exnex_adj_mix'`.
-#' The ExNex-based models can also access posterior weights
-#' `paste0("w_", seq_len(n_cohorts))`.
+── Failed tests ──────────────────────────────────────────────
+Failure (test-PriorFunctions.R:275:3): valid input returns prior_parameters_list with correct structure
+Names of result$exnex ('mu_mean', 'mu_sd', 'tau_scale', 'w_j', 'mu_j', 'tau_j') don't match 'mu_mean', 'mu_sd', 'tau_scale', 'mu_j', 'tau_j', 'w_j'
 
+Failure (test-PriorFunctions.R:377:3): valid input returns prior_parameters_list with correct structure
+Names of result$exnex ('mu_mean', 'mu_sd', 'tau_scale', 'w_j', 'mu_j', 'tau_j') don't match 'mu_mean', 'mu_sd', 'tau_scale', 'mu_j', 'tau_j', 'w_j'
 
-#'                          quote(c(x[1] > 0.1, x[2] < 0.5, x[3] < 0.1)),  # "berry"
-#'                          quote(c(x[1] > 0.2, x[2] < 0.4, x[3] < 0.2)),  # "exnex"
-#'                          quote(c(x[1] > 0.25, x[2] < 0.35, x[3] < 0.25)), # "exnex_adj"
-#'                          quote(c(x[1] > 0.3, x[2] < 0.3, x[3] < 0.3)),  # "exnex_adj_mix"
-#'                          quote(c(x[1] > 0.35, x[2] < 0.25, x[3] < 0.35)), # "exnex_mix"
-#'                          quote(c(x[1] > 0.4, x[2] < 0.2, x[3] < 0.4)),  # "pooled"
-#'                          quote(c(x[1] > 0.45, x[2] < 0.15, x[3] < 0.45)), # "stratified"
-#'                          quote(c(x[1] > 0.5, x[2] < 0.1, x[3] < 0.5)))) # "stratified_mix"
+Failure (test-PriorFunctions.R:429:3): valid input returns prior_parameters_list with correct structure
+Names of result$exnex_adj ('mu_mean', 'mu_sd', 'tau_scale', 'w_j', 'mu_j', 'tau_j') don't match 'mu_mean', 'mu_sd', 'tau_scale', 'mu_j', 'tau_j', 'w_j'
+
+Failure (test-PriorFunctions.R:463:3): valid input returns prior_parameters_list with correct structure
+Names of result$exnex_adj ('mu_mean', 'mu_sd', 'tau_scale', 'w_j', 'mu_j', 'tau_j') don't match 'mu_mean', 'mu_sd', 'tau_scale', 'mu_j', 'tau_j', 'w_j'
