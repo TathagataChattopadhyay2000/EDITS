@@ -1,18 +1,114 @@
-rbest_one <- function(n, r, w, a, b, probs = c(0.025, 0.5, 0.975), nsim = 100000) {
-  prior <- do.call(
-    RBesT::mixbeta,
-    lapply(seq_along(w), function(k) c(w[k], a[k], b[k]))
-  )
+prepareAnalysis <- function (
 
-  post <- RBesT::postmix(prior, n = n, r = r)
+  method_name,
 
-  draws <- RBesT::rmix(nsim, post)
+  prior_parameters = NULL,
+  target_rates     = NULL
 
-  c(
-    q025 = stats::quantile(draws, probs[1]),
-    q500 = stats::quantile(draws, probs[2]),
-    q975 = stats::quantile(draws, probs[3]),
-    Mean = mean(draws),
-    SD   = stats::sd(draws)
-  )
+) {
+
+  if (method_name == "berry") {
+
+    j_data <- list(mean_mu       = prior_parameters$mu_mean,
+                   precision_mu  = prior_parameters$mu_sd^-2,
+                   precision_tau = prior_parameters$tau_scale^-2,
+                   p_t           = target_rates,
+                   J             = length(target_rates))
+
+    # j_model_file <- writeTempModel(method_name = "berry")
+    j_model_file <- getModelFile(method_name = "berry")
+
+    j_parameters <- c("p", "mu", "tau")
+
+  } else if (method_name == "exnex" | method_name == "exnex_adj") {
+    # Nexch: number of exchangeable mixture components
+    # Nmix:  number of mixture components
+    j_data <- list(Nexch        = length(prior_parameters$mu_mean),
+                   Nmix         = length(prior_parameters$mu_mean) + 1L,
+                   Nstrata      = length(prior_parameters$mu_j),
+                   mu_mean      = prior_parameters$mu_mean,
+                   mu_prec      = prior_parameters$mu_sd^-2,
+                   tau_HN_scale = rep(prior_parameters$tau_scale,
+                                      length(prior_parameters$mu_mean)), # rep(..., Nexch)
+                   nex_mean     = prior_parameters$mu_j,
+                   nex_prec     = prior_parameters$tau_j^-2)
+
+    if (identical(length(prior_parameters$w_j), 1L)) {
+      j_data$pMix <- c(prior_parameters$w_j, 1 - prior_parameters$w_j)
+    } else {
+      j_data$pMix <- prior_parameters$w_j
+    }
+
+    if (method_name == "exnex") {
+
+      j_model_file    <- getModelFile(method_name = "exnex")
+
+    } else {
+
+      j_data$p_target <- target_rates
+      j_model_file    <- getModelFile(method_name = "exnex_adj")
+
+    }
+
+    j_parameters <- c("p", "mu", "tau", "exch")
+
+  } else if (method_name == "exnex_mix" | method_name == "exnex_adj_mix") {
+
+    j_data <- list(
+      Nexch        = length(prior_parameters$mu_mean),
+      Nmix         = length(prior_parameters$mu_mean) + 1L,
+      Nstrata      = ncol(prior_parameters$mean_nex),   # if matrix K_nex x J
+      mu_mean      = prior_parameters$mu_mean,
+      mu_prec      = prior_parameters$mu_sd^-2,
+      tau_HN_scale = rep(prior_parameters$tau_scale,
+                         length(prior_parameters$mu_mean)),
+      K_nex        = length(prior_parameters$w_nex),
+      w_nex        = prior_parameters$w_nex,
+      mean_nex     = prior_parameters$mean_nex,
+      prec_nex     = prior_parameters$sd_nex^-2
+    )
+
+    if (identical(length(prior_parameters$w_j), 1L)) {
+      j_data$pMix <- c(prior_parameters$w_j, 1 - prior_parameters$w_j)
+    } else {
+      j_data$pMix <- prior_parameters$w_j
+    }
+
+    if (method_name == "exnex_mix") {
+      j_model_file <- getModelFile("exnex_mix")
+    } else {
+      j_data$p_target <- target_rates
+      j_model_file <- getModelFile("exnex_adj_mix")
+    }
+
+    j_parameters <- c("p", "mu", "tau", "exch")
+
+  } else if (method_name == "stratified" | method_name == "pooled") {
+
+    ## For methods "stratified" and "pooled" no MCMC simulations are necessary,
+    ## as the posterior response rates of the cohorts follow known beta distributions.
+
+    j_model_file <- "dummy path to JAGS model"
+    j_parameters <- "dummy JAGS parameters"
+    j_data       <- prior_parameters
+
+  } else if (method_name == "stratified_mix") {
+
+    ## For method "stratified_mix" no MCMC simulations are necessary,
+    ## as each cohort posterior is a mixture of beta distributions.
+
+    j_model_file <- "dummy path to JAGS model"
+    j_parameters <- "dummy JAGS parameters"
+    j_data       <- prior_parameters
+
+  } else {
+
+    stop ("method_name must be one of berry, exnex, exnex_adj, exnex_mix, exnex_adj_mix, stratified, pooled", "stratified_mix")
+
+  }
+
+ # ask
+  return (list(j_parameters = j_parameters,
+               j_model_file = j_model_file,
+               j_data       = j_data))
 }
