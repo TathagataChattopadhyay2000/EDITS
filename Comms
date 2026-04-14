@@ -1,10 +1,9 @@
-post_rbest <- RBesT::postmix(prior_rbest, n = n[1], r = r[1])
-post_rbest_summary <- summary(post_rbest)
-
-rbest_ref <- c(
-  q025 = unname(post_rbest_summary["2.5%"]),
-  q500 = unname(post_rbest_summary["50.0%"]),
-  q975 = unname(post_rbest_summary["97.5%"]),
-  Mean = unname(post_rbest_summary["mean"]),
-  SD   = unname(post_rbest_summary["sd"])
-)
+> q025 = unname(post_rbest_summary["2.5%"])
+> q025
+[1] NA
+> post_rbest_summary["2.5%"]
+<NA> 
+  NA 
+> post_rbest_summary["50.0%"]
+    50.0% 
+0.2764411 
