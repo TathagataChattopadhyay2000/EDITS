@@ -1,9 +1,55 @@
-> q025 = unname(post_rbest_summary["2.5%"])
-> q025
-[1] NA
-> post_rbest_summary["2.5%"]
-<NA> 
-  NA 
-> post_rbest_summary["50.0%"]
-    50.0% 
-0.2764411 
+Package check result: OK
+
+Changes to worse in reverse depends:
+
+Package: basksim
+Check: tests
+New result: ERROR
+    Running ‘testthat.R’ [85s/85s]
+  Running the tests in ‘tests/testthat.R’ failed.
+  Complete output:
+    > # This file is part of the standard setup for testthat.
+    > # It is recommended that you do not modify it.
+    > #
+    > # Where should you do additional test configuration?
+    > # Learn more about the roles of various files in:
+    > # * https://r-pkgs.org/tests.html
+    > # * https://testthat.r-lib.org/reference/test_package.html#special-files
+    > 
+    > library(testthat)
+    > library(basksim)
+    > 
+    > test_check("basksim")
+    Saving _problems/test-adjust_lambda-64.R
+    Saving _problems/test-get_details-126.R
+    [ FAIL 2 | WARN 0 | SKIP 13 | PASS 232 ]
+    
+    ══ Skipped tests (13) ══════════════════════════════════════════════════════════
+    • On CRAN (13): 'test-adjust_lambda.R:15:3', 'test-adjust_lambda.R:119:3',
+      'test-get_details.R:11:3', 'test-get_details.R:35:3',
+      'test-get_details.R:203:3', 'test-get_details.R:234:5',
+      'test-get_details.R:297:3', 'test-get_details.R:335:3',
+      'test-get_details.R:383:3', 'test-get_details.R:420:3',
+      'test-get_details.R:460:3', 'test-get_details.R:486:3',
+      'test-opt_design.R:19:3'
+    
+    ══ Failed tests ════════════════════════════════════════════════════════════════
+    ── Error ('test-adjust_lambda.R:63:3'): adjust_lambda works for exnex ──────────
+    Error in `(function (mu_mean, mu_sd, tau_scale, mu_j = NULL, tau_j = NULL, w_j, w_nex = NULL, mean_nex = NULL, sd_nex = NULL)  {     error_mu_mean <- "Providing a numeric for the argument 'mu_mean'"     error_mu_sd <- "Providing a positive numeric for the argument 'mu_sd'"     error_tau_scale <- "Providing a positive numeric for the argument 'tau_scale'"     error_mu_j <- "Providing a (vector of) numeric(s) for the argument 'mu_j'"     error_tau_j <- "Providing a (vector of) positive numeric(s) for the argument 'tau_j'"     error_w_j <- "Providing a numeric in (0, 1) for the argument 'w_j'"     error_w_nex <- "Providing a numeric vector of weights in [0, 1] summing to 1 for the argument 'w_nex'"     error_mean_nex <- "Providing a numeric matrix for the argument 'mean_nex'"     error_sd_nex <- "Providing a positive numeric matrix for the argument 'sd_nex'"     error_dim <- "'mean_nex' and 'sd_nex' must have the same dimensions, and nrow(mean_nex) must equal length(w_nex)"     error_mu_mean_sd <- "'mu_mean' and 'mu_sd' must have same length"     error_mu_j_tau_j <- "'mu_j' and 'tau_j' must have the same length"     error_w_j_long <- "'w_j' must have length equal to length(mu_mean) + 1 if length(mu_mean) > 1"     error_w_j_short <- "'w_j' must have length 1 or 2 if length(mu_mean) = 1"     error_w_j_sum <- "Sum over items in 'w_j' must equal 1 if length(w_j) > 1"     checkmate::assert_numeric(mu_mean, any.missing = FALSE, .var.name = error_mu_mean)     checkmate::assert_numeric(mu_sd, lower = 0, any.missing = FALSE, .var.name = error_mu_sd)     checkmate::assertTRUE(all(mu_sd > 0), .var.name = error_mu_sd)     checkmate::assertNumber(tau_scale, .var.name = error_tau_scale)     checkmate::assertTRUE(tau_scale > 0, .var.name = error_tau_scale)     checkmate::assert_numeric(w_j, lower = 0, upper = 1, any.missing = FALSE, .var.name = error_w_j)     checkmate::assert_true(length(mu_mean) == length(mu_sd), .var.name = error_mu_mean_sd)     if (length(mu_mean) > 1) {         checkmate::assert_true(length(w_j) == length(mu_mean) + 1, .var.name = error_w_j_long)     }     else {         checkmate::assert_true(length(w_j) %in% c(1, 2), .var.name = error_w_j_short)     }     if (length(w_j) > 1) {         checkmate::assert_true(isTRUE(all.equal(sum(w_j), 1)), .var.name = error_w_j_sum)     }     prior_base <- list(mu_mean = mu_mean, mu_sd = mu_sd, tau_scale = tau_scale, w_j = w_j)     if (is.null(w_nex) && is.null(mean_nex) && is.null(sd_nex)) {         checkmate::assert_numeric(mu_j, any.missing = FALSE, .var.name = error_mu_j)         checkmate::assert_numeric(tau_j, any.missing = FALSE, .var.name = error_tau_j)         checkmate::assertTRUE(all(tau_j > 0), .var.name = error_tau_j)         checkmate::assert_true(length(mu_j) == length(tau_j), .var.name = error_mu_j_tau_j)         prior_extra <- list(mu_j = mu_j, tau_j = tau_j)     }     else {         checkmate::assertNumeric(w_nex, any.missing = FALSE, lower = 0, upper = 1, .var.name = error_w_nex)         checkmate::assertTRUE(isTRUE(all.equal(sum(w_nex), 1)), .var.name = error_w_nex)         checkmate::assertTRUE(is.matrix(mean_nex), .var.name = error_mean_nex)         checkmate::assertTRUE(is.matrix(sd_nex), .var.name = error_sd_nex)         checkmate::assertTRUE(all(sd_nex > 0), .var.name = error_sd_nex)         checkmate::assertTRUE(all(dim(mean_nex) == dim(sd_nex)), .var.name = error_dim)         checkmate::assertTRUE(nrow(mean_nex) == length(w_nex), .var.name = error_dim)         prior_extra <- list(w_nex = as.numeric(w_nex), mean_nex = mean_nex, sd_nex = sd_nex)     }     prior_parameters_list <- list(exnex = c(prior_base, prior_extra))     class(prior_parameters_list) <- "prior_parameters_list"     return(prior_parameters_list) })(mu_mean = -1.38629436111989, mu_sd = 100, mu_j = c(-1.38629436111989, -1.38629436111989, -1.38629436111989), tau_j = c(100, 100, 100), tau_scale = 1, w = 0.5)`: argument 6 matches multiple formal arguments
+    Backtrace:
+        ▆
+     1. ├─basksim::adjust_lambda(...) at test-adjust_lambda.R:63:3
+     2. └─basksim:::adjust_lambda.exnex(...)
+     3.   └─base::do.call(...)
+    ── Error ('test-get_details.R:113:3'): get_details works for exnex ─────────────
+    Error in `bhmbasket::setPriorParametersExNex(mu_mean = bhmbasket:::logit(0.15), mu_sd = 100, tau_scale = 0.75, mu_j = rep(bhmbasket:::logit(0.15), 3), tau_j = rep(100, 3), w = 0.5)`: argument 6 matches multiple formal arguments
+    Backtrace:
+        ▆
+     1. ├─base::suppressMessages(...) at test-get_details.R:113:3
+     2. │ └─base::withCallingHandlers(...)
+     3. └─bhmbasket::performAnalyses(...)
+    
+    [ FAIL 2 | WARN 0 | SKIP 13 | PASS 232 ]
+    Error:
+    ! Test failures.
+    Execution halted
