@@ -1,3 +1,17 @@
-eps <- 1e-8
-  p_draws <- pmin(pmax(p_draws, eps), 1 - eps)
-  eta_draws <- qlogis(p_draws)
+ post_rbest <- RBesT::postmix(prior_rbest, n = n[1], r = r[1])
+  post_rbest_draws <- RBesT::rmix(post_rbest, 50000)
+
+  rbest_ref <- c(
+    q025 = unname(RBesT::qmix(post_rbest, 0.025)),
+    q500 = unname(RBesT::qmix(post_rbest, 0.5)),
+    q975 = unname(RBesT::qmix(post_rbest, 0.975)),
+    Mean = mean(post_rbest_draws),
+    SD   = stats::sd(post_rbest_draws)
+  )
+
+Here I believe we can just use summary(post_rbest) and it already gives us exactly these quantiles, mean and sd. We can just use it directly instead of calculating this extra stuff. The structure looks like this.
+
+> summary(post_rbest)
+      mean         sd       2.5%      50.0%      97.5% 
+0.28155969 0.07704514 0.14633510 0.27644110 0.44622137 
+> 
