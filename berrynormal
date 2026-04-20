@@ -1,0 +1,23 @@
+#TODO EXNEX ADJ ADAPTATION
+
+## Bayesian hierarchical Model: Normal
+
+model {
+
+  ## priors
+  mu_pop     ~ dnorm(mu_pop_mean, prec_mu_pop)
+
+  prec_tau   ~ dgamma(tau_shape,   tau_rate)   
+  prec_sigma ~ dgamma(sigma_shape, sigma_rate)
+  
+  for (j in 1:J) {
+
+    ## Prior
+    theta[j] ~ dnorm(mu_pop, prec_tau)
+
+    ## Likelihood
+    prec_y[j] <- n[j] * prec_sigma  # precision of mean = n_j / sigma^2
+    y[j] ~ dnorm(theta[j], prec_y[j])
+  }
+
+}
