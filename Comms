@@ -1,226 +1,80 @@
-getPostQuantiles <- function (
+#TODO EXNEX ADJ ADAPTATION
 
-  method_name,
-  quantiles,
-  scenario_data,
-  calc_differences  = NULL,
-  j_parameters,
-  j_model_file,
-  j_data,
-  n_mcmc_iterations = 1e4,
-  save_path         = NULL,
-  save_trial        = NULL
+## Bayesian hierarchical Model: Normal
 
-) {
+model {
 
-  endpoint <- if (!is.null(scenario_data$endpoint)) scenario_data$endpoint else "binary"
+  ## priors
+  mu_pop     ~ dnorm(mu_pop_mean, prec_mu_pop)
 
-  if (endpoint == "binary") {
+  prec_tau   ~ dgamma(tau_shape,   tau_rate)   
+  prec_sigma ~ dgamma(sigma_shape, sigma_rate)
+  
+  for (j in 1:J) {
 
-    if (is.null(dim(scenario_data$n_responders))) {
-      scenario_data$n_responders <- t(convertVector2Matrix(scenario_data$n_responders))
-      scenario_data$n_subjects   <- t(convertVector2Matrix(scenario_data$n_subjects))
-    }
+    ## Prior
+    theta[j] ~ dnorm(mu_pop, prec_tau)
 
-    n_analyses <- nrow(scenario_data$n_responders)
-
-  } else {
-
-    if (is.null(dim(scenario_data$y))) {
-      scenario_data$y          <- t(convertVector2Matrix(scenario_data$y))
-      scenario_data$n_subjects <- t(convertVector2Matrix(scenario_data$n_subjects))
-
-      if (!is.null(scenario_data$sds_observed)) {
-        scenario_data$sds_observed <- t(convertVector2Matrix(scenario_data$sds_observed))
-      }
-    }
-
-    n_analyses <- nrow(scenario_data$y)
+    ## Likelihood
+    prec_y[j] <- n[j] * prec_sigma  # precision of mean = n_j / sigma^2
+    y[j] ~ dnorm(theta[j], prec_y[j])
   }
 
-  if (is.null(save_trial) && !is.null(save_path)) {
-    save_trial <- sample(seq_len(n_analyses), size = 1)
-  }
-
-  posterior_quantiles_list <- future.apply::future_lapply(
-    X = seq_len(n_analyses),
-    FUN = function(j) {
-
-      if (endpoint == "binary") {
-
-        getPostQuantilesOfTrial(
-          n_responders      = as.numeric(scenario_data$n_responders[j, ]),
-          n_subjects        = as.numeric(scenario_data$n_subjects[j, ]),
-          y                 = NULL,
-          sds               = NULL,
-          j_data            = j_data,
-          j_parameters      = j_parameters,
-          j_model_file      = j_model_file,
-          method_name       = method_name,
-          quantiles         = quantiles,
-          calc_differences  = calc_differences,
-          n_mcmc_iterations = n_mcmc_iterations,
-          save_path         = save_path,
-          save_trial        = save_trial,
-          trial_index       = j,
-          endpoint          = "binary"
-        )
-
-      } else {
-
-        getPostQuantilesOfTrial(
-          n_responders      = NULL,
-          n_subjects        = as.numeric(scenario_data$n_subjects[j, ]),
-          y                 = as.numeric(scenario_data$y[j, ]),
-          sds               = if (!is.null(scenario_data$sds_observed)) {
-            as.numeric(scenario_data$sds_observed[j, ])
-          } else {
-            NULL
-          },
-          j_data            = j_data,
-          j_parameters      = j_parameters,
-          j_model_file      = j_model_file,
-          method_name       = method_name,
-          quantiles         = quantiles,
-          calc_differences  = calc_differences,
-          n_mcmc_iterations = n_mcmc_iterations,
-          save_path         = save_path,
-          save_trial        = save_trial,
-          trial_index       = j,
-          endpoint          = "normal"
-        )
-      }
-
-    },
-    future.seed = TRUE,
-    future.scheduling = 1
-  )
-
-  return(posterior_quantiles_list)
 }
 
-getPostQuantilesOfTrial <- function (
 
-  n_responders = NULL,
-  n_subjects,
-  y = NULL,
-  sds = NULL,
+The above adaptation of the continuous endpoint was from the berry model, my question is can we adapt the exnex model to the normal endpoint? The original exnex adj model is below
 
-  j_data,
-  j_parameters,
-  j_model_file,
-  method_name,
-  quantiles,
-  calc_differences,
-  n_mcmc_iterations,
 
-  save_path,
-  save_trial,
-  trial_index,
-  endpoint = c("binary", "normal")
 
-) {
-
-  endpoint <- match.arg(endpoint)
-
-  if (endpoint == "binary") {
-
-    j_data$r <- n_responders
-    j_data$n <- n_subjects
-
-    if (method_name %in% c("stratified", "stratified_mix")) {
-
-      posterior_quantiles <- getPostQuantilesStratified(
-        j_data            = j_data,
-        quantiles         = quantiles,
-        calc_differences  = calc_differences,
-        n_mcmc_iterations = n_mcmc_iterations
-      )
-
-    } else if (method_name == "pooled") {
-
-      posterior_quantiles <- getPostQuantilesPooled(
-        j_data           = j_data,
-        quantiles        = quantiles,
-        calc_differences = calc_differences
-      )
-
-    } else {
-
-      posterior_samples <- getPosteriors(
-        j_parameters      = j_parameters,
-        j_model_file      = j_model_file,
-        j_data            = j_data,
-        n_mcmc_iterations = n_mcmc_iterations
-      )
-
-      if (!is.null(calc_differences)) {
-        posterior_samples <- calcDiffsMCMC(
-          posterior_samples = posterior_samples,
-          calc_differences  = calc_differences
-        )
-      }
-
-      if (!is.null(save_path)) {
-        if (trial_index == save_trial) {
-          saveRDS(
-            posterior_samples,
-            file = file.path(
-              save_path,
-              paste0("posterior_samples_", trial_index, "_", method_name, ".rds")
-            )
-          )
+      ## Bayesian Hierarchical Model: ExNex with Adjustment
+      ## Model adapted from Neuenschwander, Beat, et al.
+      ##  'Robust exchangeability designs for early phase clinical trials with multiple strata.'
+      ##  Pharmaceutical statistics 15.2 (2016): 123-134.
+      ##  https://doi.org/10.1002/pst.1730
+      
+      model {
+      
+        # prior distributions for EX-parameters
+        for (jj in 1:Nexch) {
+          mu[jj] ~ dnorm(mu_mean[jj], mu_prec[jj])
+          prior_tau_prec[jj] <- pow(tau_HN_scale[jj], -2)
+          tau[jj] ~ dnorm(0, prior_tau_prec[jj])I(0.001, )
+          prec_tau[jj] <- pow(tau[jj], -2)
         }
+        
+        # log-odds parameters under EX
+        for (jj in 1:Nexch) {
+          for (j in 1:Nstrata) {
+            re[jj,j] ~ dnorm(0, prec_tau[jj])
+            LogOdds[jj, j] <- mu[jj] + re[jj, j]
+          }
+        }
+        
+        # log-odds parameters under NEX
+        for (j in 1:Nstrata) {
+          LogOdds[Nmix, j] ~ dnorm(nex_mean[j], nex_prec[j])
+        }
+        
+        # latent mixture indicators:
+        # exch_index: categorial 1, ..., Nmix = Nexch + 1
+        # exch: Nstrata x Nmix matrix of 0/1 elements
+        for (j in 1:Nstrata) {
+          exch_index[j] ~ dcat(pMix[1:Nmix])
+          for (jj in 1:Nmix) {
+            exch[j, jj] <- equals(exch_index[j], jj)
+          }
+        }
+        
+        # pick theta
+        for (j in 1:Nstrata) {
+          theta[j] <- LogOdds[exch_index[j], j]
+        }
+        
+        # likelihood part
+        for (i in 1:Nstrata) {
+          logit(p[i]) <- theta[i] + logit(p_target[i])
+          r[i] ~ dbin(p[i], n[i])
+        }
+      
       }
-
-      posterior_quantiles <- posteriors2Quantiles(
-        quantiles  = quantiles,
-        posteriors = posterior_samples
-      )
-    }
-
-  } else {
-
-    j_data$y <- y
-    j_data$n <- n_subjects
-    j_data$J <- length(n_subjects)
-
-    if (!is.null(sds)) {
-      j_data$sds <- sds
-    }
-
-    posterior_samples <- getPosteriors(
-      j_parameters      = j_parameters,
-      j_model_file      = j_model_file,
-      j_data            = j_data,
-      n_mcmc_iterations = n_mcmc_iterations
-    )
-
-    if (!is.null(calc_differences)) {
-      posterior_samples <- calcDiffsMCMC(
-        posterior_samples = posterior_samples,
-        calc_differences  = calc_differences,
-        endpoint          = "normal"
-      )
-    }
-
-    if (!is.null(save_path)) {
-      if (trial_index == save_trial) {
-        saveRDS(
-          posterior_samples,
-          file = file.path(
-            save_path,
-            paste0("posterior_samples_", trial_index, "_", method_name, ".rds")
-          )
-        )
-      }
-    }
-
-    posterior_quantiles <- posteriors2Quantiles(
-      quantiles  = quantiles,
-      posteriors = posterior_samples
-    )
-  }
-
-  return(posterior_quantiles)
-}
