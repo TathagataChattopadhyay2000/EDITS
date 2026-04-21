@@ -1,17 +1,13 @@
-} else if (method_name == "normal") {
-  
-  j_data <- list(
-    mu_pop_mean  = prior_parameters$mu_pop_mean,
-    prec_mu_pop  = prior_parameters$prec_mu_pop,
-    tau_shape    = prior_parameters$tau_shape,
-    tau_rate     = prior_parameters$tau_rate,
-    sigma_shape  = prior_parameters$sigma_shape,
-    sigma_rate   = prior_parameters$sigma_rate
+if (!is.null(target_means)) {
+  checkmate::assertNumeric(
+    target_means,
+    any.missing = FALSE,
+    .var.name   = "For endpoint = 'normal', 'target_means' must be a numeric vector"
   )
   
-  if (!is.null(prior_parameters$target_means)) {
-    j_data$target_means <- prior_parameters$target_means
-  }
-  
-  j_model_file <- getModelFile(method_name = "normal")
-  j_parameters <- c("theta", "mu_pop", "prec_tau", "prec_sigma")
+  n_coh <- ncol(scenario_list[[1]]$n_subjects)
+  checkmate::assertTRUE(
+    length(target_means) == n_coh,
+    .var.name = "The length of 'target_means' does not match the number of cohorts"
+  )
+}
