@@ -1,110 +1,32 @@
-#' @title getPriorParameters
+#' @title combinePriorParameters
 #' @md
-#' @description This function provides default prior parameters for the analysis methods
-#' that can be used in \code{\link[bhmbasket]{performAnalyses}}.
-#' @param method_names A vector of strings for the names of the methods to be used.
-#'
-#' For endpoint `"binary"`, available methods are
-#' `c("berry", "exnex", "exnex_adj", "exnex_mix", "exnex_adj_mix", "pooled", "stratified", "stratified_mix")`.
-#'
-#' For endpoint `"normal"`, the available method is `"normal"`.
-#' @param target_rates A vector of numerics in `(0, 1)` for the
-#' target rate of each cohort. Only used for endpoint `"binary"`.
-#' @param target_means Either `NULL` or a numeric vector of target means for each cohort.
-#' Only used for endpoint `"normal"`.
-#' @param n_worth An integer for the number of subjects the variability of the prior should reflect
-#' on the response-rate scale, Default: `1`
-#' @param tau_scale A numeric for the scale parameter of the Half-normal distribution of \eqn{\tau}
-#' in the methods `"berry"`, `"exnex"`, `"exnex_mix"`, `"exnex_adj"` and `"exnex_adj_mix"`,
-#' Default: `1`
-#' @param w_j A numeric in `(0, 1)` for the weight of the Ex component in the methods `"exnex"`,
-#' `"exnex_mix"`, `"exnex_adj"` and `"exnex_adj_mix"`, Default: `0.5`
-#' @param endpoint A string indicating the endpoint type. Must be one of `"binary"` or `"normal"`,
-#' Default: `"binary"`
-#' @param mu_pop_mean A numeric for the prior mean of the population mean in the normal model,
-#' Default: `0`
-#' @param mu_pop_sd A positive numeric for the prior standard deviation of the population mean
-#' in the normal model, Default: `10`
-#' @param tau_shape A positive numeric for the Gamma shape prior of the between-cohort precision
-#' in the normal model, Default: `1`
-#' @param tau_rate A positive numeric for the Gamma rate prior of the between-cohort precision
-#' in the normal model, Default: `1`
-#' @param sigma_shape A positive numeric for the Gamma shape prior of the within-cohort precision
-#' in the normal model, Default: `1`
-#' @param sigma_rate A positive numeric for the Gamma rate prior of the within-cohort precision
-#' in the normal model, Default: `1`
+#' @description This function combines prior parameters from different sources and returns them
+#' for use in \code{\link[bhmbasket]{performAnalyses}}.
+#' @param list_of_prior_parameters A list of items with class `prior_parameters_list`
 #' @return A list with prior parameters of class `prior_parameters_list`
 #' @details
-#' For endpoint `"binary"`, the default prior parameters are:
-#' \itemize{
-#'   \item `"berry"`: The mean of \eqn{\mu} is set to `0`.
-#'   Its variance is calculated as proposed in Neuenschwander et al. (2016)
-#'   with regard to `n_worth`.
-#'   The scale parameter of \eqn{\tau} is set to `tau_scale`.
+#' This function is intended to combine prior parameters set with the functions
+#' \code{\link[bhmbasket]{setPriorParametersBerry}},
+#' \code{\link[bhmbasket]{setPriorParametersExNex}},
+#' \code{\link[bhmbasket]{setPriorParametersExNexAdj}},
+#' \code{\link[bhmbasket]{setPriorParametersPooled}},
+#' \code{\link[bhmbasket]{setPriorParametersStratified}},
+#' \code{\link[bhmbasket]{setPriorParametersStratifiedMix}}, or
+#' \code{\link[bhmbasket]{setPriorParametersNormal}},
+#' in case more than one analysis method should be applied with
+#' \code{\link[bhmbasket]{performAnalyses}}.
 #'
-#'   \item `"exnex"`: The weight of the Ex component is set to `w_j`.
-#'   For the Ex component, the target rate that results in the greatest variance is determined.
-#'   The mean of \eqn{\mu} is set to that target rate on the logit scale.
-#'   The variance of \eqn{\mu} is calculated as proposed in Neuenschwander et al. (2016)
-#'   with regard to `n_worth`.
-#'   The scale parameter of \eqn{\tau} is set to `tau_scale`.
-#'
-#'   For the Nex components, the means of \eqn{\mu_j} are set to the respective target rates
-#'   on the logit scale.
-#'   The standard deviations \eqn{\tau_j} are calculated with regard to `n_worth`,
-#'   see also \code{\link[bhmbasket]{getMuVar}}.
-#'
-#'   \item `"exnex_adj"`: Uses the same Ex prior construction as `"exnex"`, except that the
-#'   Ex component is centered at `0`, and the standard Nex means are also set to `0`.
-#'
-#'   \item `"exnex_mix"`: Uses the same default Ex prior construction as `"exnex"`.
-#'   The Nex part default parameters are specified as a one-component mixture prior with
-#'   `w_nex = 1`, `mean_nex = matrix(logit(target_rates), nrow = 1)`,
-#'   and `sd_nex = matrix(sqrt(getMuVar(target_rates, 0, n_worth)), nrow = 1)`.
-#'
-#'   \item `"exnex_adj_mix"`: Uses the same default Ex prior construction as `"exnex_adj"`.
-#'   The Nex part is specified as a one-component mixture prior with
-#'   `w_nex = 1`, `mean_nex = matrix(logit(target_rates), nrow = 1)`,
-#'   and `sd_nex = matrix(sqrt(getMuVar(target_rates, 0, n_worth)), nrow = 1)`.
-#'
-#'   \item `"pooled"`: The target rate that results in the smallest variance is determined.
-#'   The scale parameter \eqn{\alpha} is set to that target rate times `n_worth`.
-#'   The scale parameter \eqn{\beta} is set to `(1 - target rate) * n_worth`.
-#'
-#'   \item `"stratified"`: The scale parameters \eqn{\alpha_j} are set to
-#'   `target_rates * n_worth`.
-#'   The scale parameters \eqn{\beta_j} are set to `(1 - target_rates) * n_worth`.
-#'
-#'   \item `"stratified_mix"`:
-#'   A two-component beta mixture prior is created by default for each cohort.
-#'   The first component uses `a_j = target_rates * n_worth` and
-#'   `b_j = (1 - target_rates) * n_worth`.
-#'   The second component is a vague prior with `a_j = 1` and `b_j = 1`.
-#'   The default mixture weights are `c(0.8, 0.2)`.
-#' }
-#'
-#' For endpoint `"normal"`, the method `"normal"` provides prior parameters for the
-#' hierarchical normal model used for continuous endpoints. The returned prior contains:
-#' \itemize{
-#'   \item `mu_pop_mean`: prior mean of the population-level mean
-#'   \item `prec_mu_pop`: prior precision of the population-level mean
-#'   \item `tau_shape`, `tau_rate`: Gamma prior parameters for the between-cohort precision
-#'   \item `sigma_shape`, `sigma_rate`: Gamma prior parameters for the within-cohort precision
-#'   \item `target_means`: optional stratum-specific target means used by the adjusted normal model
-#' }
+#' This also supports combining binary-endpoint and normal-endpoint prior specifications,
+#' as long as no method name appears more than once.
 #' @author Stephan Wojciekowski
 #' @examples
-#' prior_parameters_list <- getPriorParameters(
-#'   method_names = c("berry", "exnex", "exnex_mix", "exnex_adj",
-#'                    "exnex_adj_mix", "pooled", "stratified", "stratified_mix"),
-#'   target_rates = c(0.1, 0.2, 0.3))
+#' prior_parameters_stratified <- setPriorParametersStratified(c(1, 2), c(3, 4))
+#' prior_parameters_berry      <- setPriorParametersBerry(0, 1, 2)
 #'
-#' prior_parameters_normal <- getPriorParameters(
-#'   endpoint     = "normal",
-#'   method_names = "normal",
-#'   target_means = c(0, 0.5, 1)
-#' )
-#' @rdname getPriorParameters
+#' prior_parameters_list <- combinePriorParameters(
+#'   list(prior_parameters_berry,
+#'        prior_parameters_stratified))
+#' @rdname combinePriorParameters
 #' @seealso
 #'  \code{\link[bhmbasket]{performAnalyses}}
 #'  \code{\link[bhmbasket]{setPriorParametersBerry}}
@@ -114,175 +36,157 @@
 #'  \code{\link[bhmbasket]{setPriorParametersStratified}}
 #'  \code{\link[bhmbasket]{setPriorParametersStratifiedMix}}
 #'  \code{\link[bhmbasket]{setPriorParametersNormal}}
-#'  \code{\link[bhmbasket]{combinePriorParameters}}
+#'  \code{\link[bhmbasket]{getPriorParameters}}
 #'  \code{\link[bhmbasket]{getMuVar}}
-#' @references Berry, Scott M., et al. "Bayesian hierarchical modeling of patient subpopulations:
-#' efficient designs of phase II oncology clinical trials."
-#' \emph{Clinical Trials} 10.5 (2013): 720-734.
-#' @references Neuenschwander, Beat, et al. "Robust exchangeability designs
-#' for early phase clinical trials with multiple strata."
-#' \emph{Pharmaceutical statistics} 15.2 (2016): 123-134.
 #' @export
-getPriorParameters <- function (
 
-  method_names = NULL,
-  target_rates = NULL,
+## normal ####
+
+getPriorParametersNormal <- function (
+
   target_means = NULL,
-  n_worth      = 1,
-  tau_scale    = 1,
-  w_j          = 0.5,
-  endpoint     = c("binary", "normal"),
-
-  mu_pop_mean = 0,
-  mu_pop_sd   = 10,
-  tau_shape   = 1,
-  tau_rate    = 1,
-  sigma_shape = 1,
-  sigma_rate  = 1
+  mu_pop_mean  = 0,
+  mu_pop_sd    = 10,
+  tau_shape    = 1,
+  tau_rate     = 1,
+  sigma_shape  = 1,
+  sigma_rate   = 1
 
 ) {
 
-  endpoint <- match.arg(endpoint)
+  error_target_means <- "Providing either NULL or a numeric vector for the argument 'target_means'"
+  error_mu_pop_mean  <- "Providing a numeric for the argument 'mu_pop_mean'"
+  error_mu_pop_sd    <- "Providing a positive numeric for the argument 'mu_pop_sd'"
+  error_tau_shape    <- "Providing a positive numeric for the argument 'tau_shape'"
+  error_tau_rate     <- "Providing a positive numeric for the argument 'tau_rate'"
+  error_sigma_shape  <- "Providing a positive numeric for the argument 'sigma_shape'"
+  error_sigma_rate   <- "Providing a positive numeric for the argument 'sigma_rate'"
 
-  if (endpoint == "normal") {
-
-    error_method_names_normal <-
-      "For endpoint = 'normal', 'method_names' must be 'normal'"
-    error_target_means <-
-      "Providing either NULL or a numeric vector for the argument 'target_means'"
-
-    checkmate::assertCharacter(method_names, len = 1, any.missing = FALSE, .var.name = error_method_names_normal)
-    checkmate::assertTRUE(identical(method_names, "normal"), .var.name = error_method_names_normal)
-
-    if (!is.null(target_means)) {
-      checkmate::assertNumeric(target_means, any.missing = FALSE, .var.name = error_target_means)
-    }
-
-    return(getPriorParametersNormal(
-      target_means = target_means,
-      mu_pop_mean  = mu_pop_mean,
-      mu_pop_sd    = mu_pop_sd,
-      tau_shape    = tau_shape,
-      tau_rate     = tau_rate,
-      sigma_shape  = sigma_shape,
-      sigma_rate   = sigma_rate
-    ))
+  if (!is.null(target_means)) {
+    checkmate::assertNumeric(target_means, any.missing = FALSE, .var.name = error_target_means)
   }
 
-  error_method_names <-
-    paste("Providing a (vector of) strings for the argument 'method_names'\n",
-          "Must be one of 'berry', 'exnex', 'exnex_mix', 'exnex_adj', 'exnex_adj_mix',",
-          "'pooled', 'stratified', 'stratified_mix'")
-  error_target_rates <-
-    "Providing a vector of numerics in (0, 1) for the argument 'target_rates'"
-  error_tau_scale    <-
-    "Providing a positive numeric for the argument 'tau_scale'"
-  error_n_worth      <- "Providing a positive integer for the argument 'n_worth'"
-  error_w_j          <- "Providing a numeric in (0, 1) for the argument 'w_j'"
+  checkmate::assertNumber(mu_pop_mean, .var.name = error_mu_pop_mean)
 
-  checkmate::assertCharacter(method_names, any.missing = FALSE, .var.name = error_method_names)
+  checkmate::assertNumber(mu_pop_sd, .var.name = error_mu_pop_sd)
+  checkmate::assertTRUE(mu_pop_sd > 0, .var.name = error_mu_pop_sd)
 
-  method_names <- tryCatch({
+  checkmate::assertNumber(tau_shape, .var.name = error_tau_shape)
+  checkmate::assertTRUE(tau_shape > 0, .var.name = error_tau_shape)
 
-    match.arg(
-      method_names,
-      choices = c(
-        "berry", "exnex", "exnex_adj", "pooled", "stratified", "stratified_mix",
-        "exnex_mix", "exnex_adj_mix"
-      ),
-      several.ok = TRUE
-    )
+  checkmate::assertNumber(tau_rate, .var.name = error_tau_rate)
+  checkmate::assertTRUE(tau_rate > 0, .var.name = error_tau_rate)
 
-  }, error = function (e) {
-    stop(error_method_names, call. = FALSE)
-  })
+  checkmate::assertNumber(sigma_shape, .var.name = error_sigma_shape)
+  checkmate::assertTRUE(sigma_shape > 0, .var.name = error_sigma_shape)
 
-  checkmate::assertNumeric(target_rates, any.missing = FALSE, .var.name = error_target_rates)
-  checkmate::assertTRUE(all(target_rates > 0 & target_rates < 1), .var.name = error_target_rates)
+  checkmate::assertNumber(sigma_rate, .var.name = error_sigma_rate)
+  checkmate::assertTRUE(sigma_rate > 0, .var.name = error_sigma_rate)
 
-  checkmate::assertNumber(tau_scale, .var.name = error_tau_scale)
-  checkmate::assertTRUE(tau_scale > 0, .var.name = error_tau_scale)
+  prior_parameters <- list(
+    mu_pop_mean  = mu_pop_mean,
+    prec_mu_pop  = 1 / (mu_pop_sd^2),
+    tau_shape    = tau_shape,
+    tau_rate     = tau_rate,
+    sigma_shape  = sigma_shape,
+    sigma_rate   = sigma_rate,
+    target_means = target_means
+  )
 
-  checkmate::assertInt(n_worth, lower = 1, .var.name = error_n_worth)
-
-  checkmate::assertNumeric(w_j, lower = 0, upper = 1, len = 1, .var.name = error_w_j)
-
-  ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
-
-  method_names <- sort(method_names)
-
-  prior_parameters_list <- lapply(method_names, function (method_name) {
-
-    if (method_name == "berry") {
-
-      getPriorParametersBerry(
-        target_rates = target_rates,
-        n_worth      = n_worth,
-        tau_scale    = tau_scale)[[1]]
-
-    } else if (method_name == "exnex") {
-
-      getPriorParametersExNex(
-        target_rates = target_rates,
-        n_worth      = n_worth,
-        tau_scale    = tau_scale,
-        w_j          = w_j)[[1]]
-
-    } else if (method_name == "exnex_adj") {
-
-      getPriorParametersExNexAdj(
-        target_rates = target_rates,
-        n_worth      = n_worth,
-        tau_scale    = tau_scale,
-        w_j          = w_j)[[1]]
-
-    } else if (method_name == "exnex_mix") {
-
-      getPriorParametersExNex(
-        target_rates = target_rates,
-        n_worth      = n_worth,
-        tau_scale    = tau_scale,
-        w_j          = w_j,
-        w_nex        = 1,
-        mean_nex     = matrix(logit(target_rates), nrow = 1),
-        sd_nex       = matrix(sqrt(getMuVar(target_rates, 0, n_worth)), nrow = 1))[[1]]
-
-    } else if (method_name == "exnex_adj_mix") {
-
-      getPriorParametersExNexAdj(
-        target_rates = target_rates,
-        n_worth      = n_worth,
-        tau_scale    = tau_scale,
-        w_j          = w_j,
-        w_nex        = 1,
-        mean_nex     = matrix(logit(target_rates), nrow = 1),
-        sd_nex       = matrix(sqrt(getMuVar(target_rates, 0, n_worth)), nrow = 1))[[1]]
-
-    } else if (method_name == "pooled") {
-
-      getPriorParametersPooled(
-        target_rates = target_rates,
-        n_worth      = n_worth)[[1]]
-
-    } else if (method_name == "stratified") {
-
-      getPriorParametersStratified(
-        target_rates = target_rates,
-        n_worth      = n_worth)[[1]]
-
-    } else if (method_name == "stratified_mix") {
-
-      getPriorParametersStratifiedMix(
-        target_rates = target_rates,
-        n_worth      = n_worth)[[1]]
-
-    }
-
-  })
-
-  names(prior_parameters_list) <- method_names
+  prior_parameters_list <- list(normal = prior_parameters)
   class(prior_parameters_list) <- "prior_parameters_list"
 
   return(prior_parameters_list)
+}
 
+#' @title setPriorParametersNormal
+#' @md
+#' @description This function sets prior parameters for the analysis method `"normal"`
+#' for use in \code{\link[bhmbasket]{performAnalyses}}.
+#' @param mu_pop_mean A numeric for the prior mean of the population-level mean
+#' @param prec_mu_pop A positive numeric for the prior precision of the population-level mean
+#' @param tau_shape A positive numeric for the Gamma shape prior of the between-cohort precision
+#' @param tau_rate A positive numeric for the Gamma rate prior of the between-cohort precision
+#' @param sigma_shape A positive numeric for the Gamma shape prior of the within-cohort precision
+#' @param sigma_rate A positive numeric for the Gamma rate prior of the within-cohort precision
+#' @param target_means Either `NULL` or a numeric vector of target means for each cohort.
+#' These are used by the adjusted hierarchical normal model.
+#' @return A list with prior parameters of class `prior_parameters_list`
+#' @details
+#' The method `"normal"` is a hierarchical normal model for continuous endpoints.
+#' The prior parameters specify the population-level mean prior, the prior on the
+#' between-cohort precision, and the prior on the within-cohort precision.
+#' Optionally, `target_means` can be supplied for adjusted normal-endpoint models.
+#' @author Stephan Wojciekowski
+#' @examples
+#' prior_parameters_normal <- setPriorParametersNormal(
+#'   mu_pop_mean  = 0,
+#'   prec_mu_pop  = 1 / 10^2,
+#'   tau_shape    = 1,
+#'   tau_rate     = 1,
+#'   sigma_shape  = 1,
+#'   sigma_rate   = 1,
+#'   target_means = c(0, 0.5, 1)
+#' )
+#' @rdname setPriorParametersNormal
+#' @seealso
+#'  \code{\link[bhmbasket]{performAnalyses}}
+#'  \code{\link[bhmbasket]{getPriorParameters}}
+#'  \code{\link[bhmbasket]{combinePriorParameters}}
+#' @export
+setPriorParametersNormal <- function (
+
+  mu_pop_mean,
+  prec_mu_pop,
+  tau_shape,
+  tau_rate,
+  sigma_shape,
+  sigma_rate,
+  target_means = NULL
+
+) {
+
+  error_target_means <- "Providing either NULL or a numeric vector for the argument 'target_means'"
+  error_mu_pop_mean  <- "Providing a numeric for the argument 'mu_pop_mean'"
+  error_prec_mu_pop  <- "Providing a positive numeric for the argument 'prec_mu_pop'"
+  error_tau_shape    <- "Providing a positive numeric for the argument 'tau_shape'"
+  error_tau_rate     <- "Providing a positive numeric for the argument 'tau_rate'"
+  error_sigma_shape  <- "Providing a positive numeric for the argument 'sigma_shape'"
+  error_sigma_rate   <- "Providing a positive numeric for the argument 'sigma_rate'"
+
+  if (!is.null(target_means)) {
+    checkmate::assertNumeric(target_means, any.missing = FALSE, .var.name = error_target_means)
+  }
+
+  checkmate::assertNumber(mu_pop_mean, .var.name = error_mu_pop_mean)
+
+  checkmate::assertNumber(prec_mu_pop, .var.name = error_prec_mu_pop)
+  checkmate::assertTRUE(prec_mu_pop > 0, .var.name = error_prec_mu_pop)
+
+  checkmate::assertNumber(tau_shape, .var.name = error_tau_shape)
+  checkmate::assertTRUE(tau_shape > 0, .var.name = error_tau_shape)
+
+  checkmate::assertNumber(tau_rate, .var.name = error_tau_rate)
+  checkmate::assertTRUE(tau_rate > 0, .var.name = error_tau_rate)
+
+  checkmate::assertNumber(sigma_shape, .var.name = error_sigma_shape)
+  checkmate::assertTRUE(sigma_shape > 0, .var.name = error_sigma_shape)
+
+  checkmate::assertNumber(sigma_rate, .var.name = error_sigma_rate)
+  checkmate::assertTRUE(sigma_rate > 0, .var.name = error_sigma_rate)
+
+  prior_parameters <- list(
+    mu_pop_mean  = mu_pop_mean,
+    prec_mu_pop  = prec_mu_pop,
+    tau_shape    = tau_shape,
+    tau_rate     = tau_rate,
+    sigma_shape  = sigma_shape,
+    sigma_rate   = sigma_rate,
+    target_means = target_means
+  )
+
+  prior_parameters_list <- list(normal = prior_parameters)
+  class(prior_parameters_list) <- "prior_parameters_list"
+
+  return(prior_parameters_list)
 }
