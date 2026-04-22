@@ -5,68 +5,75 @@ library(future)
 # PART 2 — MONTE CARLO STABILITY (GO PROBABILITY)
 ################################################################################
 
-# --- Number of simulated trials ---
 set.seed(123)
-Nsim <- 1000   # increase to 3000–5000 for final checks
+Nsim <- 1000
 
 ################################################################################
-# 1. Simulate scenarios for the normal endpoint correctly
+# 1. Simulate scenarios
 ################################################################################
 
 scenario_list <- simulateScenarios(
-  n_subjects_list = list(rep(30, 3)),       # 3 cohorts, each with n=30
-  means_list      = list(c(0.4, 0.5, 0.6)), # true means
-  sds_list        = list(rep(2.5, 3)),      # per-cohort SD
+  n_subjects_list = list(rep(30, 3)),
+  means_list      = list(c(0.4, 0.5, 0.6)),
+  sds_list        = list(rep(2.5, 3)),
   n_trials        = Nsim,
   endpoint        = "normal"
 )
 
-# scenario_list is a scenario_list of length 1 with Nsim simulated trials inside.
+################################################################################
+# 2. Prior for current normal model
+################################################################################
+
+prior_parameters_list <- getPriorParameters(
+  endpoint     = "normal",
+  method_names = "normal",
+  target_means = c(0, 0, 0),   # use 0 if you want theta_j to equal actual means
+  n_worth      = 1,
+  tau_scale    = 1,
+  w_j          = 0.5,
+  sigma_shape  = 1,
+  sigma_rate   = 1
+)
 
 ################################################################################
-# 2. Run the analysis (normal endpoint)
+# 3. Run analysis
 ################################################################################
 
 plan(multisession)
 
 ana <- performAnalyses(
-  scenario_list     = scenario_list,
-  method_names      = "normal",
-  n_mcmc_iterations = 3000,
-  verbose           = FALSE
+  scenario_list         = scenario_list,
+  method_names          = "normal",
+  prior_parameters_list = prior_parameters_list,
+  n_mcmc_iterations     = 3000,
+  verbose               = FALSE
 )
 
-# ana is an analysis_list of length 1 ("scenario_1")
-
 ################################################################################
-# 3. Apply go-decision rule
+# 4. Apply go-decision rule
 ################################################################################
-# Example rule for continuous endpoint:
-# GO if:   P(theta_j > 1.0) > 0.95   for any cohort j
-# Adjust to your actual rule.
+# With evidence_levels = 0.95, x[j] corresponds to the lower 5% posterior quantile.
+# So x[j] > c means P(theta_j > c) > 0.95.
 
 decision_rules <- quote(c(
-  x[1] > 0.5,
-  x[2] > 0.5,
-  x[3] > 1.0
+  x[1] > 0.1,
+  x[2] > 0.2,
+  x[3] > 0.3
 ))
 
 go_list <- getGoDecisions(
   analyses_list   = ana,
   cohort_names    = c("theta_1", "theta_2", "theta_3"),
   evidence_levels = c(0.95, 0.95, 0.95),
-  boundary_rules  = decision_rules
+  boundary_rules  = decision_rules,
+  overall_min_gos = 1
 )
 
-# go_list$scenario_1$decisions_list$normal is an (Nsim x 4) matrix:
-#  - column "overall" first
-#  - then 3 cohort-level decisions
-
 go_matrix <- go_list$scenario_1$decisions_list$normal
-go_vec <- go_matrix[, "overall"]    # TRUE/FALSE vector of length Nsim
+go_vec    <- go_matrix[, "overall"]
 
 ################################################################################
-# 4. Compute moving average of GO probability
+# 5. Moving average of GO probability
 ################################################################################
 
 mov <- cumsum(go_vec) / seq_along(go_vec)
@@ -77,5 +84,6 @@ plot(
   xlab = "Number of Simulated Trials",
   ylab = "Estimated GO Probability"
 )
-abline(h = mov[Nsim], col = "red", lwd = 2)
+
+abline(h = mov[length(mov)], col = "red", lwd = 2)
 
