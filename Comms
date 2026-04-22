@@ -1,13 +1,150 @@
-Caution: No parallel backend detected for the 'foreach' framework. For execution in parallel, register a parallel backend, e.g. with:
-   doFuture::registerDoFuture()
-   future::plan(future::multisession)
+## normal ####
 
-22-Apr-2026 Performing Analyses
-         Analyzing 1 scenario (19 unique trial realizations)
-   12:05 - with Normal ..........
-Error in rjags::jags.model(file = model_file, data = data, inits = inits,  : 
-  RUNTIME ERROR:
-Compilation error on line 32.
-Unknown variable pMix
-Either supply values for this variable with the data
-or define it  on the left hand side of a relation.
+getPriorParametersNormal <- function (
+    
+  target_means = NULL,
+  mu_pop_mean  = 0,
+  mu_pop_sd    = 10,
+  tau_shape    = 1,
+  tau_rate     = 1,
+  sigma_shape  = 1,
+  sigma_rate   = 1
+  
+) {
+  
+  error_target_means <- "Providing either NULL or a numeric vector for the argument 'target_means'"
+  error_mu_pop_mean  <- "Providing a numeric for the argument 'mu_pop_mean'"
+  error_mu_pop_sd    <- "Providing a positive numeric for the argument 'mu_pop_sd'"
+  error_tau_shape    <- "Providing a positive numeric for the argument 'tau_shape'"
+  error_tau_rate     <- "Providing a positive numeric for the argument 'tau_rate'"
+  error_sigma_shape  <- "Providing a positive numeric for the argument 'sigma_shape'"
+  error_sigma_rate   <- "Providing a positive numeric for the argument 'sigma_rate'"
+  
+  if (!is.null(target_means)) {
+    checkmate::assertNumeric(target_means, any.missing = FALSE, .var.name = error_target_means)
+  }
+  
+  checkmate::assertNumber(mu_pop_mean, .var.name = error_mu_pop_mean)
+  
+  checkmate::assertNumber(mu_pop_sd, .var.name = error_mu_pop_sd)
+  checkmate::assertTRUE(mu_pop_sd > 0, .var.name = error_mu_pop_sd)
+  
+  checkmate::assertNumber(tau_shape, .var.name = error_tau_shape)
+  checkmate::assertTRUE(tau_shape > 0, .var.name = error_tau_shape)
+  
+  checkmate::assertNumber(tau_rate, .var.name = error_tau_rate)
+  checkmate::assertTRUE(tau_rate > 0, .var.name = error_tau_rate)
+  
+  checkmate::assertNumber(sigma_shape, .var.name = error_sigma_shape)
+  checkmate::assertTRUE(sigma_shape > 0, .var.name = error_sigma_shape)
+  
+  checkmate::assertNumber(sigma_rate, .var.name = error_sigma_rate)
+  checkmate::assertTRUE(sigma_rate > 0, .var.name = error_sigma_rate)
+  
+  prior_parameters <- list(
+    mu_pop_mean  = mu_pop_mean,
+    prec_mu_pop  = 1 / (mu_pop_sd^2),
+    tau_shape    = tau_shape,
+    tau_rate     = tau_rate,
+    sigma_shape  = sigma_shape,
+    sigma_rate   = sigma_rate,
+    target_means = target_means
+  )
+  
+  prior_parameters_list <- list(normal = prior_parameters)
+  class(prior_parameters_list) <- "prior_parameters_list"
+  
+  return(prior_parameters_list)
+}
+
+#' @title setPriorParametersNormal
+#' @md
+#' @description This function sets prior parameters for the analysis method `"normal"`
+#' for use in \code{\link[bhmbasket]{performAnalyses}}.
+#' @param mu_pop_mean A numeric for the prior mean of the population-level mean
+#' @param prec_mu_pop A positive numeric for the prior precision of the population-level mean
+#' @param tau_shape A positive numeric for the Gamma shape prior of the between-cohort precision
+#' @param tau_rate A positive numeric for the Gamma rate prior of the between-cohort precision
+#' @param sigma_shape A positive numeric for the Gamma shape prior of the within-cohort precision
+#' @param sigma_rate A positive numeric for the Gamma rate prior of the within-cohort precision
+#' @param target_means Either `NULL` or a numeric vector of target means for each cohort.
+#' These are used by the adjusted hierarchical normal model.
+#' @return A list with prior parameters of class `prior_parameters_list`
+#' @details
+#' The method `"normal"` is a hierarchical normal model for continuous endpoints.
+#' The prior parameters specify the population-level mean prior, the prior on the
+#' between-cohort precision, and the prior on the within-cohort precision.
+#' Optionally, `target_means` can be supplied for adjusted normal-endpoint models.
+#' @author Stephan Wojciekowski
+#' @examples
+#' prior_parameters_normal <- setPriorParametersNormal(
+#'   mu_pop_mean  = 0,
+#'   prec_mu_pop  = 1 / 10^2,
+#'   tau_shape    = 1,
+#'   tau_rate     = 1,
+#'   sigma_shape  = 1,
+#'   sigma_rate   = 1,
+#'   target_means = c(0, 0.5, 1)
+#' )
+#' @rdname setPriorParametersNormal
+#' @seealso
+#'  \code{\link[bhmbasket]{performAnalyses}}
+#'  \code{\link[bhmbasket]{getPriorParameters}}
+#'  \code{\link[bhmbasket]{combinePriorParameters}}
+#' @export
+setPriorParametersNormal <- function (
+    
+  mu_pop_mean,
+  prec_mu_pop,
+  tau_shape,
+  tau_rate,
+  sigma_shape,
+  sigma_rate,
+  target_means = NULL
+  
+) {
+  
+  error_target_means <- "Providing either NULL or a numeric vector for the argument 'target_means'"
+  error_mu_pop_mean  <- "Providing a numeric for the argument 'mu_pop_mean'"
+  error_prec_mu_pop  <- "Providing a positive numeric for the argument 'prec_mu_pop'"
+  error_tau_shape    <- "Providing a positive numeric for the argument 'tau_shape'"
+  error_tau_rate     <- "Providing a positive numeric for the argument 'tau_rate'"
+  error_sigma_shape  <- "Providing a positive numeric for the argument 'sigma_shape'"
+  error_sigma_rate   <- "Providing a positive numeric for the argument 'sigma_rate'"
+  
+  if (!is.null(target_means)) {
+    checkmate::assertNumeric(target_means, any.missing = FALSE, .var.name = error_target_means)
+  }
+  
+  checkmate::assertNumber(mu_pop_mean, .var.name = error_mu_pop_mean)
+  
+  checkmate::assertNumber(prec_mu_pop, .var.name = error_prec_mu_pop)
+  checkmate::assertTRUE(prec_mu_pop > 0, .var.name = error_prec_mu_pop)
+  
+  checkmate::assertNumber(tau_shape, .var.name = error_tau_shape)
+  checkmate::assertTRUE(tau_shape > 0, .var.name = error_tau_shape)
+  
+  checkmate::assertNumber(tau_rate, .var.name = error_tau_rate)
+  checkmate::assertTRUE(tau_rate > 0, .var.name = error_tau_rate)
+  
+  checkmate::assertNumber(sigma_shape, .var.name = error_sigma_shape)
+  checkmate::assertTRUE(sigma_shape > 0, .var.name = error_sigma_shape)
+  
+  checkmate::assertNumber(sigma_rate, .var.name = error_sigma_rate)
+  checkmate::assertTRUE(sigma_rate > 0, .var.name = error_sigma_rate)
+  
+  prior_parameters <- list(
+    mu_pop_mean  = mu_pop_mean,
+    prec_mu_pop  = prec_mu_pop,
+    tau_shape    = tau_shape,
+    tau_rate     = tau_rate,
+    sigma_shape  = sigma_shape,
+    sigma_rate   = sigma_rate,
+    target_means = target_means
+  )
+  
+  prior_parameters_list <- list(normal = prior_parameters)
+  class(prior_parameters_list) <- "prior_parameters_list"
+  
+  return(prior_parameters_list)
+}
