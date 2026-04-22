@@ -1,103 +1,19 @@
-prepareAnalysis <- function (
+Caution: No parallel backend detected for the 'foreach' framework. For execution in parallel, register a parallel backend, e.g. with:
+   doFuture::registerDoFuture()
+   future::plan(future::multisession)
 
-  method_name,
+22-Apr-2026 Performing Analyses
+         Analyzing 1 scenario (19 unique trial realizations)
+   12:02 - with Normal ..........
+Error in rjags::jags.model(file = model_file, data = data, inits = inits,  : 
+  RUNTIME ERROR:
+Compilation error on line 45.
+Unknown variable target_means
+Either supply values for this variable with the data
+or define it  on the left hand side of a relation.
 
-  prior_parameters = NULL,
-  target_rates     = NULL
-
-) {
-
-  if (method_name == "berry") {
-
-    j_data <- list(
-      mean_mu       = prior_parameters$mu_mean,
-      precision_mu  = prior_parameters$mu_sd^-2,
-      precision_tau = prior_parameters$tau_scale^-2,
-      p_t           = target_rates,
-      J             = length(target_rates)
-    )
-
-    j_model_file <- getModelFile(method_name = "berry")
-    j_parameters <- c("p", "mu", "tau")
-
-  } else if (method_name %in% c("exnex", "exnex_adj", "exnex_mix", "exnex_adj_mix")) {
-
-    j_data <- list(
-      Nexch        = length(prior_parameters$mu_mean),
-      Nmix         = length(prior_parameters$mu_mean) + 1L,
-      mu_mean      = prior_parameters$mu_mean,
-      mu_prec      = prior_parameters$mu_sd^-2,
-      tau_HN_scale = rep(prior_parameters$tau_scale, length(prior_parameters$mu_mean))
-    )
-
-    if (identical(length(prior_parameters$w_j), 1L)) {
-      j_data$pMix <- c(prior_parameters$w_j, 1 - prior_parameters$w_j)
-    } else {
-      j_data$pMix <- prior_parameters$w_j
-    }
-
-    if (method_name %in% c("exnex", "exnex_adj")) {
-      j_data$Nstrata  <- length(prior_parameters$mu_j)
-      j_data$nex_mean <- prior_parameters$mu_j
-      j_data$nex_prec <- prior_parameters$tau_j^-2
-    }
-
-    if (method_name %in% c("exnex_mix", "exnex_adj_mix")) {
-      j_data$Nstrata  <- ncol(prior_parameters$mean_nex)
-      j_data$K_nex    <- length(prior_parameters$w_nex)
-      j_data$w_nex    <- prior_parameters$w_nex
-      j_data$mean_nex <- prior_parameters$mean_nex
-      j_data$prec_nex <- prior_parameters$sd_nex^-2
-    }
-
-    if (method_name %in% c("exnex_adj", "exnex_adj_mix")) {
-      j_data$p_target <- target_rates
-    }
-
-    j_model_file <- getModelFile(method_name = method_name)
-    j_parameters <- c("p", "mu", "tau", "exch")
-
-  } else if (method_name %in% c("stratified", "pooled", "stratified_mix")) {
-
-    j_model_file <- "dummy path to JAGS model"
-    j_parameters <- "dummy JAGS parameters"
-    j_data       <- prior_parameters
-
-  } else if (method_name == "normal") {
-
-    j_data <- list(
-      Nexch        = length(prior_parameters$mu_mean),
-      Nmix         = length(prior_parameters$mu_mean) + 1L,
-      Nstrata      = length(prior_parameters$target_means),
-      mu_mean      = prior_parameters$mu_mean,
-      mu_prec      = prior_parameters$mu_sd^-2,
-      tau_HN_scale = rep(prior_parameters$tau_scale, length(prior_parameters$mu_mean)),
-      nex_mean     = prior_parameters$mu_j,
-      nex_prec     = prior_parameters$tau_j^-2,
-      pMix         = if (identical(length(prior_parameters$w_j), 1L)) {
-        c(prior_parameters$w_j, 1 - prior_parameters$w_j)
-      } else {
-        prior_parameters$w_j
-      },
-      adj          = prior_parameters$target_means,
-      sigma_shape  = prior_parameters$sigma_shape,
-      sigma_rate   = prior_parameters$sigma_rate
-    )
-
-    j_model_file <- getModelFile(method_name = "normal")
-    j_parameters <- c("theta", "mu", "tau", "exch", "prec_sigma")
-
-  } else {
-
-    stop(
-      "method_name must be one of berry, exnex, exnex_mix, exnex_adj, exnex_adj_mix, stratified, pooled, stratified_mix, normal"
-    )
-
-  }
-
-  return(list(
-    j_parameters = j_parameters,
-    j_model_file = j_model_file,
-    j_data       = j_data
-  ))
-}
+In addition: Warning messages:
+1: In rjags::jags.model(file = model_file, data = data, inits = inits,  :
+  Unused variable "adj" in data
+2: In rjags::jags.model(file = model_file, data = data, inits = inits,  :
+  Unused variable "J" in data
