@@ -4,16 +4,10 @@ Caution: No parallel backend detected for the 'foreach' framework. For execution
 
 22-Apr-2026 Performing Analyses
          Analyzing 1 scenario (19 unique trial realizations)
-   12:02 - with Normal ..........
+   12:05 - with Normal ..........
 Error in rjags::jags.model(file = model_file, data = data, inits = inits,  : 
   RUNTIME ERROR:
-Compilation error on line 45.
-Unknown variable target_means
+Compilation error on line 32.
+Unknown variable pMix
 Either supply values for this variable with the data
 or define it  on the left hand side of a relation.
-
-In addition: Warning messages:
-1: In rjags::jags.model(file = model_file, data = data, inits = inits,  :
-  Unused variable "adj" in data
-2: In rjags::jags.model(file = model_file, data = data, inits = inits,  :
-  Unused variable "J" in data
